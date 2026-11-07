@@ -42,10 +42,10 @@ export function ConfirmHost() {
 
   return (
     <Modal open={!!p} onClose={() => close(false)} className="max-w-md"
-      title={<span className="flex items-center gap-2">{danger && <AlertTriangle className="size-4 text-destructive" />}{p?.title ?? 'Konfirmasi'}</span>}
+      title={<span className="flex items-center gap-2">{danger && <AlertTriangle className="size-4 text-destructive" />}{p?.title ?? 'Confirm'}</span>}
       footer={<>
-        <Button variant="outline" size="sm" onClick={() => close(false)}>{p?.cancelLabel ?? 'Batal'}</Button>
-        <Button size="sm" variant={danger ? 'destructive' : 'default'} autoFocus onClick={() => close(true)}>{p?.confirmLabel ?? 'Ya, lanjutkan'}</Button>
+        <Button variant="outline" size="sm" onClick={() => close(false)}>{p?.cancelLabel ?? 'Cancel'}</Button>
+        <Button size="sm" variant={danger ? 'destructive' : 'default'} autoFocus onClick={() => close(true)}>{p?.confirmLabel ?? 'Yes, continue'}</Button>
       </>}>
       <p className="whitespace-pre-line text-sm">{p?.message}</p>
     </Modal>

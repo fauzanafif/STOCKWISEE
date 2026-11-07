@@ -34,7 +34,22 @@ class DocumentPdfWriter
     /** @var list<string> page content operators */
     private array $ops = [];
 
-    public function __construct(private float $pageWidthMm, private float $pageHeightMm) {}
+    /** $sheet: print the page scaled onto another sheet (w, h in mm, scale, top margin mm), centred horizontally. */
+    public function __construct(private float $pageWidthMm, private float $pageHeightMm, private ?array $sheet = null) {}
+
+    /** A horizontal line (top-left x/y, width), like the HTML table / signature borders. */
+    public function rule(float $x, float $y, float $w, float $widthPt = 0.5, float $gray = 0): void
+    {
+        $yPt = round(($this->pageHeightMm - $y) * self::PT_PER_MM, 2);
+        $this->ops[] = sprintf('%s G %s w %s %s m %s %s l S', $gray, $widthPt, round($x * self::PT_PER_MM, 2), $yPt, round(($x + $w) * self::PT_PER_MM, 2), $yPt);
+    }
+
+    /** A vertical line at x from y1 to y2 (mm from the top). */
+    public function vline(float $x, float $y1, float $y2, float $widthPt = 0.5, float $gray = 0): void
+    {
+        $xPt = round($x * self::PT_PER_MM, 2);
+        $this->ops[] = sprintf('%s G %s w %s %s m %s %s l S', $gray, $widthPt, $xPt, round(($this->pageHeightMm - $y1) * self::PT_PER_MM, 2), $xPt, round(($this->pageHeightMm - $y2) * self::PT_PER_MM, 2));
+    }
 
     /** Text in a box (top-left x/y, width, optional height) — wrapped to the width, cut at the height, like the HTML .t div. */
     public function text(float $x, float $y, float $w, ?float $h, ?string $text, float $sizePt, bool $bold, string $align): void
@@ -70,6 +85,15 @@ class DocumentPdfWriter
         $wPt = round($this->pageWidthMm * self::PT_PER_MM, 2);
         $hPt = round($this->pageHeightMm * self::PT_PER_MM, 2);
         $content = implode("\n", $this->ops);
+        if ($this->sheet) {
+            $s = $this->sheet['scale'];
+            $sw = round($this->sheet['w'] * self::PT_PER_MM, 2);
+            $sh = round($this->sheet['h'] * self::PT_PER_MM, 2);
+            $dx = round(($sw - $s * $wPt) / 2, 2);
+            $dy = round($sh - $this->sheet['top'] * self::PT_PER_MM - $s * $hPt, 2);
+            $content = "q {$s} 0 0 {$s} {$dx} {$dy} cm\n{$content}\nQ";
+            [$wPt, $hPt] = [$sw, $sh];
+        }
 
         $objects = [
             1 => '<< /Type /Catalog /Pages 2 0 R /ViewerPreferences << /PrintScaling /None >> >>',

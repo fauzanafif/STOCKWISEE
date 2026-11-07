@@ -71,7 +71,7 @@ class ItemRequestTest extends TestCase
         $this->postJson("/api/item-requests/{$req['id']}/process", ['lines' => [$l1 => ['item_id' => $disc->id], $l2 => ['item_id' => $glove->id], $l3 => []]])->assertStatus(422);
         $kopi = $this->item('KOPI.01', 'KOPI SACHET', null);
         $this->postJson("/api/item-requests/{$req['id']}/process", [
-            'lines' => [$l1 => ['item_id' => $disc->id], $l2 => ['item_id' => $glove->id, 'qty' => 1], $l3 => ['item_id' => $kopi->id]],
+            'lines' => [$l1 => ['item_id' => $disc->id], $l2 => ['item_id' => $glove->id, 'qty' => 1, 'reason' => 'Cukup 1 dulu'], $l3 => ['item_id' => $kopi->id]],
             'npbg' => ['pelanggan' => 'MAINTENANCE (SDA)', 'tipe_npbg' => 'Non Penjualan'],
         ])->assertOk()->assertJsonPath('data.status', 'APPROVAL_MANAGER');
 
@@ -92,12 +92,23 @@ class ItemRequestTest extends TestCase
         $link = $this->postJson('/api/item-request-links', ['label' => 'Umum', 'form_type' => 'UMUM'])->assertCreated()->json('data');
         app('auth')->forgetGuards();
 
-        $body = ['requester_name' => 'ANDI', 'requester_contact' => '0812', 'divisi' => 'DISTRIBUSI',
+        $body = ['requester_name' => 'SIAPA SAJA', 'requester_contact' => '0812', 'divisi' => 'DISTRIBUSI',
             'lines' => [['deskripsi_barang' => 'lakban coklat', 'qty' => 3, 'item_id' => 999]]];
         $this->getJson("/api/public/item-request/{$link['token']}")->assertOk()->assertJsonPath('data.is_active', true);
+        // the form opens only for an account: no session / a forged one is refused, a wrong password too
+        $this->postJson("/api/public/item-request/{$link['token']}", $body)->assertStatus(419);
+        $this->postJson("/api/public/item-request/{$link['token']}", $body + ['session' => 'forged'])->assertStatus(419);
+        $this->postJson("/api/public/item-request/{$link['token']}/login", ['username' => 'nobody', 'password' => 'x'])->assertStatus(422);
+        $session = $this->linkSession($link['token'], 'ANDI');
+        $body['session'] = $session;
         $num = $this->postJson("/api/public/item-request/{$link['token']}", $body)->assertCreated()->json('data.number');
         $r = ItemRequest::with('lines')->sole();
-        $this->assertSame([$num, 'LINK', 'ANDI', '0812', null, null], [$r->number, $r->source, $r->requester_name, $r->requester_contact, $r->requester_id, $r->lines[0]->item_id]);
+        // the requester is the signed-in account, not a name typed in
+        $andi = \App\Models\User::where('name', 'ANDI')->sole();
+        $this->assertSame([$num, 'LINK', 'ANDI', '0812', $andi->id, null], [$r->number, $r->source, $r->requester_name, $r->requester_contact, $r->requester_id, $r->lines[0]->item_id]);
+        // signed in, Cek Permintaan lists all of the account's requests (from any device)
+        $this->postJson('/api/public/request-status/mine', ['session' => $session])->assertOk()->assertJsonPath('data.tokens', [$r->track_token])->assertJsonPath('data.name', 'ANDI');
+        $this->postJson('/api/public/request-status/mine', ['session' => 'forged'])->assertStatus(419);
         $this->postJson("/api/public/item-request/{$link['token']}", $body + ['website' => 'spam'])->assertStatus(422);
         $this->postJson('/api/public/item-request/not-a-token', $body)->assertNotFound();
 
@@ -130,9 +141,11 @@ class ItemRequestTest extends TestCase
 
         $line = ['lines' => [['deskripsi_barang' => 'pulpen hitam', 'qty' => 2]]];
         // a requester sending "urgent" anyway is ignored; nor can the sender switch the form — the link decides
-        $this->postJson("/api/public/item-request/{$atk['token']}", ['requester_name' => 'A', 'urgency' => 'URGENT'] + $line)->assertCreated();
-        $this->postJson("/api/public/item-request/{$atk['token']}", ['requester_name' => 'B', 'form_type' => 'MANUFAKTUR'] + $line)->assertCreated();
-        $this->postJson("/api/public/item-request/{$mtc['token']}", ['requester_name' => 'C', 'form_detail' => 'Forklift FD30'] + $line)->assertCreated();
+        $this->postJson("/api/public/item-request/{$atk['token']}", ['session' => $this->linkSession($atk['token'], 'A'), 'urgency' => 'URGENT'] + $line)->assertCreated();
+        $this->postJson("/api/public/item-request/{$atk['token']}", ['session' => $this->linkSession($atk['token'], 'B'), 'form_type' => 'MANUFAKTUR'] + $line)->assertCreated();
+        // a session is for its own link only
+        $this->postJson("/api/public/item-request/{$mtc['token']}", ['session' => $this->linkSession($atk['token'], 'X')] + $line)->assertStatus(419);
+        $this->postJson("/api/public/item-request/{$mtc['token']}", ['session' => $this->linkSession($mtc['token'], 'C'), 'form_detail' => 'Forklift FD30'] + $line)->assertCreated();
 
         $rows = ItemRequest::orderBy('id')->get()->keyBy('requester_name');
         $this->assertSame(['ATK', null], [$rows['A']->form_type, $rows['A']->urgency]);
@@ -169,6 +182,14 @@ class ItemRequestTest extends TestCase
         $this->postJson('/api/item-requests', ['form_type' => 'DISTRIBUSI', 'form_detail' => 'W 8552 QB'] + $line)->assertCreated()
             ->assertJsonPath('data.form_label', 'Permintaan Distribusi')->assertJsonPath('data.divisi', 'DISTRIBUSI');
         $this->postJson('/api/item-requests', ['form_type' => 'LAINNYA'] + $line)->assertStatus(422);
+
+        // like the form via link: name / HP / divisi come from Data Pekerja
+        $karyawan = $this->actingAsRole('karyawan');
+        $dept = \App\Models\Department::create(['name' => 'HELPER']);
+        \App\Models\Employee::create(['name' => 'Aan Pekerja', 'is_active' => true, 'user_id' => $karyawan->id, 'department_id' => $dept->id, 'phone_wa' => '081234']);
+        $this->getJson('/api/item-requests/my-profile')->assertOk()->assertJsonPath('data.name', 'Aan Pekerja')->assertJsonPath('data.contact', '081234')->assertJsonPath('data.divisi', 'HELPER');
+        $made = $this->postJson('/api/item-requests', ['form_type' => 'ATK'] + $line)->assertCreated()->json('data.id');
+        $this->assertSame(['Aan Pekerja', '081234', 'HELPER'], array_values(ItemRequest::find($made)->only('requester_name', 'requester_contact', 'divisi')));
 
         // each requester once in the "Pemohon" filter
         $this->actingAsRole('admin_gudang');

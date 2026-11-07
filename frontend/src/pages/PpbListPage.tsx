@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
+import { DateRangeFilter } from '@/components/DateRangeFilter'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { Clock, FileStack, Plus, X } from 'lucide-react'
+import { FileStack, Plus, X } from 'lucide-react'
 import { PPB_LINE_STATUS, ppbDivisi, usePpbDivisiOptions, usePpbList, usePpbVendorOptions, type Ppb } from '@/features/ppb/api'
 import { useAuth } from '@/auth/AuthContext'
 import { PpbStatusBadges } from '@/components/PpbStatusBadges'
@@ -8,7 +9,6 @@ import { PpbApprovalBadge } from '@/components/PpbApproval'
 import { PpbFormModal } from '@/components/PpbFormModal'
 import { ExportBar } from '@/components/export/ExportBar'
 import { PageHeader } from '@/components/PageHeader'
-import { AccurateDataNote } from '@/components/AccurateDataNote'
 import { ColumnMenu, useHiddenColumns, visibleColumns } from '@/components/ColumnVisibility'
 import { DataTable, type Column } from '@/components/DataTable'
 import { DocCell, DocText } from '@/components/DocLink'
@@ -20,10 +20,9 @@ import { useInfiniteRows } from '@/components/InfiniteRows'
 import { useRemembered } from '@/lib/listMemory'
 import { FilterBar } from '@/components/FilterBar'
 import { QtyProgress } from '@/components/QtyProgress'
-import { useOpenDraftCount } from '@/features/ppbDrafts/api'
 
 function fmtDate(v: string | null | undefined) {
-  return v ? new Date(v).toLocaleDateString('id-ID') : '—'
+  return v ? new Date(v).toLocaleDateString('en-GB') : '—'
 }
 
 const ALWAYS_VISIBLE = ['no_ppb']
@@ -34,11 +33,11 @@ const ALWAYS_VISIBLE = ['no_ppb']
 const columns: Column<Ppb>[] = [
   {
     key: 'no_ppb',
-    header: 'No PPB',
+    header: 'Purchase Request No',
     cell: (r) => (
       <DocCell date={fmtDate(r.tgl_ppb)}>
         <span className="inline-flex items-center gap-1.5">
-          <Link to={`/ppb/${r.id}`} onClick={(e) => e.stopPropagation()} className="font-mono text-xs font-medium text-primary hover:underline">
+          <Link to={`/ppb/${r.id}`} onClick={(e) => e.stopPropagation()} className="text-[13px] font-medium text-primary hover:underline">
             {r.no_ppb ?? '—'}
           </Link>
           {r.is_manual && <Badge variant="neutral">Manual</Badge>}
@@ -48,23 +47,23 @@ const columns: Column<Ppb>[] = [
   },
   { key: 'status', header: 'Status', cell: (r) => <PpbStatusBadges ppb={r} /> },
   { key: 'approval', header: 'Approval', cell: (r) => <span className="whitespace-nowrap"><PpbApprovalBadge approval={r.approval} /></span> },
-  { key: 'divisi', header: 'Divisi', cell: (r) => <span className="whitespace-nowrap">{ppbDivisi(r.divisi) ?? '—'}</span> },
-  { key: 'kode', header: 'Kode Barang', cell: (r) => <span className="whitespace-nowrap font-mono text-xs">{r.kode_barang ?? '—'}</span> },
+  { key: 'divisi', header: 'Division', cell: (r) => <span className="whitespace-nowrap">{ppbDivisi(r.divisi) ?? '—'}</span> },
+  { key: 'kode', header: 'Item Code', cell: (r) => <span className="whitespace-nowrap text-[13px]">{r.kode_barang ?? '—'}</span> },
   {
     key: 'barang',
-    header: 'Deskripsi Barang',
+    header: 'Item Description',
     className: 'max-w-[260px]',
     cell: (r) => <span className="block truncate" title={r.deskripsi_barang ?? undefined}>{r.deskripsi_barang ?? '—'}</span>,
   },
   {
     key: 'qty',
-    header: 'Kuantitas',
+    header: 'Quantity',
     className: 'text-right',
     cell: (r) => <span className="whitespace-nowrap tabular-nums">{r.kuantitas != null ? `${r.kuantitas} ${r.satuan ?? ''}` : '—'}</span>,
   },
   // asked / received by RI so far: a partial delivery reads "10/5"
-  { key: 'diterima', header: 'Diminta/Diterima (RI)', cell: (r) => <QtyProgress total={r.kuantitas} done={r.qty_diterima ?? 0} unit={r.satuan} /> },
-  { key: 'peminta', header: 'Peminta', cell: (r) => <span className="whitespace-nowrap">{r.peminta ?? '—'}</span> },
+  { key: 'diterima', header: 'Requested/Received (Receipt)', cell: (r) => <QtyProgress total={r.kuantitas} done={r.qty_diterima ?? 0} unit={r.satuan} /> },
+  { key: 'peminta', header: 'Requester', cell: (r) => <span className="whitespace-nowrap">{r.peminta ?? '—'}</span> },
   // Rantai dokumen PPB -> PO -> RI, dikelompokkan sebagai dua sel (bukan empat
   // kolom) agar alur pembelian tetap terbaca tanpa membuat tabel melebar.
   {
@@ -73,13 +72,13 @@ const columns: Column<Ppb>[] = [
     className: 'max-w-[220px]',
     cell: (r) => r.vendor
       ? <span className="block truncate" title={r.vendor}>{r.vendor}</span>
-      : <span className="whitespace-nowrap text-xs text-muted-foreground">{r.po_no ? '' : 'Belum ada PO'}</span>,
+      : <span className="whitespace-nowrap text-xs text-muted-foreground">{r.po_no ? '' : 'No PO yet'}</span>,
   },
-  { key: 'po', header: 'PO', cell: (r) => <DocCell date={fmtDate(r.po_date)}><DocText text={r.po_no} className="font-mono text-xs" /></DocCell> },
-  { key: 'ri', header: 'RI', cell: (r) => <DocCell date={fmtDate(r.ri_date)}><DocText text={r.ri_no} className="font-mono text-xs" /></DocCell> },
+  { key: 'po', header: 'PO', cell: (r) => <DocCell date={fmtDate(r.po_date)}><DocText text={r.po_no} className="text-[13px]" /></DocCell> },
+  { key: 'ri', header: 'Receipt', cell: (r) => <DocCell date={fmtDate(r.ri_date)}><DocText text={r.ri_no} className="text-[13px]" /></DocCell> },
   {
     key: 'catatan',
-    header: 'Catatan',
+    header: 'Notes',
     className: 'max-w-[220px]',
     cell: (r) => (
       <div className="leading-tight">
@@ -95,7 +94,6 @@ const columns: Column<Ppb>[] = [
 export function PpbListPage() {
   const navigate = useNavigate()
   const { hasPermission } = useAuth()
-  const openDrafts = useOpenDraftCount(hasPermission('ppb.create'))
   const [formOpen, setFormOpen] = useState(false)
   // ?search=<no. dokumen> — opened from a document link elsewhere (DocLink)
   const [params] = useSearchParams()
@@ -137,7 +135,6 @@ export function PpbListPage() {
   }
   const { data, isLoading } = usePpbList({ ...activeFilters, page })
   // approvers: PPB lines still waiting for them — sent along with the list (no extra request)
-  const waitingCount = ['ppb.approve', 'ppb.approve_manager', 'ppb.approve_director'].some((p) => hasPermission(p)) ? (data?.meta as { approval_waiting?: number | null } | undefined)?.approval_waiting ?? 0 : 0
   const { data: divisiOptions } = usePpbDivisiOptions()
   const { data: vendorOptions } = usePpbVendorOptions()
   const resetPage = <T,>(fn: (v: T) => void) => (v: T) => { fn(v); setPage(1) }
@@ -153,99 +150,72 @@ export function PpbListPage() {
   return (
     <div className="space-y-4">
       <PageHeader
-        title="PPB"
-        subtitle="Permintaan pembelian barang (PPB)"
+        title="Purchase Request"
+        subtitle="Purchase requests"
         icon={<FileStack className="size-5" />}
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <ExportBar dataset="ppb" filters={activeFilters} filenameBase="ppb" viewPermission="report.ppb" columns={visibleKeys} />
             {hasPermission('ppb.create') && (
-              <Button size="sm" variant="outline" asChild>
-                <Link to="/ppb/drafts">Draft PPB{openDrafts.data ? <span className="rounded-full bg-amber-400 px-1.5 text-[11px] font-semibold text-amber-950">{openDrafts.data}</span> : null}</Link>
-              </Button>
-            )}
-            {hasPermission('ppb.create') && (
               <Button size="sm" onClick={() => setFormOpen(true)}>
                 <Plus className="size-4" />
-                Tambah PPB
+                Add Purchase Request
               </Button>
             )}
           </div>
         }
       />
-      <AccurateDataNote className="-mt-2" />
-
-      {waitingCount > 0 && approval !== 'MENUNGGU' && (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          <span className="flex items-center gap-2">
-            <Clock className="size-4 shrink-0" />
-            <span><b>{waitingCount.toLocaleString('id-ID')} barang PPB</b> menunggu approval Anda sebelum bisa jadi PO.</span>
-          </span>
-          <Button size="sm" onClick={() => { setApproval('MENUNGGU'); setPage(1) }}>Lihat & approve</Button>
-        </div>
-      )}
 
       <FilterBar className="grid gap-2 sm:grid-cols-2 lg:flex lg:flex-wrap lg:items-end" end={<>
-        {data && <span className="text-xs text-muted-foreground">{data.meta.total.toLocaleString('id-ID')} PPB</span>}
+        {data && <span className="text-xs text-muted-foreground">{data.meta.total.toLocaleString('id-ID')} Purchase Request</span>}
         <ColumnMenu columns={columns} hiddenCols={hiddenCols} onToggle={toggleCol} alwaysVisible={ALWAYS_VISIBLE} />
       </>}>
         <div className="sm:col-span-2 lg:w-72">
           <Input
-            placeholder="Cari no PPB, barang, peminta, vendor, catatan, no PO/RI…"
-            title="Bisa beberapa kata sekaligus semua kata harus cocok, ke kolom mana saja"
+            placeholder="Search Purchase Request no., item, requester, vendor, notes, PO/Receipt no…"
+            title="Several words at once; every word must match, in any column"
             value={search}
             onChange={(e) => resetPage(setSearch)(e.target.value)}
           />
         </div>
         <div className="lg:w-48">
           <Select value={lineStatus} onChange={(e) => resetPage(setLineStatus)(e.target.value)} aria-label="Status">
-            <option value="">Semua status</option>
+            <option value="">All statuses</option>
             {Object.entries(PPB_LINE_STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
             <option value="AMEND">Amend (status apa pun)</option>
           </Select>
         </div>
         <div className="lg:w-44">
-          <Select value={divisi} onChange={(e) => resetPage(setDivisi)(e.target.value)} aria-label="Divisi">
-            <option value="">Semua divisi</option>
+          <Select value={divisi} onChange={(e) => resetPage(setDivisi)(e.target.value)} aria-label="Division">
+            <option value="">All divisions</option>
             {divisiOptions?.map((d) => <option key={d} value={d}>{d}</option>)}
           </Select>
         </div>
         <div className="lg:w-60">
-          <Select value={vendorId} onChange={(e) => resetPage(setVendorId)(e.target.value)} aria-label="Vendor" title="Vendor dari PO yang dibuat untuk PPB ini pilih &quot;Belum ada PO&quot; untuk PPB yang belum dibuatkan PO">
-            <option value="">Semua vendor</option>
-            <option value="none">Belum ada PO</option>
+          <Select value={vendorId} onChange={(e) => resetPage(setVendorId)(e.target.value)} aria-label="Vendor" title="Vendor of the PO made for this Purchase Request; select &quot;No PO yet&quot; for a Purchase Request without a PO">
+            <option value="">All vendors</option>
+            <option value="none">No PO yet</option>
             {vendorOptions?.map((v) => <option key={v.id} value={String(v.id)}>{v.name}</option>)}
           </Select>
         </div>
         <div className="lg:w-52">
           <Select value={approval} onChange={(e) => resetPage(setApproval)(e.target.value)} aria-label="Approval">
-            <option value="">Semua approval</option>
-            <option value="MENUNGGU">Menunggu approval</option>
-            <option value="MENUNGGU_DIREKTUR">Menunggu Direktur</option>
-            <option value="DISETUJUI">Disetujui</option>
-            <option value="DITOLAK">Ditolak</option>
-            <option value="PO_TANPA_APPROVAL">PO tanpa approval</option>
+            <option value="">All approvals</option>
+            <option value="MENUNGGU">Waiting for approval</option>
+            <option value="MENUNGGU_DIREKTUR">Waiting for Director</option>
+            <option value="DISETUJUI">Approved</option>
+            <option value="DITOLAK">Rejected</option>
+            <option value="PO_TANPA_APPROVAL">PO without approval</option>
           </Select>
         </div>
-        <label className="space-y-1 text-xs text-muted-foreground">
-          Dari tanggal
-          <Input type="date" value={dateFrom} max={dateTo || undefined} onChange={(e) => resetPage(setDateFrom)(e.target.value)} />
-        </label>
-        <label className="space-y-1 text-xs text-muted-foreground">
-          Sampai tanggal
-          <Input type="date" value={dateTo} min={dateFrom || undefined} onChange={(e) => resetPage(setDateTo)(e.target.value)} />
-        </label>
+        <DateRangeFilter className="lg:w-72" from={dateFrom} to={dateTo} onFrom={resetPage(setDateFrom)} onTo={resetPage(setDateTo)} />
         {hasFilters && (
-          <Button variant="ghost" size="sm" className="h-10" onClick={clearFilters}>
+          <Button variant="ghost" size="sm" className="h-9" onClick={clearFilters}>
             <X className="size-4" /> Reset filter
           </Button>
         )}
       </FilterBar>
 
-      <p className="text-xs text-muted-foreground">
-        Status per baris barang (dari Accurate): {Object.values(PPB_LINE_STATUS).map((v) => `${v.label} = ${v.hint.toLowerCase()}`).join(' · ')}.
-        {' '}<b>Amend</b> tampil di sampingnya bila pembelian berubah / tidak jadi dibeli (mis. Amend + Requested).
-      </p>
 
       <DataTable
         columns={shownColumns}
@@ -255,7 +225,7 @@ export function PpbListPage() {
         rowKey={(r) => r.id}
         isLoading={isLoading}
         onRowClick={(r) => navigate(`/ppb/${r.id}`)}
-        emptyText={hasFilters ? 'Tidak ada PPB untuk filter ini.' : 'Belum ada data PPB jalankan Sync Accurate.'}
+        emptyText={hasFilters ? 'No Purchase Request for this filter.' : 'No Purchase Request data yet; run Accurate Sync.'}
       />
 
       <PpbFormModal open={formOpen} onClose={() => setFormOpen(false)} />

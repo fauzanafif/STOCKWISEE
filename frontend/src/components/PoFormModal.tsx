@@ -34,8 +34,8 @@ function emptyRow(): RowState {
 function ItemSuggestions({ items, loading, onPick }: { items: ItemLookupResult[] | undefined; loading: boolean; onPick: (item: ItemLookupResult) => void }) {
   return (
     <ul className="absolute z-10 mt-1 max-h-56 w-full overflow-auto rounded-md border bg-card text-sm shadow-md">
-      {loading && <li className="px-3 py-2 text-muted-foreground">Mencari…</li>}
-      {!loading && (items?.length ?? 0) === 0 && <li className="px-3 py-2 text-muted-foreground">Tidak ada hasil.</li>}
+      {loading && <li className="px-3 py-2 text-muted-foreground">Searching…</li>}
+      {!loading && (items?.length ?? 0) === 0 && <li className="px-3 py-2 text-muted-foreground">No results.</li>}
       {items?.map((it) => (
         <li key={it.id}>
           <button
@@ -44,7 +44,7 @@ function ItemSuggestions({ items, loading, onPick }: { items: ItemLookupResult[]
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => onPick(it)}
           >
-            <span className="font-mono text-xs text-muted-foreground">{it.code}</span> {it.description}
+            <span className="text-[13px] text-muted-foreground">{it.code}</span> {it.description}
           </button>
         </li>
       ))}
@@ -80,10 +80,10 @@ function PoItemRow({ row, onChange, onRemove, canRemove, units }: {
             checked={row.itemBaru}
             onChange={(e) => onChange({ ...row, itemBaru: e.target.checked, itemId: null })}
           />
-          Barang belum ada di Master Barang (isi manual)
+          Item not in the Item Master yet (fill by hand)
         </label>
         {canRemove && (
-          <button type="button" className="text-muted-foreground hover:text-destructive" onClick={onRemove} aria-label="Hapus baris">
+          <button type="button" className="text-muted-foreground hover:text-destructive" onClick={onRemove} aria-label="Delete row">
             <Trash2 className="size-4" />
           </button>
         )}
@@ -91,21 +91,21 @@ function PoItemRow({ row, onChange, onRemove, canRemove, units }: {
 
       <div className="grid grid-cols-2 gap-2">
         <div className="relative space-y-1">
-          <Label className="text-xs">Kode Barang</Label>
+          <Label className="text-xs">Item Code</Label>
           <Input
-            className="font-mono"
+            className=""
             value={row.kodeBarang}
             onChange={(e) => onChange({ ...row, kodeBarang: e.target.value, itemId: row.itemBaru ? row.itemId : null })}
             onFocus={() => !row.itemBaru && setActiveField('kode')}
             onBlur={() => setTimeout(() => setActiveField((f) => (f === 'kode' ? null : f)), 150)}
-            placeholder={row.itemBaru ? 'Kode barang baru (bebas)' : 'mis. PUI.0019'}
+            placeholder={row.itemBaru ? 'New item code (free)' : 'e.g. PUI.0019'}
           />
           {!row.itemBaru && activeField === 'kode' && row.kodeBarang.trim().length >= 2 && (
             <ItemSuggestions items={suggestions} loading={searching} onPick={pickItem} />
           )}
         </div>
         <div className="relative space-y-1">
-          <Label className="text-xs">Deskripsi Barang</Label>
+          <Label className="text-xs">Item Description</Label>
           <Input
             value={row.deskripsiBarang}
             onChange={(e) => onChange({ ...row, deskripsiBarang: e.target.value, itemId: row.itemBaru ? row.itemId : null })}
@@ -124,18 +124,18 @@ function PoItemRow({ row, onChange, onRemove, canRemove, units }: {
           <Input type="number" min={0} step="0.01" value={row.qty} onChange={(e) => onChange({ ...row, qty: e.target.value ? Number(e.target.value) : '' })} />
         </div>
         <div className="space-y-1">
-          <Label className="text-xs">Satuan</Label>
+          <Label className="text-xs">Unit</Label>
           {row.itemBaru ? (
             <Select value={row.unitId} onChange={(e) => onChange({ ...row, unitId: e.target.value ? Number(e.target.value) : '' })}>
-              <option value="">— pilih —</option>
+              <option value="">— select —</option>
               {units?.map((u) => <option key={u.id} value={u.id}>{u.code}</option>)}
             </Select>
           ) : (
-            <Input value={units?.find((u) => u.id === row.unitId)?.code ?? ''} disabled placeholder="otomatis dari barang" />
+            <Input value={units?.find((u) => u.id === row.unitId)?.code ?? ''} disabled placeholder="automatic from item" />
           )}
         </div>
         <div className="space-y-1">
-          <Label className="text-xs">Harga Satuan</Label>
+          <Label className="text-xs">Unit Price</Label>
           <Input type="number" min={0} value={row.unitPrice} onChange={(e) => onChange({ ...row, unitPrice: e.target.value ? Number(e.target.value) : '' })} />
         </div>
         <div className="space-y-1">
@@ -184,13 +184,13 @@ export function PoFormModal({ open, onClose }: Props) {
   function submit() {
     setErr(null)
     if (!vendorId || !siteId || !date) {
-      setErr('Vendor, Site, dan Tanggal PO wajib diisi.')
+      setErr('Vendor, Site, and PO Date are required.')
       return
     }
     const items: PoCreateLine[] = []
     for (const r of rows) {
       if (!r.deskripsiBarang.trim() || !r.qty) {
-        setErr('Setiap baris barang wajib punya Deskripsi Barang dan Qty.')
+        setErr('Each item row must have an Item Description and Qty.')
         return
       }
       items.push({
@@ -202,7 +202,7 @@ export function PoFormModal({ open, onClose }: Props) {
       })
     }
     if (items.length === 0) {
-      setErr('Minimal satu baris barang.')
+      setErr('At least one item row.')
       return
     }
     // never the same PO twice (two admins, one need): the server asks first
@@ -217,21 +217,21 @@ export function PoFormModal({ open, onClose }: Props) {
 
   if (createdDoc) {
     return (
-      <Modal
+      <Modal form
         open={open}
         onClose={onClose}
-        title="PO Tersimpan"
-        description={`No. PO: ${createdDoc.number}`}
+        title="PO Saved"
+        description={`PO No.: ${createdDoc.number}`}
         className="max-w-md"
-        footer={<Button size="sm" onClick={onClose}>Selesai</Button>}
+        footer={<Button size="sm" onClick={onClose}>Done</Button>}
       >
         <div className="flex flex-col items-center gap-3 py-4 text-center">
           <CheckCircle2 className="size-10 text-emerald-600" />
           <p className="text-sm text-muted-foreground">
-            PO berhasil disimpan sebagai DRAFT. Cetak sekarang untuk dicetak di kertas khusus PO.
+            PO saved as DRAFT. Print now on the special PO paper.
           </p>
           <Button size="sm" variant="outline" onClick={() => setPrinting(true)}>
-            <Printer className="size-4" /> Cetak
+            <Printer className="size-4" /> Print
           </Button>
         </div>
       </Modal>
@@ -239,17 +239,17 @@ export function PoFormModal({ open, onClose }: Props) {
   }
 
   return (
-    <Modal
+    <Modal page form
       open={open}
       onClose={onClose}
-      title="Tambah PO"
-      description="PO manual (DRAFT) — dicatat langsung di Stockwise, bukan dari Sync Accurate."
+      title="Add PO"
+      description="Manual PO (DRAFT); recorded directly in Stockwise, not from Accurate Sync."
       className="max-w-3xl"
       footer={
         <>
-          <Button variant="outline" size="sm" onClick={onClose}>Batal</Button>
+          <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
           <Button size="sm" disabled={create.isPending} onClick={submit}>
-            {create.isPending ? 'Menyimpan…' : 'Simpan sebagai DRAFT'}
+            {create.isPending ? 'Saving…' : 'Save as DRAFT'}
           </Button>
         </>
       }
@@ -259,14 +259,14 @@ export function PoFormModal({ open, onClose }: Props) {
           <div className="space-y-1.5">
             <Label>Vendor</Label>
             <Select value={vendorId} onChange={(e) => setVendorId(e.target.value ? Number(e.target.value) : '')}>
-              <option value="">— pilih vendor —</option>
+              <option value="">— select vendor —</option>
               {vendors?.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
             </Select>
           </div>
           <div className="space-y-1.5">
             <Label>Site</Label>
             <Select value={siteId} onChange={(e) => setSiteId(e.target.value ? Number(e.target.value) : '')}>
-              <option value="">— pilih site —</option>
+              <option value="">— select site —</option>
               {sites?.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </Select>
           </div>
@@ -274,7 +274,7 @@ export function PoFormModal({ open, onClose }: Props) {
 
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
-            <Label>Tanggal PO</Label>
+            <Label>PO Date</Label>
             <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
           </div>
           <div className="space-y-1.5">
@@ -285,9 +285,9 @@ export function PoFormModal({ open, onClose }: Props) {
 
         <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <Label>Barang</Label>
+            <Label>Item</Label>
             <Button type="button" variant="outline" size="sm" onClick={() => setRows((rs) => [...rs, emptyRow()])}>
-              <Plus className="size-4" /> Tambah Baris
+              <Plus className="size-4" /> Add Row
             </Button>
           </div>
           <div className="space-y-2">
@@ -306,7 +306,7 @@ export function PoFormModal({ open, onClose }: Props) {
         </div>
 
         <div className="space-y-1.5">
-          <Label>Catatan</Label>
+          <Label>Notes</Label>
           <Input value={notes} onChange={(e) => setNotes(e.target.value)} />
         </div>
 

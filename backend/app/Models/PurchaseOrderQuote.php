@@ -8,11 +8,16 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 /** A vendor's price for a Draft PO item (the price comparison). */
 class PurchaseOrderQuote extends Model
 {
-    protected $fillable = ['purchase_order_item_id', 'vendor_id', 'unit_price', 'note', 'created_by'];
+    protected $fillable = ['purchase_order_item_id', 'vendor_id', 'unit_price', 'note', 'availability', 'eta', 'chosen_at', 'chosen_by', 'created_by'];
 
     protected function casts(): array
     {
-        return ['unit_price' => 'float'];
+        return ['unit_price' => 'float', 'eta' => 'date', 'chosen_at' => 'datetime'];
+    }
+
+    public function chooser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'chosen_by');
     }
 
     public function item(): BelongsTo

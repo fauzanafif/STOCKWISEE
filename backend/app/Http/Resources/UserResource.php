@@ -18,6 +18,7 @@ class UserResource extends JsonResource
             'email' => $this->email,
             'phone' => $this->phone,
             'position' => $this->position,
+            'avatar_url' => $this->avatarUrl(),
             'is_active' => $this->is_active,
             'site' => $this->whenLoaded('site', fn () => [
                 'id' => $this->site?->id,

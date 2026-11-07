@@ -153,6 +153,8 @@ class ItemRequestApprovalService
             } elseif ($action === 'RETURN') {
                 $this->log($request, $logStage, 'RETURN', $user, $note);
                 // the proposed (NPBG) lines are decided again; the PPB ones already follow purchasing
+                // back to what was asked: the verification converts again, at the ratio of that moment
+                $request->lines()->where('decision', 'NPBG')->whereNotNull('requested_qty')->get()->each(fn ($l) => $l->update(['qty' => $l->requested_qty, 'satuan' => $l->requested_unit, 'requested_qty' => null, 'requested_unit' => null, 'unit_ratio' => null]));
                 $request->lines()->where('decision', 'NPBG')->update(['decision' => null, 'approved_qty' => null, 'decided_by' => null, 'decided_at' => null]);
                 $request->update(['status' => 'PERLU_PERBAIKAN']);
             } else {

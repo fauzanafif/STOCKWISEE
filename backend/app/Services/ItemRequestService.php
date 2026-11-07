@@ -43,6 +43,48 @@ class ItemRequestService
     /** Photo entity of the images of one item of the request (img1..img3), shown beside its name. */
     public const LINE_IMAGE_ENTITY = 'item_request_line_image';
 
+    /** Less than asked while verifying (e.g. 9 of 10, 1 kept in stock): why — required then; kept on the line. */
+    private function shortReason(ItemRequestLine $line, array $in): void
+    {
+        $given = ! empty($in['items']) ? array_sum(array_map(fn ($p) => (float) $p['qty'], $in['items']))
+            : (isset($in['qty']) && $in['qty'] !== '' && $in['qty'] !== null ? (float) $in['qty'] : (float) $line->qty);
+        $short = $given + 0.0001 < (float) $line->qty;
+        $reason = trim((string) ($in['reason'] ?? ''));
+        if ($short && $reason === '') {
+            throw ValidationException::withMessages(["lines.{$line->id}.reason" => "\"{$line->requestedText()}\" diberi kurang dari yang diminta: isi alasannya."]);
+        }
+        $line->short_reason = $short ? mb_substr($reason, 0, 255) : null;
+    }
+
+    /**
+     * The line in the item's own unit, the original kept beside it with the ratio of this moment. $asked and
+     * $given are in the unit asked. A unit the master does not know is left as written and marked: not guessed.
+     *
+     * @return array<string, mixed> what to fill
+     */
+    private function inItemUnit(Item $item, string $unit, float $asked, float $given, string $label, string $field): array
+    {
+        $uom = app(UomConverter::class)->snapshot($item, $unit, $label, $field);
+        if ($uom['known'] && UomConverter::isOne($uom['unit_ratio'])) {
+            return ['qty' => $asked, 'approved_qty' => $given, 'requested_qty' => null, 'requested_unit' => null, 'unit_ratio' => null];
+        }
+        if (! $uom['known']) {
+            return ['qty' => $asked, 'approved_qty' => $given, 'requested_qty' => $unit !== '' ? $asked : null, 'requested_unit' => $unit !== '' ? $unit : null, 'unit_ratio' => null];
+        }
+        $base = UomConverter::baseQty($given, $uom['unit_ratio']);
+        if (bccomp($base, '0', 2) <= 0) {
+            throw ValidationException::withMessages([$field => "{$label}: jumlahnya terlalu kecil dalam {$item->unit?->code}."]);
+        }
+
+        return ['qty' => UomConverter::baseQty($asked, $uom['unit_ratio']), 'approved_qty' => $base, 'requested_qty' => $asked, 'requested_unit' => $unit, 'unit_ratio' => $uom['unit_ratio']];
+    }
+
+    /** The unit a line is verified in: the correction given, else what was asked. */
+    private function askedUnit(ItemRequestLine $line, array $in): string
+    {
+        return mb_strtoupper(trim((string) ($in['unit'] ?? $line->requested_unit ?? $line->satuan ?? '')));
+    }
+
     /**
      * One requested item met by several Master Produk items: the line becomes one line per item, each
      * keeping the requester's own words and images (so approval groups them back under "buku"). Only
@@ -51,7 +93,7 @@ class ItemRequestService
      *
      * @param  list<array{item_id:int, qty:float|int|string}>  $picks
      */
-    private function split(ItemRequestLine $line, User $admin, array $picks): void
+    private function split(ItemRequestLine $line, User $admin, array $picks, string $unit): void
     {
         $asked = $line->requestedText();
         $total = round(array_sum(array_map(fn ($p) => (float) $p['qty'], $picks)), 2);
@@ -74,7 +116,8 @@ class ItemRequestService
                 $copy->deskripsi_peminta = $asked;
             });
             $target->matchTo($item);
-            $target->fill(['qty' => $i === 0 ? $qty + $rest : $qty, 'decision' => 'NPBG', 'approved_qty' => $qty, 'decided_by' => $admin->id, 'decided_at' => now()])->save();
+            $target->fill($this->inItemUnit($item, $unit, $i === 0 ? $qty + $rest : $qty, $qty, $asked, "lines.{$line->id}.items")
+                + ['decision' => 'NPBG', 'decided_by' => $admin->id, 'decided_at' => now()])->save();
             // the requester's images go with every part (own copies: one replaced never breaks the other)
             if ($i > 0) {
                 foreach ($images as $img) {
@@ -179,9 +222,9 @@ class ItemRequestService
      *         requester's words) and the quantity proposed (≤ asked; default as asked)
      * @param  array{pelanggan?:?string,tipe_npbg?:?string}  $npbg  header of the NPBG(s) made later
      */
-    public function process(ItemRequest $request, User $admin, array $lines, array $npbg): ItemRequest
+    public function process(ItemRequest $request, User $admin, array $lines, array $npbg, ?string $note = null): ItemRequest
     {
-        DB::transaction(function () use ($request, $admin, $lines, $npbg) {
+        DB::transaction(function () use ($request, $admin, $lines, $npbg, $note) {
             $request = ItemRequest::lockForUpdate()->findOrFail($request->id);
             if (! in_array($request->status, ['MENUNGGU', 'DIPROSES', 'PERLU_PERBAIKAN'], true)) {
                 throw ValidationException::withMessages(['status' => 'Request ini sudah '.ItemRequestApprovalService::label($request->status).'.']);
@@ -195,18 +238,22 @@ class ItemRequestService
             $request->fill([
                 'npbg_pelanggan' => mb_substr($pelanggan !== '' ? $pelanggan : ($request->divisi ?: (string) $request->requester_name), 0, 200),
                 'npbg_tipe' => mb_substr((string) ($npbg['tipe_npbg'] ?? $request->npbg_tipe ?? 'Non Penjualan'), 0, 20),
+                // admin gudang's note on the request, seen by the approvers and the requester
+                'verify_note' => trim((string) $note) !== '' ? mb_substr(trim((string) $note), 0, 1000) : null,
             ]);
             foreach ($open as $id => $line) {
                 $in = $lines[$id] ?? [];
                 // several Master Produk items for one requested item: one line per item (split() below)
                 if (! empty($in['items']) && count($in['items']) > 1) {
-                    $this->split($line, $admin, $in['items']);
+                    $this->shortReason($line, $in);
+                    $this->split($line, $admin, $in['items'], $this->askedUnit($line, $in));
 
                     continue;
                 }
                 if (! empty($in['items'])) {
-                    $in = ['item_id' => $in['items'][0]['item_id'], 'qty' => $in['items'][0]['qty']];
+                    $in = ['item_id' => $in['items'][0]['item_id'], 'qty' => $in['items'][0]['qty'], 'reason' => $in['reason'] ?? null, 'unit' => $in['unit'] ?? null];
                 }
+                $unit = $this->askedUnit($line, $in);
                 $itemId = ! empty($in['item_id']) ? (int) $in['item_id'] : $line->item_id;
                 // every line is a Master Produk item: a new one is added there first (Barang / Jasa, stock 0)
                 if (! $itemId) {
@@ -221,12 +268,14 @@ class ItemRequestService
                     throw ValidationException::withMessages(["lines.{$id}.item_id" => "{$item->description} nonaktif di Master Produk, aktifkan atau pilih barang lain."]);
                 }
                 $line->matchTo($item);
+                $this->shortReason($line, $in);
                 $qty = isset($in['qty']) && $in['qty'] !== '' && $in['qty'] !== null ? round((float) $in['qty'], 2) : (float) $line->qty;
                 if ($qty <= 0 || $qty > (float) $line->qty + 0.0001) {
                     throw ValidationException::withMessages(["lines.{$id}.qty" => "Jumlah {$line->deskripsi_barang} 1–".rtrim(rtrim(number_format((float) $line->qty, 2, ',', '.'), '0'), ',').' (yang diminta).']);
                 }
                 // NPBG = "from the warehouse"; whether it is given from stock or bought is decided after approval
-                $line->fill(['decision' => 'NPBG', 'approved_qty' => $qty, 'decided_by' => $admin->id, 'decided_at' => now()])->save();
+                $line->fill($this->inItemUnit($item, $unit, (float) $line->qty, $qty, $line->requestedText(), "lines.{$id}.item_id")
+                    + ['decision' => 'NPBG', 'decided_by' => $admin->id, 'decided_at' => now()])->save();
             }
             $request->update(['status' => self::statusOf($request->lines()->get()), 'processed_by' => $admin->id, 'processed_at' => now()]);
         });
@@ -241,12 +290,20 @@ class ItemRequestService
         return $request;
     }
 
+    /** Locked and checked again: admin gudang may be verifying it at the same moment (then it is not cancelled). */
     public function cancel(ItemRequest $request): ItemRequest
     {
-        if ($request->status !== 'MENUNGGU') {
-            throw ValidationException::withMessages(['status' => 'Request yang sudah diproses tidak bisa dibatalkan.']);
-        }
-        $request->update(['status' => 'DIBATALKAN']);
+        $request = DB::transaction(function () use ($request) {
+            $request = ItemRequest::lockForUpdate()->findOrFail($request->id);
+            if ($request->status !== 'MENUNGGU' || $request->lines()->whereNotNull('decision')->exists()) {
+                throw ValidationException::withMessages(['status' => 'Request yang sudah diproses tidak bisa dibatalkan.']);
+            }
+            $request->update(['status' => 'DIBATALKAN']);
+
+            return $request;
+        });
+        NotificationDispatcher::toPermission('item_request.process', 'request', 'info', "{$request->number} dibatalkan",
+            "{$request->requester_name} membatalkan request-nya.", "/item-requests/{$request->id}", $request->requester_id);
 
         return $request;
     }

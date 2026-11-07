@@ -59,6 +59,11 @@ class ItemRequestLine extends Model
      */
     public function matchTo(Item $item): self
     {
+        // the line takes the item's unit: what was asked stays until the verification converts it
+        if ($this->requested_unit === null && filled($this->satuan) && $item->unit?->code && mb_strtoupper(trim($this->satuan)) !== $item->unit->code) {
+            $this->fill(['requested_unit' => mb_strtoupper(trim($this->satuan)), 'requested_qty' => $this->qty]);
+        }
+
         return $this->fill([
             'item_id' => $item->id, 'kode_barang' => $item->code,
             'deskripsi_peminta' => $this->deskripsi_peminta ?? $this->deskripsi_barang,

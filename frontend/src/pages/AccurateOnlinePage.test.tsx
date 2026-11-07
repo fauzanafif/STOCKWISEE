@@ -50,10 +50,10 @@ describe('AccurateOnlinePage', () => {
     expect(await screen.findByText('GUDANG-PC1')).toBeInTheDocument()
     expect(screen.getByText('192.168.2.15')).toBeInTheDocument()
     expect(screen.getByText('00-11-22-33-44-55')).toBeInTheDocument()
-    expect(screen.getByText('Memakai Accurate')).toBeInTheDocument()
-    expect(screen.getByText('Accurate terbuka (lisensi)')).toBeInTheDocument()
+    expect(screen.getByText('Using Accurate')).toBeInTheDocument()
+    expect(screen.getByText('Accurate open (license)')).toBeInTheDocument()
     // view-only: no disconnect buttons
-    expect(screen.queryByRole('button', { name: /Putuskan/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Disconnect/ })).not.toBeInTheDocument()
   })
 
   it('disconnects all database connections of a PC after confirmation', async () => {
@@ -61,15 +61,15 @@ describe('AccurateOnlinePage', () => {
     renderWithProviders(<AccurateOnlinePage />)
 
     await screen.findByText('GUDANG-PC1')
-    const buttons = screen.getAllByRole('button', { name: /Putuskan/ })
+    const buttons = screen.getAllByRole('button', { name: /Disconnect/ })
     expect(buttons).toHaveLength(1) // only the PC that actually uses the database
     await userEvent.click(buttons[0])
 
-    const dialog = await screen.findByText('Putuskan koneksi Accurate?')
-    expect(screen.getByText(/belum disimpan/)).toBeInTheDocument()
-    await userEvent.type(screen.getByLabelText(/Alasan/), 'Accurate hang')
+    const dialog = await screen.findByText('Disconnect from Accurate?')
+    expect(screen.getByText(/not yet saved/)).toBeInTheDocument()
+    await userEvent.type(screen.getByLabelText(/Reason/), 'Accurate hang')
     const modal = dialog.closest('div[role="dialog"]') ?? document.body
-    await userEvent.click(within(modal as HTMLElement).getAllByRole('button', { name: /Putuskan/ }).at(-1)!)
+    await userEvent.click(within(modal as HTMLElement).getAllByRole('button', { name: /Disconnect/ }).at(-1)!)
 
     await waitFor(() =>
       expect(post).toHaveBeenCalledWith('/api/accurate/sessions/terminate', { remote_address: '192.168.2.15', remote_port: undefined, reason: 'Accurate hang' }),

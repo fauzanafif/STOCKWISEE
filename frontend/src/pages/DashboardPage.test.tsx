@@ -1,13 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { screen } from '@testing-library/react'
+import { fireEvent, screen } from '@testing-library/react'
 import { api } from '@/lib/api'
 import { renderWithProviders } from '@/test/utils'
 import { DashboardPage } from './DashboardPage'
 
 const summary = {
   cards: [
-    { key: 'aman', label: 'Status AMAN', value: 8912, tone: 'success' },
-    { key: 'po_open', label: 'PO berjalan', value: 81, tone: 'default' },
+    { key: 'safe', label: 'Status AMAN', value: 8912, tone: 'success' },
+    { key: 'po_open', label: 'Running POs', value: 81, tone: 'default' },
     { key: 'ppb_accurate_open', label: 'PPB terbuka (Accurate)', value: 417, tone: 'warning' },
   ],
   charts: { po_status: [{ name: 'RECEIVED', value: 1222 }] },
@@ -35,29 +35,33 @@ describe('DashboardPage', () => {
     mockApi([])
     renderWithProviders(<DashboardPage />)
 
-    expect(await screen.findByText('PO berjalan')).toBeInTheDocument()
+    expect(await screen.findByText('Running POs')).toBeInTheDocument()
     // clearer wording than the API label: these are PPB lines still waiting for goods
-    expect(screen.getByText('Baris PPB menunggu barang').closest('a')).toHaveAttribute('href', '/ppb')
-    expect(screen.getByText('PO berjalan').closest('a')).toHaveAttribute('href', '/purchase-orders')
+    expect(screen.getByText('Purchase Request rows waiting for items').closest('a')).toHaveAttribute('href', '/ppb')
+    expect(screen.getByText('Running POs').closest('a')).toHaveAttribute('href', '/purchase-orders')
   })
 
-  it('groups the dashboard into sections with jump links', async () => {
+  it('shows one tab at a time: the summary first, the analytics on their own tabs', async () => {
     mockApi([])
     renderWithProviders(<DashboardPage />)
 
-    expect(await screen.findByText('PO berjalan')).toBeInTheDocument()
-    const nav = screen.getByRole('navigation', { name: 'Bagian dashboard' })
-    for (const label of ['Kondisi Stok', 'Pengadaan', 'Tracking']) {
+    expect(await screen.findByText('Running POs')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'To do' })).toBeInTheDocument()
+    const nav = screen.getByRole('navigation', { name: 'Dashboard sections' })
+    for (const label of ['Summary', 'Stock Condition', 'Procurement', 'Tracking']) {
       expect(nav).toHaveTextContent(label)
     }
-    expect(screen.getByRole('heading', { name: 'Pengadaan' })).toBeInTheDocument()
+    // another tab replaces the summary (no endless page)
+    fireEvent.click(screen.getByRole('button', { name: 'Procurement' }))
+    expect(screen.queryByText('Running POs')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Procurement' })).toHaveAttribute('aria-current', 'page')
   })
 
   it('hides the old inventory status cards for every role (the inventory section shows them correctly)', async () => {
     mockApi([])
     renderWithProviders(<DashboardPage />)
 
-    expect(await screen.findByText('PO berjalan')).toBeInTheDocument()
+    expect(await screen.findByText('Running POs')).toBeInTheDocument()
     expect(screen.queryByText('Status AMAN')).not.toBeInTheDocument()
   })
 })

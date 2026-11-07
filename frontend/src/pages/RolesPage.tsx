@@ -23,24 +23,24 @@ import { confirmDialog } from '@/components/ui/confirm'
 
 /** The permission groups by the features they belong to, in the menu's order. */
 const GROUP_LABEL: Record<string, string> = {
-  profile: 'Profil & notifikasi',
-  item_request: 'Request Barang & Approval',
+  profile: 'Profile & notifications',
+  item_request: 'Item Request & Approval',
   npbg: 'NPBG',
-  npbg_verification: 'Klarifikasi barang NPBG',
-  ppb: 'PPB & Draft PPB',
+  npbg_verification: 'Delivery Order item clarification',
+  ppb: 'Purchase Request & Draft Purchase Request',
   purchasing: 'Purchase Order & RFQ',
-  ri: 'RI (penerimaan barang)',
-  purchase_return: 'Retur Pembelian',
-  stock_opname: 'Stock Opname',
-  item_inventory: 'Master Produk, stok & Kartu Stock',
-  important_request: 'Important Request (instruksi & tugas)',
-  tracking: 'Tracking & Analytic',
-  dashboard_report: 'Dashboard, laporan & export',
+  ri: 'Receipt',
+  purchase_return: 'Return',
+  stock_opname: 'Physical Inventory',
+  item_inventory: 'Product Master, stock & Stock Card',
+  important_request: 'Important Request (instructions & tasks)',
+  tracking: 'Tracking & Analytics',
+  dashboard_report: 'Dashboard, reports & export',
   master_data: 'Master data',
   accurate_sync: 'Sync Accurate',
-  accurate_session: 'Koneksi Accurate',
-  user_management: 'User & role',
-  system: 'Sistem',
+  accurate_session: 'Accurate Connection',
+  user_management: 'Users & roles',
+  system: 'System',
 }
 const GROUP_ORDER = Object.keys(GROUP_LABEL)
 const groupLabel = (g: string) => GROUP_LABEL[g] ?? g.replace(/_/g, ' ')
@@ -101,19 +101,19 @@ function RoleFormModal({ role, onClose }: { role?: RoleRow; onClose: () => void 
   }
 
   return (
-    <Modal
+    <Modal page form
       open
       onClose={onClose}
-      title={readOnly ? `Role ${role.name} (terkunci)` : isEdit ? `Ubah Role — ${role.name}` : 'Tambah Role'}
-      description={readOnly ? 'Super Admin selalu punya semua hak akses dan tidak bisa diubah.' : undefined}
+      title={readOnly ? `Role ${role.name} (locked)` : isEdit ? `Edit Role — ${role.name}` : 'Add Role'}
+      description={readOnly ? 'Super Admin always has all permissions and cannot be changed.' : undefined}
       className="max-w-3xl"
       footer={
         readOnly ? (
-          <Button variant="outline" size="sm" onClick={onClose}>Tutup</Button>
+          <Button variant="outline" size="sm" onClick={onClose}>Close</Button>
         ) : (
           <>
-            <Button variant="outline" size="sm" onClick={onClose}>Batal</Button>
-            <Button size="sm" disabled={create.isPending || update.isPending || !name.trim()} onClick={submit}>Simpan</Button>
+            <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
+            <Button size="sm" disabled={create.isPending || update.isPending || !name.trim()} onClick={submit}>Save</Button>
           </>
         )
       }
@@ -122,24 +122,24 @@ function RoleFormModal({ role, onClose }: { role?: RoleRow; onClose: () => void 
         {!readOnly && (
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1">
-              <Label htmlFor="r-name">Nama role *</Label>
+              <Label htmlFor="r-name">Role name *</Label>
               <Input id="r-name" value={name} onChange={(e) => setName(e.target.value)} />
             </div>
             {!isEdit ? (
               <div className="space-y-1">
-                <Label htmlFor="r-slug">Kode role (opsional)</Label>
-                <Input id="r-slug" placeholder="otomatis dari nama, mis. staf_gudang" value={slug} onChange={(e) => setSlug(e.target.value.toLowerCase())} />
+                <Label htmlFor="r-slug">Role code (optional)</Label>
+                <Input id="r-slug" placeholder="automatic from name, e.g. warehouse_staff" value={slug} onChange={(e) => setSlug(e.target.value.toLowerCase())} />
               </div>
             ) : (
               <div className="space-y-1">
-                <Label>Kode role</Label>
-                <div className="flex h-10 items-center font-mono text-sm text-muted-foreground">{role.slug}</div>
+                <Label>Role code</Label>
+                <div className="flex h-10 items-center text-sm text-muted-foreground">{role.slug}</div>
               </div>
             )}
             <div className="space-y-1 sm:col-span-2">
-              <Label htmlFor="r-desc">Tugas role (satu poin per baris)</Label>
+              <Label htmlFor="r-desc">Role duties (one point per line)</Label>
               <Textarea id="r-desc" rows={4} maxLength={255} value={description} onChange={(e) => setDescription(e.target.value)}
-                placeholder={'mis.\nVerifikasi Request Barang\nKelola Master Produk'} />
+                placeholder={'e.g.\nVerify Item Requests\nManage Product Master'} />
               <p className="text-right text-xs text-muted-foreground">{description.length}/255</p>
             </div>
           </div>
@@ -147,15 +147,15 @@ function RoleFormModal({ role, onClose }: { role?: RoleRow; onClose: () => void 
 
         {isEdit && role.is_system && !readOnly && (
           <p className="rounded-md bg-amber-500/10 p-2 text-xs text-amber-700 dark:text-amber-400">
-            Ini role bawaan sistem. Perubahan hak akses berlaku langsung, tetapi akan kembali ke bawaan jika seeder RBAC dijalankan ulang oleh developer.
+            This is a built-in role. Permission changes apply right away, but return to the default if the RBAC seeder is run again by a developer.
           </p>
         )}
 
         {!readOnly && (
           <div className="space-y-2">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <Label>Hak akses ({selected.size} dipilih)</Label>
-              <Input placeholder="Cari hak akses…" className="h-8 max-w-xs" value={filter} onChange={(e) => setFilter(e.target.value)} />
+              <Label>Permissions ({selected.size} selected)</Label>
+              <Input placeholder="Search permissions…" className="h-8 max-w-xs" value={filter} onChange={(e) => setFilter(e.target.value)} />
             </div>
             <div className="max-h-[50vh] space-y-3 overflow-y-auto rounded-md border p-3">
               {visibleGroups.map(([group, items]) => {
@@ -173,7 +173,7 @@ function RoleFormModal({ role, onClose }: { role?: RoleRow; onClose: () => void 
                           <input type="checkbox" className="mt-0.5" checked={selected.has(p.slug)} onChange={() => toggle(p.slug)} />
                           <span>
                             {p.name}
-                            <span className="block font-mono text-[10px] text-muted-foreground">{p.slug}</span>
+                            <span className="block text-[10px] text-muted-foreground">{p.slug}</span>
                           </span>
                         </label>
                       ))}
@@ -181,7 +181,7 @@ function RoleFormModal({ role, onClose }: { role?: RoleRow; onClose: () => void 
                   </div>
                 )
               })}
-              {visibleGroups.length === 0 && <p className="text-sm text-muted-foreground">Tidak ada hak akses yang cocok.</p>}
+              {visibleGroups.length === 0 && <p className="text-sm text-muted-foreground">No matching permissions.</p>}
             </div>
           </div>
         )}
@@ -200,7 +200,7 @@ export function RolesPage() {
   const [editing, setEditing] = useState<RoleRow | 'new' | null>(null)
 
   async function remove(r: RoleRow) {
-    if (!(await confirmDialog(`Hapus role "${r.name}"?`))) return
+    if (!(await confirmDialog(`Delete role "${r.name}"?`))) return
     del.mutate(r.id)
   }
 
@@ -214,24 +214,24 @@ export function RolesPage() {
             {r.is_locked && <Lock className="size-3 text-muted-foreground" />}
             {r.name}
           </div>
-          <div className="font-mono text-xs text-muted-foreground">{r.slug}</div>
+          <div className="text-[13px] text-muted-foreground">{r.slug}</div>
         </div>
       ),
     },
-    { key: 'desc', header: 'Tugas', cell: (r) => <Points text={r.description} /> },
-    { key: 'type', header: 'Jenis', cell: (r) => (r.is_system ? <Badge variant="neutral">Bawaan</Badge> : <Badge variant="default">Custom</Badge>) },
-    { key: 'perm', header: 'Hak akses', cell: (r) => <span className="tabular-nums">{r.is_locked ? 'Semua' : r.permissions.length}</span> },
-    { key: 'users', header: 'Pengguna', cell: (r) => <span className="tabular-nums">{r.users_count}</span> },
+    { key: 'desc', header: 'Tasks', cell: (r) => <Points text={r.description} /> },
+    { key: 'type', header: 'Type', cell: (r) => (r.is_system ? <Badge variant="neutral">Built-in</Badge> : <Badge variant="default">Custom</Badge>) },
+    { key: 'perm', header: 'Permissions', cell: (r) => <span className="tabular-nums">{r.is_locked ? 'All' : r.permissions.length}</span> },
+    { key: 'users', header: 'Users', cell: (r) => <span className="tabular-nums">{r.users_count}</span> },
     {
       key: 'actions',
       header: '',
       cell: (r) => (
         <div className="flex justify-end gap-1">
-          <Button size="sm" variant="ghost" title={canManage && !r.is_locked ? 'Ubah' : 'Lihat'} onClick={() => setEditing(r)}>
+          <Button size="sm" variant="ghost" title={canManage && !r.is_locked ? 'Edit' : 'View'} onClick={() => setEditing(r)}>
             <Pencil className="size-4" />
           </Button>
           {canManage && !r.is_system && (
-            <Button size="sm" variant="ghost" title="Hapus" onClick={() => remove(r)} disabled={del.isPending}>
+            <Button size="sm" variant="ghost" title="Delete" onClick={() => remove(r)} disabled={del.isPending}>
               <Trash2 className="size-4" />
             </Button>
           )}
@@ -243,12 +243,12 @@ export function RolesPage() {
   return (
     <div className="space-y-4">
       <PageHeader
-        title="Role & Hak Akses"
-        subtitle="Atur role, tugasnya, dan hak akses yang dimiliki setiap role"
+        title="Roles & Permissions"
+        subtitle="Manage roles, their duties, and the access each role has"
         icon={<ShieldHalf className="size-5" />}
-        actions={canManage ? <Button size="sm" onClick={() => setEditing('new')}><Plus className="size-4" /> Tambah Role</Button> : undefined}
+        actions={canManage ? <Button size="sm" onClick={() => setEditing('new')}><Plus className="size-4" /> Add Role</Button> : undefined}
       />
-      <DataTable columns={columns} rows={data ?? []} rowKey={(r) => r.id} isLoading={isLoading} emptyText="Belum ada role." />
+      <DataTable columns={columns} rows={data ?? []} rowKey={(r) => r.id} isLoading={isLoading} emptyText="No roles yet." />
       {editing && (
         canManage || editing === 'new'
           ? <RoleFormModal role={editing === 'new' ? undefined : editing} onClose={() => setEditing(null)} />
@@ -268,17 +268,17 @@ function RoleViewModal({ role, onClose }: { role: RoleRow; onClose: () => void }
     .map(([g, items]) => [g, items.filter((p) => role.permissions.includes(p.slug))] as [string, PermissionItem[]])
     .filter(([, items]) => items.length > 0)
   return (
-    <Modal open onClose={onClose} title={`Role ${role.name}`} className="max-w-2xl" footer={<Button variant="outline" size="sm" onClick={onClose}>Tutup</Button>}>
+    <Modal open onClose={onClose} title={`Role ${role.name}`} className="max-w-2xl" footer={<Button variant="outline" size="sm" onClick={onClose}>Close</Button>}>
       <div className="space-y-4">
         <div>
-          <div className="mb-1 text-sm font-semibold">Tugas</div>
+          <div className="mb-1 text-sm font-semibold">Tasks</div>
           <Points text={role.description} className="list-disc space-y-0.5 pl-5 text-sm" />
         </div>
         {role.is_locked ? (
-          <p className="text-sm">Super Admin memiliki semua hak akses.</p>
+          <p className="text-sm">Super Admin has all permissions.</p>
         ) : (
           <div className="max-h-[50vh] space-y-3 overflow-y-auto rounded-md border p-3">
-            <div className="text-sm font-semibold">Hak akses ({role.permissions.length})</div>
+            <div className="text-sm font-semibold">Permissions ({role.permissions.length})</div>
             {byGroup.length > 0 ? byGroup.map(([g, items]) => (
               <div key={g}>
                 <div className="text-xs font-medium text-muted-foreground">{groupLabel(g)}</div>
@@ -287,7 +287,7 @@ function RoleViewModal({ role, onClose }: { role: RoleRow; onClose: () => void }
             )) : (
               <div className="flex flex-wrap gap-1">{role.permissions.map((p) => <Badge key={p} variant="neutral">{p}</Badge>)}</div>
             )}
-            {role.permissions.length === 0 && <p className="text-sm text-muted-foreground">Tidak ada hak akses.</p>}
+            {role.permissions.length === 0 && <p className="text-sm text-muted-foreground">No permissions.</p>}
           </div>
         )}
       </div>

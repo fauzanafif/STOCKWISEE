@@ -9,10 +9,10 @@ export function usagePeriodPresets(): Array<{ label: string; period: UsagePeriod
   const today = new Date()
   const back = (months: number) => iso(new Date(today.getFullYear(), today.getMonth() - months, today.getDate() + 1))
   return [
-    { label: 'Bulan ini', period: { from: iso(new Date(today.getFullYear(), today.getMonth(), 1)), to: iso(today) } },
-    { label: '3 bulan', period: { from: back(3), to: iso(today) } },
-    { label: '12 bulan', period: { from: back(12), to: iso(today) } },
-    { label: 'Semua', period: {} },
+    { label: 'This month', period: { from: iso(new Date(today.getFullYear(), today.getMonth(), 1)), to: iso(today) } },
+    { label: '3 months', period: { from: back(3), to: iso(today) } },
+    { label: '12 months', period: { from: back(12), to: iso(today) } },
+    { label: 'All', period: {} },
   ]
 }
 
@@ -21,13 +21,13 @@ export function UsagePeriodFilter({ value, onChange, className }: { value: Usage
   const same = (p: UsagePeriod) => (p.from ?? '') === (value.from ?? '') && (p.to ?? '') === (value.to ?? '')
   return (
     <div className={cn('flex flex-wrap items-end gap-2 rounded-lg border bg-card p-3', className)}>
-      <div className="w-full text-xs font-medium text-muted-foreground sm:w-auto sm:self-center">Periode NPBG / PPB</div>
+      <div className="w-full text-xs font-medium text-muted-foreground sm:w-auto sm:self-center">Delivery Order / Purchase Request period</div>
       <label className="space-y-1 text-xs text-muted-foreground">
-        Dari tanggal
+        From date
         <Input type="date" className="h-9" value={value.from ?? ''} max={value.to || undefined} onChange={(e) => onChange({ ...value, from: e.target.value || undefined })} />
       </label>
       <label className="space-y-1 text-xs text-muted-foreground">
-        Sampai tanggal
+        To date
         <Input type="date" className="h-9" value={value.to ?? ''} min={value.from || undefined} onChange={(e) => onChange({ ...value, to: e.target.value || undefined })} />
       </label>
       <div className="inline-flex h-9 flex-wrap items-center gap-0.5 rounded-lg border bg-card p-0.5">
@@ -46,11 +46,11 @@ export function UsagePeriodFilter({ value, onChange, className }: { value: Usage
   )
 }
 
-/** "1 Sep 2026 – 30 Sep 2026" / "s/d 30 Sep 2026" / "semua periode". */
+/** "1 Sep 2026 – 30 Sep 2026" / "s/d 30 Sep 2026" / "all periods". */
 export function usagePeriodLabel(p: UsagePeriod): string {
-  const f = (d: string) => new Date(d + 'T00:00:00').toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })
+  const f = (d: string) => new Date(d + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
   if (p.from && p.to) return `${f(p.from)} – ${f(p.to)}`
   if (p.from) return `sejak ${f(p.from)}`
   if (p.to) return `s/d ${f(p.to)}`
-  return 'semua periode'
+  return 'all periods'
 }

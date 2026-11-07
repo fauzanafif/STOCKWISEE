@@ -13,7 +13,7 @@ import { Select } from '@/components/ui/select'
 import { FilterBar } from '@/components/FilterBar'
 import { ColumnMenu, useHiddenColumns, visibleColumns } from '@/components/ColumnVisibility'
 
-const fmtDate = (v: string | null) => (v ? new Date(v).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : '-')
+const fmtDate = (v: string | null) => (v ? new Date(v).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '-')
 
 export function ReturnStatusBadge({ status }: { status: ReturnStatus }) {
   const s = RETURN_STATUS[status]
@@ -35,29 +35,29 @@ const columns: Column<PurchaseReturn>[] = [
   },
   {
     key: 'retur',
-    header: 'Retur',
+    header: 'Return',
     cell: (r) => (
       <div className="leading-tight">
-        <div className="whitespace-nowrap font-mono text-xs">{r.number}</div>
-        <div className="whitespace-nowrap text-xs text-muted-foreground">dari {r.no_ri} · {r.lines_count} barang</div>
+        <div className="whitespace-nowrap text-[13px]">{r.number}</div>
+        <div className="whitespace-nowrap text-xs text-muted-foreground">from {r.no_ri} · {r.lines_count} items</div>
       </div>
     ),
   },
   {
     key: 'barang',
-    header: 'Barang diretur',
+    header: 'Items returned',
     cell: (r) => (
       <ul className="space-y-0.5 text-xs">
         {(r.items ?? []).slice(0, 3).map((it, i) => (
           <li key={i} className="flex justify-between gap-3"><span className="min-w-0 truncate">{it.deskripsi_barang}</span><span className="shrink-0 tabular-nums">{fmtQty(it.qty)} {it.satuan ?? ''}</span></li>
         ))}
-        {(r.items?.length ?? 0) > 3 && <li className="text-muted-foreground">+{r.items!.length - 3} barang lain</li>}
+        {(r.items?.length ?? 0) > 3 && <li className="text-muted-foreground">+{r.items!.length - 3} other items</li>}
       </ul>
     ),
     className: 'max-w-xs',
   },
-  { key: 'qty', header: 'Qty Retur', className: 'text-right', cell: (r) => <span className="font-semibold tabular-nums">{fmtQty(r.total_qty)}</span> },
-  { key: 'tgl', header: 'Tanggal', cell: (r) => <span className="whitespace-nowrap text-muted-foreground">{fmtDate(r.tgl_retur)}</span> },
+  { key: 'qty', header: 'Return Qty', className: 'text-right', cell: (r) => <span className="font-semibold tabular-nums">{fmtQty(r.total_qty)}</span> },
+  { key: 'tgl', header: 'Date', cell: (r) => <span className="whitespace-nowrap text-muted-foreground">{fmtDate(r.tgl_retur)}</span> },
   { key: 'status', header: 'Status', cell: (r) => <ReturnStatusBadge status={r.status} /> },
 ]
 
@@ -75,27 +75,27 @@ export function PurchaseReturnListPage() {
 
   return (
     <div className="space-y-4">
-      <PageHeader title="Retur Pembelian" icon={<Undo2 className="size-5" />}
-        actions={hasPermission('purchase_return.manage') && <Button size="sm" onClick={() => navigate('/purchase-returns/new')}><Plus className="size-4" /> Buat Retur</Button>} />
+      <PageHeader title="Return" icon={<Undo2 className="size-5" />}
+        actions={hasPermission('purchase_return.manage') && <Button size="sm" onClick={() => navigate('/purchase-returns/new')}><Plus className="size-4" /> Create Return</Button>} />
 
-      <FilterBar end={<div className="max-md:hidden"><ColumnMenu columns={columns} hiddenCols={hiddenCols} onToggle={toggleCol} alwaysVisible={['vendor']} hint="Pilih kolom yang tampil di tabel." /></div>}>
-        <Input className="w-full sm:max-w-sm" placeholder="Cari vendor, no retur / RI, barang…" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1) }} />
+      <FilterBar end={<div className="max-md:hidden"><ColumnMenu columns={columns} hiddenCols={hiddenCols} onToggle={toggleCol} alwaysVisible={['vendor']} hint="Select the columns shown in the table." /></div>}>
+        <Input className="w-full sm:max-w-sm" placeholder="Search vendor, return / Receipt no., item…" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1) }} />
         <div className="w-full sm:w-52"><Select aria-label="Status" value={status} onChange={(e) => { setStatus(e.target.value); setPage(1) }}>
-          <option value="">Semua status</option>
+          <option value="">All statuses</option>
           {Object.entries(RETURN_STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
         </Select></div>
         {filtered && <Button variant="ghost" size="sm" className="h-10" onClick={() => { setSearch(''); setStatus(''); setPage(1) }}><X className="size-4" /> Reset</Button>}
       </FilterBar>
 
       <div className="space-y-2 md:hidden">
-        {isLoading && rows.length === 0 && <p className="py-6 text-center text-sm text-muted-foreground">Memuat…</p>}
-        {!isLoading && rows.length === 0 && <p className="py-6 text-center text-sm text-muted-foreground">{filtered ? 'Tidak ada retur untuk filter ini.' : 'Belum ada retur pembelian.'}</p>}
+        {isLoading && rows.length === 0 && <p className="py-6 text-center text-sm text-muted-foreground">Loading…</p>}
+        {!isLoading && rows.length === 0 && <p className="py-6 text-center text-sm text-muted-foreground">{filtered ? 'No returns for this filter.' : 'No purchase returns yet.'}</p>}
         {rows.map((r) => (
           <button key={r.id} type="button" onClick={() => navigate(`/purchase-returns/${r.id}`)} className="block w-full rounded-lg border bg-card p-3 text-left active:bg-muted/50">
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
                 <div className="font-medium">{r.vendor ?? '-'}</div>
-                <div className="text-xs text-muted-foreground">{r.lines_count} barang · qty {fmtQty(r.total_qty)} · {fmtDate(r.tgl_retur)}</div>
+                <div className="text-xs text-muted-foreground">{r.lines_count} items · qty {fmtQty(r.total_qty)} · {fmtDate(r.tgl_retur)}</div>
                 {(r.items ?? []).slice(0, 2).map((it, i) => <div key={i} className="truncate text-xs">{it.deskripsi_barang} · {fmtQty(it.qty)} {it.satuan ?? ''}</div>)}
               </div>
               <ReturnStatusBadge status={r.status} />
@@ -108,7 +108,7 @@ export function PurchaseReturnListPage() {
       <div className="hidden md:block">
         <DataTable columns={visibleColumns(columns, hiddenCols, ['vendor'])} rows={rows} footer={footer} scrollMemoryKey="purchase-returns" rowKey={(r) => r.id} isLoading={isLoading}
           onRowClick={(r) => navigate(`/purchase-returns/${r.id}`)}
-          emptyText={filtered ? 'Tidak ada retur untuk filter ini.' : 'Belum ada retur pembelian.'} />
+          emptyText={filtered ? 'No returns for this filter.' : 'No purchase returns yet.'} />
       </div>
     </div>
   )

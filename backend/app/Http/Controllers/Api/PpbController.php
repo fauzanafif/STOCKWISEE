@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\PpbResource;
 use App\Models\Ppb;
+use App\Models\PpbDraftLine;
 use App\Services\Export\DocumentPrintRenderer;
 use App\Services\PpbApprovalService;
 use App\Support\PpbLineStatus;
@@ -233,7 +234,11 @@ class PpbController extends Controller
             [$found, $hard] = \App\Support\DuplicateGuard::ppb($data);
             \App\Support\DuplicateGuard::refuse($found, $allowDuplicate, $hard);
 
+            $item = filled($data['kode_barang'] ?? null) ? \App\Models\Item::where('code', $data['kode_barang'])->first() : null;
+            $uom = app(\App\Services\UomConverter::class)->snapshot($item, $data['satuan'] ?? null, $data['deskripsi_barang'], 'satuan');
+
             return Ppb::create($data + [
+                'unit_ratio' => $uom['unit_ratio'], 'base_satuan' => $uom['base_satuan'],
                 'status' => 'OPEN',
                 'line_status' => PpbLineStatus::of($data['kuantitas'], null, false),
                 'is_amend' => false,
@@ -280,7 +285,9 @@ class PpbController extends Controller
             'pageHeightMm' => 147,
             'offsetXMm' => (float) $request->input('offset_x', 0),
             'offsetYMm' => (float) $request->input('offset_y', 0),
-            'autoPageSize' => $request->string('page_size', 'exact')->value() === 'auto',
+            'autoPageSize' => $request->string('page_size', 'a4')->value() === 'auto',
+            'fitA4' => $request->string('page_size', 'a4')->value() === 'a4',
+            'full' => $request->string('mode', 'full')->value() !== 'data',
             'texts' => [
                 ['x' => 28.6, 'y' => 6.3, 'w' => 72, 'text' => 'PT SURYA INTI GAS', 'size' => 9, 'bold' => true, 'static' => true],
                 ['x' => 122.8, 'y' => 5.3, 'w' => 72, 'h' => 16.9, 'text' => "PERMINTAAN PEMBELIAN\nBARANG (PPB)", 'size' => 9, 'bold' => true, 'align' => 'center', 'static' => true],
@@ -323,6 +330,33 @@ class PpbController extends Controller
         ];
     }
 
+    /**
+     * Where each line of a STOCKWISE PPB came from (its Draft PPB line): a Request Barang, or Safety Stock
+     * (a restock draft) — `reference` = {type, label, to, hint}; null for Accurate's / manual PPBs.
+     *
+     * @param  \Illuminate\Support\Collection<int, Ppb>  $rows
+     */
+    private static function withReference($rows): array
+    {
+        $src = PpbDraftLine::query()->whereIn('ppb_id', $rows->pluck('id'))
+            ->with('requestLine:id,item_request_id', 'requestLine.request:id,number', 'draft:id,number,source')
+            ->get()->keyBy('ppb_id');
+
+        return $rows->map(function (Ppb $p) use ($src) {
+            $d = $src[$p->id] ?? null;
+            $req = $d?->requestLine?->request;
+            $ref = match (true) {
+                $d === null => null,
+                $req !== null => ['type' => 'REQUEST', 'label' => $req->number, 'to' => "/item-requests/{$req->id}", 'hint' => 'Kekurangan Request Barang'],
+                $d->draft?->source === 'RESTOCK' => ['type' => 'SAFETY_STOCK', 'label' => 'Safety stock', 'to' => "/ppb/drafts/{$d->ppb_draft_id}",
+                    'hint' => trim(($d->draft?->number ?? '').($d->basis ? " · {$d->basis}" : ''), ' ·')],
+                default => ['type' => 'DRAFT', 'label' => $d->draft?->number ?? 'Draft PPB', 'to' => "/ppb/drafts/{$d->ppb_draft_id}", 'hint' => 'Draft PPB'],
+            };
+
+            return $p->only('id', 'kode_barang', 'deskripsi_barang', 'kuantitas', 'satuan', 'peminta', 'catatan_baris') + ['reference' => $ref];
+        })->values()->all();
+    }
+
     public function show(Ppb $ppb): JsonResponse
     {
         $ppb->load('poItems:id,accurate_ppb_id,purchase_order_id,qty,qty_received', 'poItems.purchaseOrder:id,number');
@@ -344,8 +378,8 @@ class PpbController extends Controller
             'approval_po' => $ppb->no_ppb ? PpbApprovalService::poEntry($ppb->no_ppb)?->only('id', 'number') : null,
             'document_lines' => $ppb->no_ppb ? Ppb::where('no_ppb', $ppb->no_ppb)->count() : 1,
             // every line of the PPB document — the approval covers all of them, so the approver sees them all
-            'document_items' => $ppb->no_ppb ? Ppb::where('no_ppb', $ppb->no_ppb)->orderBy('accurate_seq')->orderBy('id')
-                ->get(['id', 'kode_barang', 'deskripsi_barang', 'kuantitas', 'satuan', 'peminta', 'catatan_baris']) : [],
+            'document_items' => $ppb->no_ppb ? self::withReference(Ppb::where('no_ppb', $ppb->no_ppb)->orderBy('accurate_seq')->orderBy('id')
+                ->get(['id', 'kode_barang', 'deskripsi_barang', 'kuantitas', 'satuan', 'peminta', 'catatan_baris'])) : [],
         ]]);
     }
 }

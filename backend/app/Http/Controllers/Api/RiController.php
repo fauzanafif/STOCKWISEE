@@ -13,7 +13,10 @@ use App\Services\Export\DocumentPrintRenderer;
 use App\Services\Inventory\StockLedgerService;
 use App\Services\ItemRequestFulfillmentService;
 use App\Services\PurchaseOrderService;
+use App\Services\RiSerialExcel;
+use App\Services\UomConverter;
 use App\Services\Tracking\UsedReturnSheets;
+use App\Support\RiSerials;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -119,7 +122,7 @@ class RiController extends Controller
      */
     public function poOrders(Request $request): JsonResponse
     {
-        $q = \App\Models\PurchaseOrder::query()->with('vendor:id,name', 'items.vendor:id,name', 'items.item:id,code', 'items.unit:id,code', 'items.approvedPpb:id,no_ppb', 'items.accuratePpb:id,no_ppb')
+        $q = \App\Models\PurchaseOrder::query()->with('vendor:id,name', 'items.vendor:id,name', 'items.item', 'items.item.unit', 'items.unit', 'items.approvedPpb:id,no_ppb', 'items.accuratePpb:id,no_ppb')
             ->whereNull('accurate_po_id')->whereIn('status', ['APPROVED', 'SENT', 'DIBELI', 'PARTIAL_RECEIVED'])
             ->whereHas('items', fn ($i) => $i->whereColumn('qty_received', '<', 'qty'));
         foreach (preg_split('/\s+/', $request->string('search')->trim()->value(), -1, PREG_SPLIT_NO_EMPTY) as $w) {
@@ -139,8 +142,36 @@ class RiController extends Controller
                 'no_ppb' => $l->approvedPpb?->no_ppb ?? $l->accuratePpb?->no_ppb,
                 'qty' => (float) $l->qty, 'received' => (float) $l->qty_received, 'remaining' => max(0, round((float) $l->qty - (float) $l->qty_received, 2)),
                 'unit_price' => (float) $l->unit_price,
-            ]),
+            ] + $this->lineConversion($l)),
         ])]);
+    }
+
+    /** What one unit of this PO line makes in stock, for the form to show before saving. */
+    private function lineConversion(PurchaseOrderItem $l): array
+    {
+        try {
+            // the ratio it was ordered at, once there is one
+            $ratio = $l->unit_ratio ?? app(UomConverter::class)->documentRatio($l->item, $l->unit);
+
+            return ['unit_ratio' => (float) $ratio, 'base_unit' => UomConverter::isOne($ratio) ? null : ($l->base_unit ?? $l->item?->unit?->code), 'unit_problem' => null];
+        } catch (ValidationException $e) {
+            return ['unit_ratio' => 1.0, 'base_unit' => null, 'unit_problem' => collect($e->errors())->flatten()->first()];
+        }
+    }
+
+    /** The ratio a line is received at; without one the goods cannot be counted, so the RI stops here. */
+    private function receiptRatio(?Item $item, ?\App\Models\Unit $unit, float $qty, string $label, string $field): string
+    {
+        try {
+            $ratio = app(UomConverter::class)->documentRatio($item, $unit);
+        } catch (ValidationException $e) {
+            throw ValidationException::withMessages([$field => "{$label}: ".collect($e->errors())->flatten()->first().' Atur di menu UOM, tab Per item.']);
+        }
+        if (bccomp(UomConverter::baseQty($qty, $ratio), '0', 2) <= 0) {
+            throw ValidationException::withMessages([$field => "{$label}: jumlahnya terlalu kecil untuk tercatat di stok ({$item?->unit?->code})."]);
+        }
+
+        return $ratio;
     }
 
     /**
@@ -161,6 +192,9 @@ class RiController extends Controller
             'lines.*.purchase_order_item_id' => ['required', 'integer', 'distinct', 'exists:purchase_order_items,id'],
             'lines.*.qty' => ['nullable', 'numeric', 'min:0'],
             'lines.*.no_seri' => ['nullable', 'string'],
+            // one per unit received, all or none
+            'lines.*.serials' => ['nullable', 'array', 'max:'.RiSerialExcel::MAX_ROWS],
+            'lines.*.serials.*' => ['nullable', 'string', 'max:100'],
             // proof per item: 1 to 3 photos of each item received
             'lines.*.photos' => ['nullable', 'array', 'max:3'],
             'lines.*.photos.*' => ['required', 'string', 'max:12000000'],
@@ -177,7 +211,7 @@ class RiController extends Controller
             throw ValidationException::withMessages(['lines' => 'Isi jumlah yang diterima minimal untuk satu barang.']);
         }
         $po = \App\Models\PurchaseOrder::with('vendor:id,name')->findOrFail($data['purchase_order_id']);
-        $items = PurchaseOrderItem::with('vendor:id,name', 'item:id,code', 'unit:id,code', 'approvedPpb:id,no_ppb', 'accuratePpb:id,no_ppb')
+        $items = PurchaseOrderItem::with('vendor:id,name', 'item', 'item.unit', 'unit', 'approvedPpb:id,no_ppb', 'accuratePpb:id,no_ppb')
             ->where('purchase_order_id', $po->id)->whereIn('id', $lines->pluck('purchase_order_item_id'))->get()->keyBy('id');
         if ($items->count() !== $lines->count()) {
             throw ValidationException::withMessages(['lines' => 'Ada barang yang bukan dari PO ini.']);
@@ -196,18 +230,32 @@ class RiController extends Controller
             $no = $this->numbers->next('RI', 'MANUAL');
             $warehouseId = Warehouse::query()->orderBy('id')->value('id');
             $first = null;
+            $seen = [];
             foreach ($lines as $l) {
                 $line = $items[$l['purchase_order_item_id']];
                 $qty = round((float) $l['qty'], 2);
+                $serials = RiSerials::clean($l['serials'] ?? null, $qty, $line->description_raw);
+                // the same item on two lines of this RI: still one serial per unit
+                $sameItem = $line->item?->code ?? mb_strtolower($line->description_raw);
+                if ($twice = RiSerials::firstRepeated([...($seen[$sameItem] ?? []), ...$serials])) {
+                    throw ValidationException::withMessages(['serials' => "{$line->description_raw}: nomor seri {$twice} ditulis lebih dari sekali."]);
+                }
+                $seen[$sameItem] = [...($seen[$sameItem] ?? []), ...$serials];
+                // the document keeps its own unit; stock counts in the item's
+                $item = $line->item;
+                // the ratio it was ordered at; a line from before that has the master's of now
+                $ratio = $line->unit_ratio ?? $this->receiptRatio($item, $line->unit, $qty, $line->description_raw, 'lines');
                 $row = [
                     'divisi' => $data['divisi'], 'sumber' => 'PO', 'vendor' => $line->vendor?->name ?? $po->vendor?->name, 'no_po' => $po->number,
                     'no_ppb' => $line->approvedPpb?->no_ppb ?? $line->accuratePpb?->no_ppb, 'no_surat_jalan' => $data['no_surat_jalan'] ?? null,
                     'kode_barang' => $line->item?->code, 'deskripsi_barang' => $line->description_raw, 'kuantitas' => $qty, 'satuan' => $line->unit?->code,
-                    'harga_satuan' => (float) $line->unit_price, 'no_seri' => $l['no_seri'] ?? null, 'pemeriksa' => $data['pemeriksa'] ?? null,
+                    'unit_ratio' => $ratio, 'base_satuan' => UomConverter::isOne($ratio) ? null : $item?->unit?->code,
+                    'harga_satuan' => (float) $line->unit_price, 'no_seri' => $serials ? RiSerials::join($serials) : ($l['no_seri'] ?? null), 'pemeriksa' => $data['pemeriksa'] ?? null,
                     'tgl_ri' => $data['tgl_ri'] ?? now()->toDateString(), 'keterangan' => $data['keterangan'] ?? null,
                 ];
                 [$found, $hard] = \App\Support\DuplicateGuard::ri($row);
                 \App\Support\DuplicateGuard::refuse($found, $allow, $hard);
+                \App\Support\DuplicateGuard::refuse(\App\Support\DuplicateGuard::riSerials($row, $serials), $allow);
                 app(PurchaseOrderService::class)->receive($line, $qty);
                 $ri = Ri::create($row + ['no_ri' => $no, 'accurate_po_item_id' => $line->id, 'created_by' => $user->id]);
                 $first ??= $ri;
@@ -215,10 +263,10 @@ class RiController extends Controller
                 foreach (array_values($l['photos']) as $i => $photo) {
                     app(\App\Services\Tracking\TrackingPhotoService::class)->putDataUrl('ri', $ri->id, 'foto'.($i + 1), $photo, 'bukti-'.($line->item?->code ?? 'barang').'-'.($i + 1), $user->id);
                 }
-                $item = $line->item_id ? Item::find($line->item_id) : (filled($ri->kode_barang) ? Item::where('code', $ri->kode_barang)->first() : null);
                 if ($item && $warehouseId) {
+                    $inStock = (float) UomConverter::baseQty($qty, $ratio);
                     app(StockLedgerService::class)->record(['type' => 'RECEIVING', 'item_id' => $item->id, 'warehouse_id' => $warehouseId,
-                        'qty' => $qty, 'reference' => $ri, 'note' => "RI {$no} · PO {$po->number}", 'created_by' => $user->id]);
+                        'qty' => $inStock, 'reference' => $ri, 'note' => "RI {$no} · PO {$po->number}".(! UomConverter::isOne($ratio) ? " · {$qty} {$line->unit?->code} = {$inStock} {$item->unit?->code}" : ''), 'created_by' => $user->id]);
                 }
             }
             $files = app(\App\Services\Tracking\TrackingPhotoService::class);
@@ -278,6 +326,8 @@ class RiController extends Controller
             'satuan' => ['nullable', 'string', 'max:30'],
             'harga_satuan' => ['nullable', 'numeric', 'min:0'],
             'no_seri' => ['nullable', 'string'],
+            'serials' => ['nullable', 'array', 'max:'.RiSerialExcel::MAX_ROWS],
+            'serials.*' => ['nullable', 'string', 'max:100'],
             'pemeriksa' => ['nullable', 'string', 'max:150'],
             'tgl_ri' => ['nullable', 'date'],
             'keterangan' => ['nullable', 'string'],
@@ -300,6 +350,11 @@ class RiController extends Controller
         ]);
         $allowDuplicate = (bool) ($data['allow_duplicate'] ?? false);
         unset($data['allow_duplicate']);
+        $serials = RiSerials::clean($data['serials'] ?? null, (float) $data['kuantitas'], $data['deskripsi_barang']);
+        unset($data['serials']);
+        if ($serials) {
+            $data['no_seri'] = RiSerials::join($serials);
+        }
         $usedRowId = $data['used_return_row_id'] ?? null;
         $data['sumber'] ??= ! empty($data['purchase_order_item_id']) ? 'PO' : ($usedRowId ? 'BEKAS' : 'MANUAL');
         // one source only: a manual RI is tied to nothing
@@ -318,10 +373,12 @@ class RiController extends Controller
         unset($data['purchase_order_item_id']);
 
         // never the same goods received twice (two admins, one delivery): checked and saved under one lock per item
-        $ri = \App\Support\DuplicateGuard::locked('ri', $data['kode_barang'] ?? $data['deskripsi_barang'], fn () => DB::transaction(function () use ($data, $request, $poLineId, $photos, $usedRowId, $allowDuplicate) {
+        $ri = \App\Support\DuplicateGuard::locked('ri', $data['kode_barang'] ?? $data['deskripsi_barang'], fn () => DB::transaction(function () use ($data, $request, $poLineId, $photos, $usedRowId, $allowDuplicate, $serials) {
+            // used goods coming back carry the serial they left with
             if (! $usedRowId) {
                 [$found, $hard] = \App\Support\DuplicateGuard::ri($data);
                 \App\Support\DuplicateGuard::refuse($found, $allowDuplicate, $hard);
+                \App\Support\DuplicateGuard::refuse(\App\Support\DuplicateGuard::riSerials($data, $serials), $allowDuplicate);
             }
             $used = null;
             if ($usedRowId) {
@@ -342,16 +399,21 @@ class RiController extends Controller
                     'harga_satuan' => $data['harga_satuan'] ?? (float) $line->unit_price,
                 ], fn ($v) => $v !== null)) + ['accurate_po_item_id' => $line->id]; // same PO-line link Accurate's RI use
             }
+            // used goods do not add to the stock of the (new) item
+            $item = $used === null && filled($data['kode_barang'] ?? null) ? Item::with('unit')->where('code', $data['kode_barang'])->first() : null;
+            // a unit written that the master does not know counts as the item's own, as before
+            $unit = filled($data['satuan'] ?? null) ? \App\Models\Unit::where('code', mb_strtoupper(trim($data['satuan'])))->first() : null;
+            $ratio = $this->receiptRatio($item, $unit, (float) $data['kuantitas'], $data['deskripsi_barang'], 'satuan');
             $ri = Ri::create($data + [
                 'no_ri' => $this->numbers->next('RI', 'MANUAL'),
                 'created_by' => $request->user()->id,
+                'unit_ratio' => $ratio, 'base_satuan' => UomConverter::isOne($ratio) ? null : $item?->unit?->code,
             ]);
-            // used goods do not add to the stock of the (new) item
-            $item = $used === null && filled($ri->kode_barang) ? Item::where('code', $ri->kode_barang)->first() : null;
             $warehouseId = Warehouse::query()->orderBy('id')->value('id');
             if ($item && $warehouseId) {
+                $inStock = (float) UomConverter::baseQty($ri->kuantitas, $ratio);
                 app(StockLedgerService::class)->record(['type' => 'RECEIVING', 'item_id' => $item->id, 'warehouse_id' => $warehouseId,
-                    'qty' => (float) $ri->kuantitas, 'reference' => $ri, 'note' => "RI {$ri->no_ri}", 'created_by' => $request->user()->id]);
+                    'qty' => $inStock, 'reference' => $ri, 'note' => "RI {$ri->no_ri}".(! UomConverter::isOne($ratio) ? " · {$ri->kuantitas} {$ri->satuan} = {$inStock} {$item->unit?->code}" : ''), 'created_by' => $request->user()->id]);
             }
             $photoService = app(\App\Services\Tracking\TrackingPhotoService::class);
             foreach ($photos as $i => $photo) {
@@ -370,6 +432,51 @@ class RiController extends Controller
         app(ItemRequestFulfillmentService::class)->refreshWaiting();
 
         return response()->json(['data' => new RiResource($ri)], 201);
+    }
+
+    /** POST /api/ri/serials/template {name?, lines: [{key, kode?, deskripsi?, satuan?, qty, serials?}]} — one row per unit, to fill in. */
+    public function serialTemplate(Request $request, RiSerialExcel $excel): Response
+    {
+        $data = $request->validate([
+            'name' => ['nullable', 'string', 'max:100'],
+            'lines' => ['required', 'array', 'min:1', 'max:500'],
+            'lines.*.key' => ['required', 'integer'],
+            'lines.*.kode' => ['nullable', 'string', 'max:60'],
+            'lines.*.deskripsi' => ['nullable', 'string', 'max:400'],
+            'lines.*.satuan' => ['nullable', 'string', 'max:30'],
+            'lines.*.qty' => ['required', 'integer', 'min:1', 'max:'.RiSerialExcel::MAX_ROWS],
+            'lines.*.serials' => ['nullable', 'array', 'max:'.RiSerialExcel::MAX_ROWS],
+            'lines.*.serials.*' => ['nullable', 'string', 'max:100'],
+        ]);
+        if (array_sum(array_column($data['lines'], 'qty')) > RiSerialExcel::MAX_ROWS) {
+            throw ValidationException::withMessages(['lines' => 'Maksimal '.RiSerialExcel::MAX_ROWS.' unit per file.']);
+        }
+
+        return $excel->download($data['lines'], $this->serialFile($data['name'] ?? 'RI'));
+    }
+
+    /** POST /api/ri/serials/import (file) — what an exported file holds, per line, for the form to check and show. Nothing is saved. */
+    public function serialImport(Request $request, RiSerialExcel $excel): JsonResponse
+    {
+        $request->validate(['file' => ['required', 'file', 'max:5120', 'extensions:xlsx']], ['file.extensions' => 'Pakai file Excel .xlsx dari tombol Export.']);
+
+        return response()->json(['data' => $excel->parse($request->file('file')->getRealPath())]);
+    }
+
+    /** GET /api/ri/{ri}/serials-export — the serial numbers recorded on every line of this RI. */
+    public function serialExport(Ri $ri, RiSerialExcel $excel): Response
+    {
+        $lines = ($ri->no_ri ? Ri::where('no_ri', $ri->no_ri)->orderBy('id')->get() : collect([$ri]))
+            ->map(fn (Ri $l) => ['key' => $l->id, 'kode' => $l->kode_barang, 'deskripsi' => $l->deskripsi_barang, 'satuan' => $l->satuan, 'serials' => RiSerials::split($l->no_seri)])
+            ->filter(fn ($l) => $l['serials'] !== [])->map(fn ($l) => $l + ['qty' => count($l['serials'])]);
+        abort_if($lines->isEmpty(), 404, 'RI ini belum punya nomor seri.');
+
+        return $excel->download($lines->values()->all(), $this->serialFile($ri->no_ri ?? 'RI'));
+    }
+
+    private function serialFile(string $name): string
+    {
+        return 'serial-'.trim(preg_replace('/[^A-Za-z0-9._-]+/', '-', $name), '-').'.xlsx';
     }
 
     /**
@@ -413,7 +520,9 @@ class RiController extends Controller
             'pageHeightMm' => 147,
             'offsetXMm' => (float) $request->input('offset_x', 0),
             'offsetYMm' => (float) $request->input('offset_y', 0),
-            'autoPageSize' => $request->string('page_size', 'exact')->value() === 'auto',
+            'autoPageSize' => $request->string('page_size', 'a4')->value() === 'auto',
+            'fitA4' => $request->string('page_size', 'a4')->value() === 'a4',
+            'full' => $request->string('mode', 'full')->value() !== 'data',
             'texts' => [
                 ['x' => 28.6, 'y' => 6.3, 'w' => 78.3, 'text' => 'PT SURYA INTI GAS', 'size' => 9, 'bold' => true, 'static' => true],
                 ['x' => 121.7, 'y' => 5.3, 'w' => 73, 'h' => 16.9, 'text' => "PENERIMAAN BARANG\n(RI)", 'size' => 9, 'bold' => true, 'align' => 'center', 'static' => true],
@@ -449,7 +558,7 @@ class RiController extends Controller
                 ],
             ],
             'tableRows' => $lines->values()->map(fn ($l, $i) => [
-                $i + 1, $l->kode_barang, $l->deskripsi_barang, $l->kuantitas, $l->satuan, $l->no_seri, $l->no_ppb, $l->no_po,
+                $i + 1, $l->kode_barang, $l->deskripsi_barang, $l->kuantitas, $l->satuan, RiSerials::summary($l->no_seri), $l->no_ppb, $l->no_po,
             ])->all(),
             'signatures' => [
                 'y' => 68.3,

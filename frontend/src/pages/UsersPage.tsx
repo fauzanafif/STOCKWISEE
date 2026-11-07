@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { KeyRound, Pencil, Power, Trash2, UserPlus, Users } from 'lucide-react'
+import { DropdownMenu } from '@/components/ui/dropdown'
+import { KeyRound, Pencil, Power, Trash2, UserPlus, Users, MoreHorizontal } from 'lucide-react'
 import {
   useCreateUser,
   useDeleteUser,
@@ -87,7 +88,7 @@ function UserFormModal({ user, onClose }: { user?: AdminUserRow; onClose: () => 
   function submit() {
     setErr(null)
     if (!isEdit && form.password !== form.passwordConfirm) {
-      setErr('Konfirmasi password tidak sama.')
+      setErr('The password confirmation does not match.')
       return
     }
     const body: UserPayload = {
@@ -110,22 +111,22 @@ function UserFormModal({ user, onClose }: { user?: AdminUserRow; onClose: () => 
   const valid = form.name.trim() && form.username.trim() && form.roles.length > 0 && (isEdit || form.password.length >= 8)
 
   return (
-    <Modal
+    <Modal page form
       open
       onClose={onClose}
-      title={isEdit ? `Ubah Pengguna — ${user.username}` : 'Tambah Pengguna'}
+      title={isEdit ? `Edit User — ${user.username}` : 'Add User'}
       className="max-w-2xl"
       footer={
         <>
-          <Button variant="outline" size="sm" onClick={onClose}>Batal</Button>
-          <Button size="sm" disabled={pending || !valid} onClick={submit}>Simpan</Button>
+          <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
+          <Button size="sm" disabled={pending || !valid} onClick={submit}>Save</Button>
         </>
       }
     >
       <div className="space-y-4">
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="space-y-1">
-            <Label htmlFor="u-name">Nama lengkap *</Label>
+            <Label htmlFor="u-name">Full name *</Label>
             <Input id="u-name" value={form.name} onChange={(e) => set('name', e.target.value)} />
           </div>
           <div className="space-y-1">
@@ -137,17 +138,17 @@ function UserFormModal({ user, onClose }: { user?: AdminUserRow; onClose: () => 
             <Input id="u-email" type="email" value={form.email} onChange={(e) => set('email', e.target.value)} />
           </div>
           <div className="space-y-1">
-            <Label htmlFor="u-phone">No. HP</Label>
+            <Label htmlFor="u-phone">Phone No.</Label>
             <Input id="u-phone" value={form.phone} onChange={(e) => set('phone', e.target.value)} />
           </div>
           <div className="space-y-1">
-            <Label htmlFor="u-position">Jabatan</Label>
+            <Label htmlFor="u-position">Position</Label>
             <Input id="u-position" value={form.position} onChange={(e) => set('position', e.target.value)} />
           </div>
           <div className="space-y-1">
             <Label htmlFor="u-site">Site</Label>
             <select id="u-site" className={selectClass} value={form.siteId} onChange={(e) => set('siteId', e.target.value)}>
-              <option value="">— Tidak ada —</option>
+              <option value="">— None —</option>
               {options?.sites.map((s) => (
                 <option key={s.id} value={s.id}>{s.code} — {s.name}</option>
               ))}
@@ -158,7 +159,7 @@ function UserFormModal({ user, onClose }: { user?: AdminUserRow; onClose: () => 
         {!isEdit && (
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1">
-              <Label htmlFor="u-pass">Password awal *</Label>
+              <Label htmlFor="u-pass">Initial password *</Label>
               <div className="flex gap-2">
                 <Input id="u-pass" type="text" autoComplete="new-password" value={form.password} onChange={(e) => set('password', e.target.value)} />
                 <Button
@@ -168,23 +169,23 @@ function UserFormModal({ user, onClose }: { user?: AdminUserRow; onClose: () => 
                     setForm((f) => ({ ...f, password: p, passwordConfirm: p }))
                   }}
                 >
-                  Buat otomatis
+                  Create automatically
                 </Button>
               </div>
             </div>
             <div className="space-y-1">
-              <Label htmlFor="u-pass2">Ulangi password *</Label>
+              <Label htmlFor="u-pass2">Repeat password *</Label>
               <Input id="u-pass2" type="text" autoComplete="new-password" value={form.passwordConfirm} onChange={(e) => set('passwordConfirm', e.target.value)} />
             </div>
             <p className="text-xs text-muted-foreground sm:col-span-2">
-              Minimal 8 karakter, berisi huruf dan angka. Catat dan berikan ke pengguna — minta mereka menggantinya lewat menu "Ganti Password".
+              Min. 8 characters, letters + numbers.
             </p>
           </div>
         )}
 
         <div className="space-y-2">
           <Label>Role *</Label>
-          {!canAssignRole && <p className="text-xs text-muted-foreground">Anda tidak punya izin mengubah role pengguna.</p>}
+          {!canAssignRole && <p className="text-xs text-muted-foreground">You have no permission to change user roles.</p>}
           <div className="grid gap-2 sm:grid-cols-2">
             {options?.roles.map((r) => {
               const lockedSuper = r.slug === SUPER_ADMIN && !iAmSuper
@@ -206,7 +207,7 @@ function UserFormModal({ user, onClose }: { user?: AdminUserRow; onClose: () => 
 
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={form.isActive} onChange={(e) => set('isActive', e.target.checked)} />
-          Akun aktif (bisa login)
+          Active account (can log in)
         </label>
 
         {err && <p className="whitespace-pre-line text-sm text-destructive">{err}</p>}
@@ -225,10 +226,10 @@ function ResetPasswordModal({ user, onClose }: { user: AdminUserRow; onClose: ()
       open
       onClose={onClose}
       title={`Reset Password — ${user.username}`}
-      description="Semua sesi login pengguna ini akan langsung diakhiri."
+      description="All login sessions of this user will end right away."
       footer={
         <>
-          <Button variant="outline" size="sm" onClick={onClose}>Batal</Button>
+          <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
           <Button
             size="sm"
             disabled={reset.isPending || password.length < 8}
@@ -240,14 +241,14 @@ function ResetPasswordModal({ user, onClose }: { user: AdminUserRow; onClose: ()
       }
     >
       <div className="space-y-2">
-        <Label htmlFor="rp-pass">Password baru</Label>
+        <Label htmlFor="rp-pass">New password</Label>
         <div className="flex gap-2">
-          <Input id="rp-pass" type="text" className="font-mono" value={password} onChange={(e) => setPassword(e.target.value)} />
+          <Input id="rp-pass" type="text" className="" value={password} onChange={(e) => setPassword(e.target.value)} />
           <Button type="button" variant="outline" size="sm" className="h-10 shrink-0" onClick={() => setPassword(generatePassword())}>
-            Acak ulang
+            Reshuffle
           </Button>
         </div>
-        <p className="text-xs text-muted-foreground">Catat password ini sebelum menyimpan dan berikan langsung ke pengguna.</p>
+        <p className="text-xs text-muted-foreground">Note this password before saving and give it directly to the user.</p>
         {err && <p className="whitespace-pre-line text-sm text-destructive">{err}</p>}
       </div>
     </Modal>
@@ -284,27 +285,27 @@ export function UsersPage() {
 
   async function toggleActive(u: AdminUserRow) {
     const verb = u.is_active ? 'nonaktifkan' : 'aktifkan'
-    if (!(await confirmDialog(`Yakin ${verb} akun ${u.username}?${u.is_active ? ' Semua sesi loginnya akan diakhiri.' : ''}`))) return
+    if (!(await confirmDialog(`Sure ${verb} account ${u.username}?${u.is_active ? ' All their login sessions will end.' : ''}`))) return
     update.mutate({ id: u.id, body: { is_active: !u.is_active } })
   }
 
   async function remove(u: AdminUserRow) {
-    if (!(await confirmDialog(`Hapus permanen akun ${u.username}? Jika pengguna sudah punya riwayat transaksi, sistem akan menolak — nonaktifkan saja.`))) return
+    if (!(await confirmDialog(`Permanently delete the account ${u.username}? If the user already has transactions, the system will refuse; deactivate instead.`))) return
     del.mutate(u.id)
   }
 
   const columns: Column<AdminUserRow>[] = [
     {
       key: 'name',
-      header: 'Pengguna',
+      header: 'Users',
       cell: (u) => (
         <div>
-          <div className="font-medium">{u.name}{isMe(u) && <span className="ml-1 text-xs text-primary">(Anda)</span>}</div>
-          <div className="font-mono text-xs text-muted-foreground">{u.username}</div>
+          <div className="font-medium">{u.name}{isMe(u) && <span className="ml-1 text-xs text-primary">(You)</span>}</div>
+          <div className="text-[13px] text-muted-foreground">{u.username}</div>
         </div>
       ),
     },
-    { key: 'email', header: 'Email / HP', cell: (u) => <div className="text-xs">{u.email ?? '—'}<div className="text-muted-foreground">{u.phone ?? ''}</div></div> },
+    { key: 'email', header: 'Email / Phone', cell: (u) => <div className="text-xs">{u.email ?? '—'}<div className="text-muted-foreground">{u.phone ?? ''}</div></div> },
     { key: 'site', header: 'Site', cell: (u) => u.site?.code ?? '—' },
     {
       key: 'roles',
@@ -315,11 +316,16 @@ export function UsersPage() {
         </div>
       ),
     },
-    { key: 'status', header: 'Status', cell: (u) => (u.is_active ? <Badge variant="success">Aktif</Badge> : <Badge variant="neutral">Nonaktif</Badge>) },
+    { key: 'status', header: 'Status', cell: (u) => (u.is_active ? <Badge variant="success">Active</Badge> : <Badge variant="neutral">Inactive</Badge>) },
     {
       key: 'login',
-      header: 'Login terakhir',
-      cell: (u) => <span className="text-xs">{u.last_login_at ? new Date(u.last_login_at).toLocaleString('id-ID') : '—'}</span>,
+      header: 'Last login',
+      cell: (u) => <span className="whitespace-nowrap text-xs">{u.last_login_at ? new Date(u.last_login_at).toLocaleString('en-GB') : '—'}</span>,
+    },
+    {
+      key: 'logout',
+      header: 'Last logout',
+      cell: (u) => <span className="whitespace-nowrap text-xs">{u.last_logout_at ? new Date(u.last_logout_at).toLocaleString('en-GB') : '—'}</span>,
     },
   ]
 
@@ -330,23 +336,15 @@ export function UsersPage() {
       cell: (u) =>
         touchable(u) ? (
           <div className="flex justify-end gap-1">
-            {canUpdate && (
-              <>
-                <Button size="sm" variant="ghost" title="Ubah" onClick={() => setEditing(u)}><Pencil className="size-4" /></Button>
-                <Button size="sm" variant="ghost" title="Reset password" onClick={() => setResetting(u)}><KeyRound className="size-4" /></Button>
-                {!isMe(u) && (
-                  <Button size="sm" variant="ghost" title={u.is_active ? 'Nonaktifkan' : 'Aktifkan'} onClick={() => toggleActive(u)} disabled={update.isPending}>
-                    <Power className={`size-4 ${u.is_active ? 'text-destructive' : 'text-green-600'}`} />
-                  </Button>
-                )}
-              </>
-            )}
-            {canDelete && !isMe(u) && (
-              <Button size="sm" variant="ghost" title="Hapus" onClick={() => remove(u)} disabled={del.isPending}><Trash2 className="size-4" /></Button>
-            )}
+            {canUpdate && <Button size="sm" variant="ghost" onClick={() => setEditing(u)}><Pencil className="size-4" /> Edit</Button>}
+            {canUpdate && <Button size="sm" variant="ghost" className="whitespace-nowrap" aria-label={`Reset password ${u.username}`} onClick={() => setResetting(u)}><KeyRound className="size-4" /> Reset Password</Button>}
+            <DropdownMenu label="" icon={MoreHorizontal} variant="ghost" chevron={false} ariaLabel={`Aksi lain ${u.username}`} items={[
+              { label: u.is_active ? 'Deactivate' : 'Activate', icon: Power, onSelect: () => toggleActive(u), disabled: update.isPending, danger: u.is_active, hidden: !canUpdate || isMe(u) },
+              { label: 'Delete', icon: Trash2, onSelect: () => remove(u), disabled: del.isPending, danger: true, hidden: !canDelete || isMe(u) },
+            ]} />
           </div>
         ) : (
-          <span className="text-xs text-muted-foreground">khusus Super Admin</span>
+          <span className="text-xs text-muted-foreground">Super Admin only</span>
         ),
     })
   }
@@ -354,32 +352,32 @@ export function UsersPage() {
   return (
     <div className="space-y-4">
       <PageHeader
-        title="Pengguna"
-        subtitle="Kelola akun, role, dan status login pengguna STOCKWISE"
+        title="Users"
+        subtitle="Manage STOCKWISE user accounts, roles, and login status"
         icon={<Users className="size-5" />}
-        actions={canCreate ? <Button size="sm" onClick={() => setEditing('new')}><UserPlus className="size-4" /> Tambah Pengguna</Button> : undefined}
+        actions={canCreate ? <Button size="sm" onClick={() => setEditing('new')}><UserPlus className="size-4" /> Add User</Button> : undefined}
       />
 
       <FilterBar>
         <Input
-          placeholder="Cari nama / username / email…"
+          placeholder="Search name / username / email…"
           className="max-w-xs"
           value={search}
           onChange={(e) => { setSearch(e.target.value); setPage(1) }}
         />
         <select className="h-9 max-w-full rounded-md border border-input bg-card px-3 text-sm" value={role} onChange={(e) => { setRole(e.target.value); setPage(1) }}>
-          <option value="">Semua role</option>
+          <option value="">All roles</option>
           {options?.roles.map((r) => <option key={r.slug} value={r.slug}>{r.name}</option>)}
         </select>
         <select className="h-9 max-w-full rounded-md border border-input bg-card px-3 text-sm" value={status} onChange={(e) => { setStatus(e.target.value); setPage(1) }}>
-          <option value="">Semua status</option>
-          <option value="1">Aktif</option>
-          <option value="0">Nonaktif</option>
+          <option value="">All statuses</option>
+          <option value="1">Active</option>
+          <option value="0">Inactive</option>
         </select>
       </FilterBar>
 
       <DataTable columns={columns} rows={scrollRows}
-        footer={scrollFooter} rowKey={(u) => u.id} isLoading={isLoading} emptyText="Tidak ada pengguna." />
+        footer={scrollFooter} rowKey={(u) => u.id} isLoading={isLoading} emptyText="No users." />
 
       {editing && <UserFormModal user={editing === 'new' ? undefined : editing} onClose={() => setEditing(null)} />}
       {resetting && <ResetPasswordModal user={resetting} onClose={() => setResetting(null)} />}

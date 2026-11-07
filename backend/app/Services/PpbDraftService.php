@@ -148,7 +148,7 @@ class PpbDraftService
             foreach ($lines as $l) {
                 $d = $l->draft;
                 $source = $d->itemRequest ? "Request {$d->itemRequest->number}" : "Safety stock ({$d->number})";
-                $row = Ppb::create([
+                $row = Ppb::create($this->uomOf($l) + [
                     'no_ppb' => $noPpb, 'tgl_ppb' => $data['tgl_ppb'],
                     'tgl_diperlukan' => ($data['tgl_diperlukan'] ?? null) ?: ($d->tgl_diperlukan?->toDateString()),
                     'divisi' => mb_substr((string) (($data['divisi'] ?? null) ?: $d->divisi ?: ''), 0, 30) ?: null,
@@ -204,6 +204,15 @@ class PpbDraftService
         }
     }
 
+    /** The ratio of a draft line's unit, frozen as it becomes a Purchase Request. */
+    private function uomOf(PpbDraftLine $l): array
+    {
+        $item = $l->item_id ? Item::find($l->item_id) : null;
+        $uom = app(UomConverter::class)->snapshot($item, $l->satuan, $l->deskripsi_barang, 'lines');
+
+        return ['unit_ratio' => $uom['unit_ratio'], 'base_satuan' => $uom['base_satuan']];
+    }
+
     private function expectOpenLine(PpbDraftLine $line): void
     {
         if ($line->ppb_id !== null || $line->draft->status !== 'DRAFT') {
@@ -229,7 +238,7 @@ class PpbDraftService
                 'keterangan' => ($data['keterangan'] ?? $draft->keterangan) ?: "Restock dari {$draft->number}",
             ];
             foreach ($lines as $l) {
-                $made = Ppb::create([
+                $made = Ppb::create($this->uomOf($l) + [
                     'no_ppb' => $noPpb, 'tgl_ppb' => $data['tgl_ppb'],
                     'tgl_diperlukan' => $header['tgl_diperlukan'], 'divisi' => $header['divisi'] ? mb_substr($header['divisi'], 0, 30) : null,
                     'kode_barang' => $l->kode_barang, 'deskripsi_barang' => $l->deskripsi_barang,

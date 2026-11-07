@@ -41,6 +41,20 @@ class EmployeeController extends Controller
         return response()->json(['data' => Department::query()->orderBy('name')->get(['id', 'name'])]);
     }
 
+    /** POST /api/employees/departments {name} — a new divisi; one with the same name (any case) is given back instead. */
+    public function storeDepartment(Request $request): JsonResponse
+    {
+        $name = preg_replace('/\s+/u', ' ', trim((string) $request->validate(['name' => ['required', 'string', 'max:100']])['name']));
+        abort_if($name === '', 422, 'Nama divisi wajib diisi.');
+        $existing = Department::whereRaw('UPPER(name) = ?', [mb_strtoupper($name)])->first(['id', 'name']);
+        if ($existing) {
+            return response()->json(['data' => $existing]);
+        }
+        $made = Department::create(['name' => $name, 'is_active' => true]);
+
+        return response()->json(['data' => $made->only(['id', 'name'])], 201);
+    }
+
     /** GET /api/employees/users — STOCKWISE accounts to link a worker to (the one they log in with). */
     public function users(): JsonResponse
     {

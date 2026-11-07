@@ -380,7 +380,7 @@ export interface ManufacturingSub {
   finish_date: string | null
   note_start: string | null
   note_end: string | null
-  /** Excel "Nama File (#.ext)" as entered (with it the Excel shows the Foto Hasil link). */
+  /** Excel "File Name (#.ext)" as entered (with it the Excel shows the Foto Hasil link). */
   file_name: string | null
   /** Excel "Helper Nama File" — what Nama File should be. */
   helper_file_name: string | null

@@ -24,7 +24,7 @@ type Filter = 'all' | 'uncounted' | 'counted' | 'diff' | 'recount'
 type SaveState = 'idle' | 'saving' | 'saved' | 'error'
 
 function fmtDateTime(v: string | null) {
-  return v ? new Date(v).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }) : '—'
+  return v ? new Date(v).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' }) : '—'
 }
 
 const hasDiff = (l: OpnameLine) => l.match_status === 'INVALID'
@@ -65,7 +65,7 @@ function Stepper({ o }: { o: Opname }) {
               <div className={cn('h-0.5 flex-1', i === OPNAME_STEPS.length - 1 ? 'invisible' : done ? 'bg-primary' : 'bg-border')} />
             </div>
             <span className={cn('text-[11px] sm:text-xs', active ? 'font-semibold' : 'text-muted-foreground')}>
-              {active && recount ? 'Hitung ulang' : s.label}
+              {active && recount ? 'Recount' : s.label}
             </span>
           </li>
         )
@@ -102,7 +102,7 @@ function useLineEditor(line: OpnameLine, onSave: RowProps['onSave']) {
     const qty = Number(physical)
     if (Number.isNaN(qty) || qty < 0) {
       setState('error')
-      setError('Jumlah harus angka ≥ 0')
+      setError('The quantity must be a number ≥ 0')
       return
     }
     if (qty === line.physical_qty && (note || null) === (line.note || null)) return
@@ -121,10 +121,10 @@ function useLineEditor(line: OpnameLine, onSave: RowProps['onSave']) {
 }
 
 function SaveIndicator({ state, error, counted }: { state: SaveState; error: string | null; counted: boolean }) {
-  if (state === 'saving') return <span className="inline-flex items-center gap-1 text-xs text-muted-foreground"><Loader2 className="size-3 animate-spin" /> Menyimpan</span>
-  if (state === 'error') return <span className="text-xs text-destructive">{error ?? 'Gagal menyimpan'}</span>
-  if (state === 'saved' || counted) return <span className="inline-flex items-center gap-1 text-xs text-emerald-600"><CheckCircle2 className="size-3" /> Tersimpan</span>
-  return <span className="text-xs text-muted-foreground">Belum diisi</span>
+  if (state === 'saving') return <span className="inline-flex items-center gap-1 text-xs text-muted-foreground"><Loader2 className="size-3 animate-spin" /> Saving</span>
+  if (state === 'error') return <span className="text-xs text-destructive">{error ?? 'Failed to save'}</span>
+  if (state === 'saved' || counted) return <span className="inline-flex items-center gap-1 text-xs text-emerald-600"><CheckCircle2 className="size-3" /> Saved</span>
+  return <span className="text-xs text-muted-foreground">Not filled</span>
 }
 
 function MatchCell({ line, accurate }: { line: OpnameLine; accurate?: boolean }) {
@@ -136,7 +136,7 @@ function MatchCell({ line, accurate }: { line: OpnameLine; accurate?: boolean })
   if (!line.match_status) return <span className="text-muted-foreground">—</span>
   return (
     <div className="flex flex-wrap items-center gap-1.5">
-      {line.match_status === 'VALID' ? <Badge variant="success">Sesuai</Badge> : <Badge variant="danger">Selisih</Badge>}
+      {line.match_status === 'VALID' ? <Badge variant="success">Matches</Badge> : <Badge variant="danger">Difference</Badge>}
       {line.match_status === 'INVALID' && <span className="text-xs font-medium text-amber-700">{line.diff_label}</span>}
     </div>
   )
@@ -150,9 +150,9 @@ function ReviewCell({ line, reviewable, decision, onDecision }: Pick<RowProps, '
         value={decision}
         onChange={(e) => onDecision(e.target.value)}
       >
-        <option value="APPROVED">Setujui</option>
-        <option value="RECOUNT">Hitung ulang</option>
-        <option value="REJECTED">Tolak</option>
+        <option value="APPROVED">Approve</option>
+        <option value="RECOUNT">Recount</option>
+        <option value="REJECTED">Reject</option>
       </select>
     )
   }
@@ -167,7 +167,7 @@ function LineRow(p: RowProps) {
   return (
     <tr className={cn('border-t align-top', p.reviewable && p.decision !== 'APPROVED' && 'bg-amber-50/60 dark:bg-amber-500/5')}>
       <td className="px-3 py-2">
-        <div className="font-mono text-xs text-muted-foreground">{line.item_code}</div>
+        <div className="text-[13px] text-muted-foreground">{line.item_code}</div>
         <div>{line.description}</div>
       </td>
       <td className="px-3 py-2 text-right"><ItemUsageCount kind="npbg" code={line.item_code} count={line.npbg_count} period={p.period} /></td>
@@ -198,7 +198,7 @@ function LineRow(p: RowProps) {
         {p.editable ? (
           <Input
             className="h-9"
-            placeholder="Alasan bila jumlah berbeda"
+            placeholder="Reason if the quantity differs"
             value={ed.note}
             onChange={(e) => ed.setNote(e.target.value)}
             onBlur={ed.save}
@@ -219,24 +219,24 @@ function LineCard(p: RowProps) {
   return (
     <div className={cn('space-y-2 rounded-lg border bg-card p-3', p.reviewable && p.decision !== 'APPROVED' && 'border-amber-300')}>
       <div>
-        <div className="font-mono text-xs text-muted-foreground">{line.item_code}</div>
+        <div className="text-[13px] text-muted-foreground">{line.item_code}</div>
         <div className="text-sm font-medium">{line.description}</div>
         <div className="mt-0.5 flex gap-4 text-xs">
-          <span><span className="text-muted-foreground">NPBG:</span> <ItemUsageCount kind="npbg" code={line.item_code} count={line.npbg_count} period={p.period} /></span>
-          <span><span className="text-muted-foreground">PPB:</span> <ItemUsageCount kind="ppb" code={line.item_code} count={line.ppb_count} period={p.period} /></span>
+          <span><span className="text-muted-foreground">Delivery Order:</span> <ItemUsageCount kind="npbg" code={line.item_code} count={line.npbg_count} period={p.period} /></span>
+          <span><span className="text-muted-foreground">Purchase Request:</span> <ItemUsageCount kind="ppb" code={line.item_code} count={line.ppb_count} period={p.period} /></span>
         </div>
       </div>
       {p.showSystemQty && (
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
-          <span><span className="text-muted-foreground">{p.accurate ? 'Sebelum' : 'Sistem'}:</span> <b className="tabular-nums">{line.system_qty}</b></span>
-          {!p.editable && <span><span className="text-muted-foreground">{p.accurate ? 'Sesudah' : 'Fisik'}:</span> <b className="tabular-nums">{line.physical_qty ?? '—'}</b></span>}
+          <span><span className="text-muted-foreground">{p.accurate ? 'Before' : 'System'}:</span> <b className="tabular-nums">{line.system_qty}</b></span>
+          {!p.editable && <span><span className="text-muted-foreground">{p.accurate ? 'After' : 'Physical'}:</span> <b className="tabular-nums">{line.physical_qty ?? '—'}</b></span>}
           <MatchCell line={line} accurate={p.accurate} />
         </div>
       )}
       {p.editable ? (
         <div className="grid grid-cols-[7rem_1fr] gap-2">
           <div className="space-y-1">
-            <label className="text-xs text-muted-foreground">Jumlah fisik</label>
+            <label className="text-xs text-muted-foreground">Physical quantity</label>
             <Input
               data-qty-input
               type="number"
@@ -249,15 +249,15 @@ function LineCard(p: RowProps) {
             />
           </div>
           <div className="space-y-1">
-            <label className="text-xs text-muted-foreground">Catatan</label>
-            <Input placeholder="Alasan bila berbeda" value={ed.note} onChange={(e) => ed.setNote(e.target.value)} onBlur={ed.save} />
+            <label className="text-xs text-muted-foreground">Notes</label>
+            <Input placeholder="Reason if different" value={ed.note} onChange={(e) => ed.setNote(e.target.value)} onBlur={ed.save} />
           </div>
           <div className="col-span-2"><SaveIndicator state={ed.state} error={ed.error} counted={line.count_status === 'COUNTED'} /></div>
         </div>
       ) : (
         <>
-          {!p.showSystemQty && <div className="text-sm"><span className="text-muted-foreground">Fisik:</span> <b>{line.physical_qty ?? '—'}</b></div>}
-          {line.note && <div className="text-sm"><span className="text-muted-foreground">Catatan:</span> {line.note}</div>}
+          {!p.showSystemQty && <div className="text-sm"><span className="text-muted-foreground">Physical:</span> <b>{line.physical_qty ?? '—'}</b></div>}
+          {line.note && <div className="text-sm"><span className="text-muted-foreground">Notes:</span> {line.note}</div>}
         </>
       )}
       {!p.accurate && (p.reviewable || line.review_status !== 'PENDING') && (
@@ -333,7 +333,7 @@ export function OpnameDetailPage() {
     }
   }
 
-  if (isLoading || !o) return <div className="space-y-4"><BackLink to="/stock-opnames" label="Daftar Stock Opname" /><DetailFallback loading={isLoading} /></div>
+  if (isLoading || !o) return <div className="space-y-4"><BackLink to="/stock-opnames" label="Physical Inventory List" /><DetailFallback loading={isLoading} /></div>
 
   const fromAccurate = isFromAccurate(o)
   const onErr = (e: unknown) => setErr(apiErrorMessage(e))
@@ -363,55 +363,55 @@ export function OpnameDetailPage() {
       tone: 'info',
       text: (
         <>
-          Stock opname ini berasal dari <b>Accurate</b> (hanya-baca). Perubahan dilakukan di Accurate.
-          {o.accurate_synced_at && <> Terakhir sinkron: {fmtDateTime(o.accurate_synced_at)}.</>}
+          This stock opname comes from <b>Accurate</b> (read-only). Changes are made in Accurate.
+          {o.accurate_synced_at && <> Last sync: {fmtDateTime(o.accurate_synced_at)}.</>}
         </>
       ),
     }
   } else if (o.status === 'SCHEDULED') {
     next = canStart
-      ? { tone: 'info', text: <>Opname sudah dijadwalkan. Klik <b>Mulai Hitung</b> saat petugas siap menghitung di gudang.</>, action: <Button onClick={() => m.start.mutate(undefined, { onError: onErr })} disabled={m.start.isPending}>Mulai Hitung</Button> }
-      : { tone: 'info', text: 'Menunggu petugas gudang mulai menghitung.' }
+      ? { tone: 'info', text: <>Opname scheduled. Click <b>Start Counting</b> when staff are ready to count in the warehouse.</>, action: <Button onClick={() => m.start.mutate(undefined, { onError: onErr })} disabled={m.start.isPending}>Start Counting</Button> }
+      : { tone: 'info', text: 'Waiting for warehouse staff to start counting.' }
   } else if (o.status === 'RECOUNT_REQUIRED') {
     next = {
       tone: 'warn',
-      text: <>Admin gudang meminta <b>{stats.recount} barang</b> dihitung ulang. {canStart ? <>Klik <b>Mulai Hitung Ulang</b>, lalu perbaiki jumlahnya.</> : 'Menunggu petugas menghitung ulang.'}</>,
+      text: <>The warehouse admin requests <b>{stats.recount} items</b> recalculated. {canStart ? <>Click <b>Start Recount</b>, then correct the quantity.</> : 'Waiting for staff to recount.'}</>,
       action: canStart ? (
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" onClick={() => showFilter('recount')}>Lihat barangnya</Button>
-          <Button onClick={() => m.start.mutate(undefined, { onError: onErr })} disabled={m.start.isPending}>Mulai Hitung Ulang</Button>
+          <Button variant="outline" onClick={() => showFilter('recount')}>View the items</Button>
+          <Button onClick={() => m.start.mutate(undefined, { onError: onErr })} disabled={m.start.isPending}>Start Recount</Button>
         </div>
-      ) : <Button variant="outline" onClick={() => showFilter('recount')}>Lihat barangnya</Button>,
+      ) : <Button variant="outline" onClick={() => showFilter('recount')}>View the items</Button>,
     }
   } else if (o.status === 'IN_PROGRESS') {
     next = stats.uncounted > 0
       ? {
           tone: 'info',
-          text: <>Isi <b>jumlah fisik</b> tiap barang — tersimpan otomatis saat pindah kolom (tekan <b>Enter</b> untuk ke barang berikutnya). Masih <b>{stats.uncounted} barang</b> belum diisi.</>,
-          action: <Button variant="outline" onClick={() => showFilter('uncounted')}>Tampilkan yang belum diisi</Button>,
+          text: <>Fill <b>physical quantity</b> each item; saves automatically when moving columns (press <b>Enter</b> to go to the next item). Still <b>{stats.uncounted} items</b> not filled.</>,
+          action: <Button variant="outline" onClick={() => showFilter('uncounted')}>Show unfilled</Button>,
         }
       : {
           tone: 'done',
           text: canSubmit
-            ? <>Semua barang sudah diisi. Pastikan barang yang jumlahnya berbeda sudah diberi <b>catatan</b>, lalu kirim untuk direview.</>
-            : 'Semua barang sudah diisi. Menunggu dikirim untuk review.',
-          action: canSubmit ? <Button onClick={() => setConfirmSubmit(true)}>Kirim untuk Review</Button> : undefined,
+            ? <>All items filled. Make sure items with a different quantity have a <b>notes</b>, then send for review.</>
+            : 'All items filled. Waiting to be sent for review.',
+          action: canSubmit ? <Button onClick={() => setConfirmSubmit(true)}>Send for Review</Button> : undefined,
         }
   } else if (o.status === 'PENDING_REVIEW') {
     next = reviewable
       ? {
           tone: 'warn',
-          text: <>Periksa hasil hitung. Semua barang otomatis <b>Disetujui</b>; ubah ke <b>Hitung ulang</b> atau <b>Tolak</b> bila perlu. {stats.diff > 0 && <><b>{stats.diff} barang</b> selisih — bila disetujui, stok disesuaikan ke jumlah fisik.</>}</>,
+          text: <>Check the count results. All items automatically <b>Approved</b>; change to <b>Recount</b> or <b>Reject</b> if needed. {stats.diff > 0 && <><b>{stats.diff} items</b> difference; if approved, stock is adjusted to the physical quantity.</>}</>,
           action: (
             <div className="flex flex-wrap gap-2">
-              {stats.diff > 0 && <Button variant="outline" onClick={() => showFilter('diff')}>Lihat yang selisih</Button>}
-              <Button onClick={() => setConfirmReview(true)}>Selesaikan Review</Button>
+              {stats.diff > 0 && <Button variant="outline" onClick={() => showFilter('diff')}>View differences</Button>}
+              <Button onClick={() => setConfirmReview(true)}>Finish Review</Button>
             </div>
           ),
         }
-      : { tone: 'info', text: 'Hasil hitung sudah dikirim, menunggu review admin gudang.' }
+      : { tone: 'info', text: 'Count result already sent, waiting for warehouse admin review.' }
   } else if (o.status === 'COMPLETED') {
-    next = { tone: 'done', text: 'Stock opname selesai. Selisih yang disetujui sudah menyesuaikan stok.' }
+    next = { tone: 'done', text: 'Stock opname finished. Approved differences have adjusted the stock.' }
   }
 
   const periodOn = !!(period.from || period.to)
@@ -430,28 +430,28 @@ export function OpnameDetailPage() {
   })
 
   const filterChips: Array<{ key: Filter; label: string; count: number; show: boolean }> = [
-    { key: 'all', label: 'Semua', count: stats.total, show: true },
-    { key: 'uncounted', label: 'Belum diisi', count: stats.uncounted, show: !fromAccurate },
-    { key: 'counted', label: 'Sudah diisi', count: stats.counted, show: !fromAccurate },
-    { key: 'diff', label: 'Selisih', count: stats.diff, show: canSeeSystemQty },
-    { key: 'recount', label: 'Hitung ulang', count: stats.recount, show: stats.recount > 0 },
+    { key: 'all', label: 'All', count: stats.total, show: true },
+    { key: 'uncounted', label: 'Not filled', count: stats.uncounted, show: !fromAccurate },
+    { key: 'counted', label: 'Filled', count: stats.counted, show: !fromAccurate },
+    { key: 'diff', label: 'Difference', count: stats.diff, show: canSeeSystemQty },
+    { key: 'recount', label: 'Recount', count: stats.recount, show: stats.recount > 0 },
   ]
 
   return (
     <div className="space-y-4">
-      <BackLink to="/stock-opnames" label="Daftar Stock Opname" />
+      <BackLink to="/stock-opnames" label="Physical Inventory List" />
 
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <h1 className="break-all font-mono text-lg font-semibold">{o.number}</h1>
+          <h1 className="break-all text-xl font-semibold tracking-tight">{o.number}</h1>
           <p className="text-sm text-muted-foreground">
-            Gudang {o.warehouse?.code ?? '—'} · {fromAccurate ? 'Dari Accurate' : typeLabel(o.type)} · {stats.total} barang
+            Warehouse {o.warehouse?.code ?? '—'} · {fromAccurate ? 'From Accurate' : typeLabel(o.type)} · {stats.total} items
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <OpnameStatusBadge opname={o} />
           <Button size="sm" variant="outline" disabled={printing} onClick={printOpname}>
-            <Printer className="size-4" /> {printing ? 'Menyiapkan…' : o.status === 'SCHEDULED' ? 'Cetak Lembar Hitung' : 'Cetak'}
+            <Printer className="size-4" /> {printing ? 'Preparing…' : o.status === 'SCHEDULED' ? 'Print Count Sheet' : 'Print'}
           </Button>
         </div>
       </div>
@@ -485,34 +485,34 @@ export function OpnameDetailPage() {
         <Card>
           <CardContent className="space-y-3 p-4">
             <div className="flex items-center justify-between text-sm">
-              <span className="font-medium">Progres hitung</span>
-              <span className="tabular-nums text-muted-foreground">{stats.counted}/{stats.total} barang · {pct}%</span>
+              <span className="font-medium">Count progress</span>
+              <span className="tabular-nums text-muted-foreground">{stats.counted}/{stats.total} items · {pct}%</span>
             </div>
             <div className="h-2 overflow-hidden rounded-full bg-muted">
               <div className={cn('h-full rounded-full transition-all', pct === 100 ? 'bg-emerald-500' : 'bg-primary')} style={{ width: `${pct}%` }} />
             </div>
             <div className="grid grid-cols-2 gap-3 border-t pt-3 text-sm sm:grid-cols-4">
               <div>
-                <div className="text-xs text-muted-foreground">Dijadwalkan</div>
+                <div className="text-xs text-muted-foreground">Scheduled</div>
                 <div>{fmtDateTime(o.created_at)}</div>
-                {o.scheduled_by && <div className="text-xs text-muted-foreground">oleh {o.scheduled_by}</div>}
+                {o.scheduled_by && <div className="text-xs text-muted-foreground">by {o.scheduled_by}</div>}
               </div>
               <div>
-                <div className="text-xs text-muted-foreground">Mulai hitung</div>
+                <div className="text-xs text-muted-foreground">Start counting</div>
                 <div>{fmtDateTime(o.started_at)}</div>
-                {o.counter && <div className="text-xs text-muted-foreground">oleh {o.counter}</div>}
+                {o.counter && <div className="text-xs text-muted-foreground">by {o.counter}</div>}
               </div>
               <div>
-                <div className="text-xs text-muted-foreground">Dikirim untuk review</div>
+                <div className="text-xs text-muted-foreground">Sent for review</div>
                 <div>{fmtDateTime(o.submitted_at)}</div>
               </div>
               <div>
-                <div className="text-xs text-muted-foreground">Direview</div>
+                <div className="text-xs text-muted-foreground">In review</div>
                 <div>{fmtDateTime(o.reviewed_at)}</div>
-                {o.reviewer && <div className="text-xs text-muted-foreground">oleh {o.reviewer}</div>}
+                {o.reviewer && <div className="text-xs text-muted-foreground">by {o.reviewer}</div>}
               </div>
             </div>
-            {o.review_note && <div className="rounded-md bg-muted/50 p-2 text-sm"><span className="text-muted-foreground">Catatan review:</span> {o.review_note}</div>}
+            {o.review_note && <div className="rounded-md bg-muted/50 p-2 text-sm"><span className="text-muted-foreground">Review notes:</span> {o.review_note}</div>}
           </CardContent>
         </Card>
       )}
@@ -520,9 +520,6 @@ export function OpnameDetailPage() {
       {/* filters */}
       <div className="space-y-2">
         <UsagePeriodFilter value={period} onChange={setPeriod} />
-        <p className="text-xs text-muted-foreground">
- Kolom NPBG / PPB = jumlah baris NPBG / PPB tiap barang, {usagePeriodLabel(period)}{usage.isFetching ? ' memuat…' : ''}. Klik angkanya untuk melihat daftarnya.
-        </p>
         <div className="inline-flex flex-wrap gap-0.5 rounded-lg border bg-card p-0.5">
           {filterChips.filter((c) => c.show).map((c) => (
             <button
@@ -541,12 +538,12 @@ export function OpnameDetailPage() {
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative w-full sm:w-72">
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input className="pl-9" placeholder="Cari kode / nama barang…" value={search} onChange={(e) => { setSearch(e.target.value) }} />
+            <Input className="pl-9" placeholder="Search item code / name…" value={search} onChange={(e) => { setSearch(e.target.value) }} />
           </div>
           {reviewable && (
             <div className="flex flex-wrap gap-2">
-              <Button size="sm" variant="outline" onClick={() => setAll('APPROVED')}>Setujui semua</Button>
-              {stats.diff > 0 && <Button size="sm" variant="outline" onClick={() => setAll('RECOUNT', hasDiff)}>Hitung ulang semua yang selisih</Button>}
+              <Button size="sm" variant="outline" onClick={() => setAll('APPROVED')}>Approve all</Button>
+              {stats.diff > 0 && <Button size="sm" variant="outline" onClick={() => setAll('RECOUNT', hasDiff)}>Recount all differences</Button>}
             </div>
           )}
         </div>
@@ -558,19 +555,19 @@ export function OpnameDetailPage() {
         <table className="w-full text-sm">
           <thead className="sticky top-0 z-10 bg-muted text-left">
             <tr>
-              <th className="px-3 py-2 font-medium text-muted-foreground">Barang</th>
- <th className="w-16 px-3 py-2 text-right font-medium text-muted-foreground" title={`Jumlah baris NPBG (barang keluar) untuk barang ini ${usagePeriodLabel(period)}`}>NPBG</th>
- <th className="w-16 px-3 py-2 text-right font-medium text-muted-foreground" title={`Jumlah baris PPB (permintaan pembelian) untuk barang ini ${usagePeriodLabel(period)}`}>PPB</th>
-              {canSeeSystemQty && <th className="w-28 whitespace-nowrap px-3 py-2 text-right font-medium text-muted-foreground">{fromAccurate ? 'Qty sebelum' : 'Stok sistem'}</th>}
-              <th className="w-36 whitespace-nowrap px-3 py-2 font-medium text-muted-foreground">{fromAccurate ? 'Qty sesudah' : 'Jumlah fisik'}</th>
-              {canSeeSystemQty && <th className="w-40 px-3 py-2 font-medium text-muted-foreground">{fromAccurate ? 'Selisih' : 'Hasil'}</th>}
-              {!fromAccurate && <th className="w-56 px-3 py-2 font-medium text-muted-foreground">Catatan</th>}
+              <th className="px-3 py-2 font-medium text-muted-foreground">Item</th>
+ <th className="w-16 px-3 py-2 text-right font-medium text-muted-foreground" title={`Delivery Order rows (items out) for this item ${usagePeriodLabel(period)}`}>Delivery Order</th>
+ <th className="w-16 px-3 py-2 text-right font-medium text-muted-foreground" title={`Purchase Request rows (purchase requests) for this item ${usagePeriodLabel(period)}`}>Purchase Request</th>
+              {canSeeSystemQty && <th className="w-28 whitespace-nowrap px-3 py-2 text-right font-medium text-muted-foreground">{fromAccurate ? 'Qty before' : 'System stock'}</th>}
+              <th className="w-36 whitespace-nowrap px-3 py-2 font-medium text-muted-foreground">{fromAccurate ? 'Qty after' : 'Physical quantity'}</th>
+              {canSeeSystemQty && <th className="w-40 px-3 py-2 font-medium text-muted-foreground">{fromAccurate ? 'Difference' : 'Result'}</th>}
+              {!fromAccurate && <th className="w-56 px-3 py-2 font-medium text-muted-foreground">Notes</th>}
               {!fromAccurate && <th className="w-40 px-3 py-2 font-medium text-muted-foreground">Review</th>}
             </tr>
           </thead>
           <tbody>
             {pageItems.length === 0 && (
-              <tr><td colSpan={(canSeeSystemQty ? 6 : 4) + (fromAccurate ? 0 : 2)} className="px-3 py-8 text-center text-muted-foreground">Tidak ada barang untuk filter ini.</td></tr>
+              <tr><td colSpan={(canSeeSystemQty ? 6 : 4) + (fromAccurate ? 0 : 2)} className="px-3 py-8 text-center text-muted-foreground">No items for this filter.</td></tr>
             )}
             {pageItems.map((l) => <LineRow key={l.id} {...rowProps(l)} />)}
           </tbody>
@@ -580,7 +577,7 @@ export function OpnameDetailPage() {
 
       {/* phone: cards (scroll inside their own box too) */}
       <div className="max-h-[75vh] space-y-2 overflow-y-auto md:hidden">
-        {pageItems.length === 0 && <p className="py-6 text-center text-sm text-muted-foreground">Tidak ada barang untuk filter ini.</p>}
+        {pageItems.length === 0 && <p className="py-6 text-center text-sm text-muted-foreground">No items for this filter.</p>}
         {pageItems.map((l) => <LineCard key={l.id} {...rowProps(l)} />)}
         {itemsFooter}
       </div>
@@ -589,12 +586,12 @@ export function OpnameDetailPage() {
       {(canSubmit || reviewable) && (
         <div className="sticky bottom-0 z-20 -mx-3 flex items-center justify-between gap-2 border-t bg-card/95 px-3 py-2 backdrop-blur sm:-mx-6 sm:px-6">
           <span className="text-sm text-muted-foreground">
-            {canSubmit ? <><b className="text-foreground">{stats.counted}/{stats.total}</b> diisi</> : <><b className="text-foreground">{reviewSummary.recount + reviewSummary.rejected}</b> ditandai</>}
+            {canSubmit ? <><b className="text-foreground">{stats.counted}/{stats.total}</b> filled</> : <><b className="text-foreground">{reviewSummary.recount + reviewSummary.rejected}</b> tagged</>}
           </span>
           {canSubmit ? (
-            <Button onClick={() => setConfirmSubmit(true)} disabled={m.submit.isPending}>Kirim untuk Review</Button>
+            <Button onClick={() => setConfirmSubmit(true)} disabled={m.submit.isPending}>Send for Review</Button>
           ) : (
-            <Button onClick={() => setConfirmReview(true)} disabled={m.review.isPending}>Selesaikan Review</Button>
+            <Button onClick={() => setConfirmReview(true)} disabled={m.review.isPending}>Finish Review</Button>
           )}
         </div>
       )}
@@ -603,29 +600,27 @@ export function OpnameDetailPage() {
         <Modal
           open
           onClose={() => setConfirmSubmit(false)}
-          title="Kirim hasil hitung untuk review?"
-          description="Setelah dikirim, jumlah tidak bisa diubah lagi kecuali admin meminta hitung ulang."
+          title="Send the count result for review?"
+          description="Once sent, quantities cannot change unless the admin asks for a recount."
           footer={
             <>
-              <Button variant="outline" size="sm" onClick={() => setConfirmSubmit(false)}>Periksa lagi</Button>
+              <Button variant="outline" size="sm" onClick={() => setConfirmSubmit(false)}>Check again</Button>
               <Button
                 size="sm"
                 disabled={stats.uncounted > 0 || m.submit.isPending}
                 onClick={() => m.submit.mutate(undefined, { onSuccess: () => setConfirmSubmit(false), onError: (e) => { setConfirmSubmit(false); onErr(e) } })}
               >
-                {m.submit.isPending ? 'Mengirim…' : 'Ya, kirim'}
+                {m.submit.isPending ? 'Sending…' : 'Yes, send'}
               </Button>
             </>
           }
         >
           <div className="space-y-2 text-sm">
-            <p>Sudah diisi: <b>{stats.counted}</b> dari <b>{stats.total}</b> barang.</p>
-            {stats.uncounted > 0 ? (
+            <p>Filled: <b>{stats.counted}</b> from <b>{stats.total}</b> items.</p>
+            {stats.uncounted > 0 && (
               <p className="rounded-md bg-destructive/10 p-2 text-destructive">
-                Masih {stats.uncounted} barang belum diisi. Isi semua dulu sebelum mengirim.
+                Still {stats.uncounted} items not filled. Fill all of them before sending.
               </p>
-            ) : (
-              <p className="text-muted-foreground">Barang yang jumlahnya berbeda dengan stok wajib punya catatan — bila ada yang terlewat, sistem akan menyebutkan kode barangnya.</p>
             )}
           </div>
         </Modal>
@@ -635,10 +630,10 @@ export function OpnameDetailPage() {
         <Modal
           open
           onClose={() => setConfirmReview(false)}
-          title="Selesaikan review?"
+          title="Finish the review?"
           footer={
             <>
-              <Button variant="outline" size="sm" onClick={() => setConfirmReview(false)}>Batal</Button>
+              <Button variant="outline" size="sm" onClick={() => setConfirmReview(false)}>Cancel</Button>
               <Button
                 size="sm"
                 disabled={m.review.isPending}
@@ -649,19 +644,19 @@ export function OpnameDetailPage() {
                   )
                 }
               >
-                {m.review.isPending ? 'Menyimpan…' : 'Ya, selesaikan'}
+                {m.review.isPending ? 'Saving…' : 'Yes, finish'}
               </Button>
             </>
           }
         >
           <div className="space-y-3 text-sm">
             <ul className="space-y-1">
-              <li>• <b>{reviewSummary.approvedDiff}</b> barang selisih disetujui → <b>stok disesuaikan</b> ke jumlah fisik.</li>
-              <li>• <b>{reviewSummary.recount}</b> barang diminta <b>hitung ulang</b>{reviewSummary.recount > 0 && ' → opname kembali ke petugas'}.</li>
-              <li>• <b>{reviewSummary.rejected}</b> barang ditolak → stok tidak diubah.</li>
+              <li>• <b>{reviewSummary.approvedDiff}</b> items with approved differences → <b>stock adjusted</b> to the physical quantity.</li>
+              <li>• <b>{reviewSummary.recount}</b> items requested <b>recount</b>{reviewSummary.recount > 0 && ' → opname returns to the counter'}.</li>
+              <li>• <b>{reviewSummary.rejected}</b> items rejected → stock unchanged.</li>
             </ul>
             <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Catatan review (opsional)</label>
+              <label className="text-xs text-muted-foreground">Review notes (optional)</label>
               <Textarea rows={2} maxLength={255} value={reviewNote} onChange={(e) => setReviewNote(e.target.value)} />
             </div>
           </div>

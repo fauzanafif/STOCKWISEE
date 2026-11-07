@@ -37,6 +37,10 @@ export interface Item {
   accurate_qty_onhand?: number | null
   accurate_qty_onorder?: number | null
   /** Qty aktual sekarang + qty yang sedang dipesan di PO terbuka (Accurate "Qty On Order"). */
+  /** the warehouse stock in STOCKWISE (Accurate's + STOCKWISE RI / NPBG) */
+  stock_qty?: number | null
+  /** coming in and approved: PPB DISETUJUI without PO, approved / sent POs not received yet */
+  incoming?: { ppb: number; po: number; total: number; docs: string[] } | null
   forecast_qty?: number | null
   category: { id: number; name: string; path: string } | null
   category_breakdown?: { induk: string | null; anak_1: string | null; anak_2: string | null; anak_3: string | null } | null

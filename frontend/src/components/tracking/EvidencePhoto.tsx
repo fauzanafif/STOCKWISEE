@@ -4,6 +4,7 @@ import { api, apiErrorMessage } from '@/lib/api'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import { confirmDialog } from '@/components/ui/confirm'
+import { showBlob } from '@/components/ui/lightbox'
 
 /**
  * Evidence photos of the tracking modules (the Excel "DATA BUKTI" folder and the
@@ -14,12 +15,12 @@ export interface PhotoRef {
   file_name: string | null
 }
 
-/** Excel "Status Hasil Pengerjaan" of the tracking sheets. */
+/** Excel "Work Result Status" of the tracking sheets. */
 export const EXCEL_STATUS: Record<string, { label: string; variant: 'neutral' | 'default' | 'success' | 'warning' }> = {
   REQUESTED: { label: 'REQUESTED', variant: 'neutral' },
   ON_GOING: { label: 'ON-GOING', variant: 'default' },
   COMPLETED: { label: 'COMPLETED', variant: 'success' },
-  INCOMPLETE: { label: 'Belum lengkap', variant: 'warning' },
+  INCOMPLETE: { label: 'Incomplete', variant: 'warning' },
 }
 
 export function ExcelStatusBadge({ status, hint }: { status: string; hint?: string }) {
@@ -27,13 +28,10 @@ export function ExcelStatusBadge({ status, hint }: { status: string; hint?: stri
   return <Badge variant={s.variant} title={hint}>{s.label}</Badge>
 }
 
-/** Opens a stored photo / video in a new tab (the API needs the bearer token, so it is fetched as a blob). */
-export async function openTrackingPhoto(id: number) {
-  const w = window.open('', '_blank')
+/** A stored photo in the popup; a video / PDF in a new tab (fetched with the bearer token). */
+export async function openTrackingPhoto(id: number, name?: string | null) {
   const res = await api.get(`/api/tracking-photos/${id}`, { responseType: 'blob' })
-  const url = URL.createObjectURL(res.data as Blob)
-  if (w) w.location.href = url
-  else window.location.href = url
+  showBlob(res.data as Blob, { alt: name ?? 'Proof photo', name: name ?? undefined })
 }
 
 /** Resize a picked photo to a JPEG data URL (keeps uploads small on phones). */
@@ -43,7 +41,7 @@ export async function photoToDataUrl(file: File, max = 1600): Promise<string> {
     const img = await new Promise<HTMLImageElement>((resolve, reject) => {
       const i = new Image()
       i.onload = () => resolve(i)
-      i.onerror = () => reject(new Error('File bukan gambar.'))
+      i.onerror = () => reject(new Error('The file is not an image.'))
       i.src = url
     })
     const scale = Math.min(1, max / Math.max(img.width, img.height))
@@ -62,12 +60,12 @@ export function PhotoOpen({ photo, fileName }: { photo?: PhotoRef | null; fileNa
   if (photo) {
     return (
       <button type="button" className="inline-flex items-center gap-1 whitespace-nowrap text-primary hover:underline"
-        onClick={(e) => { e.stopPropagation(); void openTrackingPhoto(photo.id) }} title={photo.file_name ?? undefined}>
+        onClick={(e) => { e.stopPropagation(); void openTrackingPhoto(photo.id, photo.file_name) }} title={photo.file_name ?? undefined}>
         <ImageIcon className="size-3.5" /> Open File
       </button>
     )
   }
-  if (fileName) return <span className="whitespace-nowrap text-xs text-muted-foreground" title="Nama File ada, file fotonya belum ada di STOCKWISE">tanpa file</span>
+  if (fileName) return <span className="whitespace-nowrap text-xs text-muted-foreground" title="File Name exists, the photo file is not in STOCKWISE yet">no file</span>
   return <span className="text-muted-foreground">—</span>
 }
 
@@ -100,8 +98,8 @@ export function CompactPhotoSlot({ entity, entityId, slot, label, photo, canEdit
   return (
     <div className="flex items-center gap-1" title={err ?? undefined}>
       {photo && (
-        <button type="button" onClick={(e) => { e.stopPropagation(); void openTrackingPhoto(photo.id) }}
-          className={cn(iconBtn, 'border-primary/40 text-primary')} title={photo.file_name ?? `Lihat ${label}`} aria-label={`Lihat ${label}`}>
+        <button type="button" onClick={(e) => { e.stopPropagation(); void openTrackingPhoto(photo.id, photo.file_name ?? label) }}
+          className={cn(iconBtn, 'border-primary/40 text-primary')} title={photo.file_name ?? `View ${label}`} aria-label={`View ${label}`}>
           <ImageIcon className="size-3.5" />
         </button>
       )}
@@ -109,7 +107,7 @@ export function CompactPhotoSlot({ entity, entityId, slot, label, photo, canEdit
         busy ? (
           <span className={iconBtn}><Loader2 className="size-3.5 animate-spin" /></span>
         ) : (
-          <button type="button" onClick={() => input.current?.click()} className={iconBtn} title={photo ? `Ganti ${label}` : `Unggah ${label}`} aria-label={photo ? `Ganti ${label}` : `Unggah ${label}`}>
+          <button type="button" onClick={() => input.current?.click()} className={iconBtn} title={photo ? `Change ${label}` : `Upload ${label}`} aria-label={photo ? `Change ${label}` : `Upload ${label}`}>
             <Camera className="size-3.5" />
           </button>
         )
@@ -147,7 +145,7 @@ export function PhotoSlot({ entity, entityId, slot, label, photo, fileName, canE
   }
 
   async function remove() {
-    if (!photo || !(await confirmDialog(`Hapus ${label.toLowerCase()}?`))) return
+    if (!photo || !(await confirmDialog(`Delete ${label.toLowerCase()}?`))) return
     setBusy(true)
     try {
       await api.delete(`/api/tracking-photos/${photo.id}`)
@@ -167,11 +165,11 @@ export function PhotoSlot({ entity, entityId, slot, label, photo, fileName, canE
         {canEdit && (
           <>
             <button type="button" disabled={busy} onClick={() => input.current?.click()}
-              className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-primary hover:bg-muted" title={photo ? 'Ganti foto' : 'Ambil / pilih foto'}>
-              {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Camera className="size-3.5" />} {photo ? 'Ganti' : 'Unggah'}
+              className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-primary hover:bg-muted" title={photo ? 'Change photo' : 'Take / select photo'}>
+              {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Camera className="size-3.5" />} {photo ? 'Change' : 'Upload'}
             </button>
             {photo && (
-              <button type="button" disabled={busy} onClick={remove} className="rounded p-0.5 text-destructive hover:bg-muted" aria-label="Hapus foto">
+              <button type="button" disabled={busy} onClick={remove} className="rounded p-0.5 text-destructive hover:bg-muted" aria-label="Delete photo">
                 <Trash2 className="size-3.5" />
               </button>
             )}
@@ -180,7 +178,7 @@ export function PhotoSlot({ entity, entityId, slot, label, photo, fileName, canE
           </>
         )}
       </div>
-      {photo?.file_name && <div className="truncate font-mono text-[11px] text-muted-foreground">{photo.file_name}</div>}
+      {photo?.file_name && <div className="truncate text-xs text-muted-foreground">{photo.file_name}</div>}
       {err && <p className="text-destructive">{err}</p>}
     </div>
   )

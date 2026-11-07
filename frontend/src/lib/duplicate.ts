@@ -8,12 +8,12 @@ function duplicateOf(error: unknown): { message: string; confirmable: boolean } 
   if (!(error instanceof AxiosError) || error.response?.status !== 422) return null
   const msg = (error.response.data as { errors?: Record<string, string[]> } | undefined)?.errors?.duplicate?.[0]
   // a look-alike may be saved once the user confirms it is another one; the same line of one document never
-  return msg ? { message: msg, confirmable: msg.includes('Tetap simpan') } : null
+  return msg ? { message: msg, confirmable: msg.includes('Save anyway') } : null
 }
 
 /**
  * Saves a manual NPBG / PPB / PO / RI; when the server finds the same one already made (admin A and
- * admin B entering one request), it asks first and saves only on "Tetap simpan" (allow_duplicate).
+ * admin B entering one request), it asks first and saves only on "Save anyway" (allow_duplicate).
  */
 export function saveOnce<P extends object, R>(
   mutate: (payload: P & { allow_duplicate?: boolean }, opts: { onSuccess: (r: R) => void; onError: (e: unknown) => void }) => void,
@@ -31,12 +31,12 @@ export function saveOnce<P extends object, R>(
         return onError(dup.message)
       }
       const ok = await confirmDialog({
-        title: 'Kemungkinan dibuat dua kali',
-        message: `${dup.message.replace(/ Kalau memang.*$/, '')}\n\nPastikan bukan permintaan yang sama (mis. sudah diproses admin lain). Tetap simpan sebagai dokumen baru?`,
-        confirmLabel: 'Tetap simpan',
-        cancelLabel: 'Batal',
+        title: 'Possibly created twice',
+        message: `${dup.message.replace(/ Kalau memang.*$/, '')}\n\nMake sure this is not the same request (e.g. already processed by another admin). Save as a new document anyway?`,
+        confirmLabel: 'Save anyway',
+        cancelLabel: 'Cancel',
       })
-      if (!ok) return onError('Tidak disimpan: sudah ada dokumen yang sama.')
+      if (!ok) return onError('Not saved: the same document already exists.')
       mutate({ ...payload, allow_duplicate: true }, { onSuccess, onError: (e2) => onError(apiErrorMessage(e2)) })
     },
   })

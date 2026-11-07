@@ -10,6 +10,7 @@ use App\Models\TrackingPhoto;
 use App\Services\ItemRecommender;
 use App\Services\ItemRequestApprovalService;
 use App\Services\ItemRequestFulfillmentService;
+use App\Services\ItemRequestProxyService;
 use App\Services\ItemRequestService;
 use App\Support\ItemRequestForms;
 use App\Support\Network\IpClassifier;
@@ -164,6 +165,9 @@ class ItemRequestController extends Controller
             'can_fulfill' => $gudang && $fulfilling && ($plan = $this->fulfillment->plan($itemRequest)) !== [] && collect($plan)->contains(fn ($p) => ($p['available'] ?? 0) > 0 || ! $p['in_procurement']),
             // one step at Gudang: the prepared NPBG is handed over (its quantities fixed in the serah terima)
             'can_handover' => $gudang && (bool) $ready,
+            // pickup by a representative: the requester sees the code / QR, everyone else who and until when
+            'proxy' => ItemRequestProxyService::present($itemRequest, $itemRequest->requester_id === $user->id),
+            'can_proxy' => $itemRequest->requester_id === $user->id && ItemRequestProxyService::allowed($itemRequest),
             'can_close' => $fulfilling && ! $ready && ($gudang || $user->hasPermission('item_request.process')),
             'plan' => $gudang && $fulfilling ? ($plan ?? $this->fulfillment->plan($itemRequest)) : [],
             'fulfillments' => $itemRequest->fulfillments->map(fn (ItemRequestFulfillment $f) => [
@@ -193,7 +197,10 @@ class ItemRequestController extends Controller
                 'id' => $l->id, 'item_id' => $l->item_id, 'kode_barang' => $l->kode_barang, 'deskripsi_barang' => $l->deskripsi_barang,
                 // what the requester typed (the name above is Master Produk's once matched)
                 'deskripsi_peminta' => $l->deskripsi_peminta,
-                'qty' => $l->qty, 'satuan' => $l->satuan, 'note' => $l->note,
+                'qty' => $l->qty, 'satuan' => $l->satuan, 'note' => $l->note, 'short_reason' => $l->short_reason,
+                // as asked, and the ratio frozen at the verification
+                'requested_qty' => $l->requested_qty === null ? null : (float) $l->requested_qty, 'requested_unit' => $l->requested_unit, 'unit_ratio' => $l->unit_ratio === null ? null : (float) $l->unit_ratio,
+                'uom_unmapped' => $l->decision !== null && $l->requested_unit !== null && $l->unit_ratio === null,
                 'decision' => $l->decision, 'reject_reason' => $l->reject_reason,
                 // approved (official need) → handed over → what is left; closed with a reason
                 'approved_qty' => $l->approved_qty, 'fulfilled_qty' => (float) $l->fulfilled_qty, 'remaining' => $l->remaining(),
@@ -218,12 +225,19 @@ class ItemRequestController extends Controller
         ]]);
     }
 
+    /** GET /api/item-requests/my-profile — name, username, phone, divisi, position from Data Pekerja. */
+    public function myProfile(Request $request): JsonResponse
+    {
+        return response()->json(['data' => PublicItemRequestController::profile($request->user())]);
+    }
+
     public function store(Request $request): JsonResponse
     {
         $data = $request->validate([
             'form_type' => ['nullable', Rule::in(array_keys(ItemRequestForms::TYPES))],
             'form_detail' => ['nullable', 'string', 'max:200'],
             'divisi' => ['nullable', 'string', 'max:100'],
+            'contact' => ['nullable', 'string', 'max:50'],
             'needed_date' => ['nullable', 'date'],
             'note' => ['nullable', 'string', 'max:2000'],
             'lines' => ['required', 'array', 'min:1', 'max:50'],
@@ -241,7 +255,11 @@ class ItemRequestController extends Controller
             'images.*' => ['required', 'string', 'max:12000000'],
         ], ['images.max' => 'Gambar maksimal 3.', 'lines.*.images.max' => 'Gambar maksimal 3 per barang.']);
         $user = $request->user();
-        $made = $this->service->create(['id' => $user->id, 'name' => $user->name, 'ip' => $request->ip()], $data);
+        // like the form via link: the name / phone / divisi of Data Pekerja, the phone and divisi may be changed
+        $me = PublicItemRequestController::profile($user);
+        $data['divisi'] = filled($data['divisi'] ?? null) ? $data['divisi'] : $me['divisi'];
+        $made = $this->service->create(['id' => $user->id, 'name' => $me['name'] ?: $user->name, 'contact' => trim((string) ($data['contact'] ?? '')) ?: $me['contact'], 'ip' => $request->ip()],
+            collect($data)->except('contact')->all());
 
         return $this->show($request, $made)->setStatusCode(201);
     }
@@ -261,11 +279,16 @@ class ItemRequestController extends Controller
             'lines.*.items' => ['nullable', 'array', 'max:10'],
             'lines.*.items.*.item_id' => ['required', 'integer', 'exists:items,id'],
             'lines.*.items.*.qty' => ['required', 'numeric', 'min:0.01'],
+            // less than asked (e.g. 9 of 10, 1 kept in stock): why — required then
+            'lines.*.reason' => ['nullable', 'string', 'max:255'],
+            'lines.*.unit' => ['nullable', 'string', 'max:30'],
+            // admin gudang's note on the request, for the approvers and the requester (optional)
+            'note' => ['nullable', 'string', 'max:1000'],
             'npbg' => ['nullable', 'array'],
             'npbg.pelanggan' => ['nullable', 'string', 'max:200'],
             'npbg.tipe_npbg' => ['nullable', 'in:Penjualan,Non Penjualan'],
         ]);
-        $this->service->process($itemRequest, $request->user(), (array) ($data['lines'] ?? $request->input('lines', [])), $data['npbg'] ?? []);
+        $this->service->process($itemRequest, $request->user(), (array) ($data['lines'] ?? $request->input('lines', [])), $data['npbg'] ?? [], $data['note'] ?? null);
 
         return $this->show($request, $itemRequest->refresh());
     }
@@ -296,6 +319,7 @@ class ItemRequestController extends Controller
     public function urgency(Request $request, ItemRequest $itemRequest): JsonResponse
     {
         $data = $request->validate(['urgency' => ['present', 'nullable', Rule::in(ItemRequestForms::URGENCIES)]]);
+        abort_if(in_array($itemRequest->status, ['SELESAI', 'DITOLAK', 'DIBATALKAN'], true), 422, 'Request ini sudah selesai / ditutup.');
         $itemRequest->update(['urgency' => $data['urgency']]);
 
         return $this->show($request, $itemRequest->refresh());
@@ -345,7 +369,7 @@ class ItemRequestController extends Controller
                     'id' => $l->id, 'kode_barang' => $l->kode_barang, 'deskripsi_barang' => $l->deskripsi_barang, 'qty' => $l->qty,
                     // what the requester wrote, and the Master Produk item admin gudang matched it to
                     'deskripsi_peminta' => $l->requestedText(), 'item_description' => $l->item?->description,
-                    'satuan' => $l->satuan, 'note' => $l->note, 'decision' => $l->decision, 'npbg_id' => $l->npbg_id, 'no_npbg' => $l->npbg?->no_npbg,
+                    'satuan' => $l->satuan, 'note' => $l->note, 'short_reason' => $l->short_reason, 'decision' => $l->decision, 'npbg_id' => $l->npbg_id, 'no_npbg' => $l->npbg?->no_npbg,
                     'approved_qty' => $l->approved_qty, 'fulfilled_qty' => (float) $l->fulfilled_qty, 'remaining' => $l->remaining(),
                     'item_id' => $l->item_id, 'available' => $l->item_id && array_key_exists($l->item_id, $stock) ? $stock[$l->item_id] : null,
                     'on_hand' => $l->item_id && array_key_exists($l->item_id, $onHand) ? $onHand[$l->item_id] : null,
@@ -355,8 +379,12 @@ class ItemRequestController extends Controller
                 // Gudang: the prepared NPBG is handed over in one step (its quantities fixed there)
                 'can_handover' => in_array($r->status, ['DISIAPKAN', 'SIAP_DISERAHKAN'], true) && in_array($r->status, $statuses, true) && ($open = $openOf($r)) !== [],
                 'can_fulfill' => $r->status === 'DISIAPKAN' && in_array('DISIAPKAN', $statuses, true) && $openOf($r) === [],
+                // picked up by a representative: Gudang scans their code at the serah terima
+                'proxy' => ItemRequestProxyService::present($r, false),
                 'fulfillments' => $open ?? [],
                 'last_step' => ($a = $r->approvals->sortByDesc('id')->first()) ? $this->step($a) : null,
+                // who in the warehouse picked the items the approver is looking at, and when
+                'verified_step' => ($v = $r->approvals->where('stage', 'ADMIN')->sortByDesc('id')->first()) ? $this->step($v) : null,
             ]),
             'meta' => ['statuses' => $statuses, 'counts' => (object) $counts->map(fn ($n) => (int) $n)->all(), 'total' => (int) $counts->sum()],
         ]);
@@ -430,11 +458,14 @@ class ItemRequestController extends Controller
             // why less than the approved NPBG is handed over
             'reasons' => ['nullable', 'array'],
             'reasons.*' => ['nullable', 'string', 'max:200'],
+            // picked up by a representative: the code / QR text the requester gave them
+            'proxy_code' => ['nullable', 'string', 'max:60'],
         ]);
         $this->fulfillment->handover($itemRequest, $fulfillment, $request->user(), $data['photo'], $data['signature'], $data['received_by'], $data['note'] ?? null,
             collect($data['handed'] ?? [])->mapWithKeys(fn ($q, $id) => [(int) $id => (float) $q])->all(),
             array_map('intval', $data['drop'] ?? []),
-            collect($data['reasons'] ?? [])->mapWithKeys(fn ($t, $id) => [(int) $id => (string) $t])->all());
+            collect($data['reasons'] ?? [])->mapWithKeys(fn ($t, $id) => [(int) $id => (string) $t])->all(),
+            $data['proxy_code'] ?? null);
 
         return $this->show($request, $itemRequest->refresh());
     }
@@ -449,6 +480,33 @@ class ItemRequestController extends Controller
         $data = $request->validate(['quantities' => ['nullable', 'array'], 'quantities.*' => ['numeric', 'min:0']]);
         $this->fulfillment->confirm($itemRequest, $fulfillment, $request->user(),
             collect($data['quantities'] ?? [])->mapWithKeys(fn ($q, $id) => [(int) $id => (float) $q])->all());
+
+        return $this->show($request, $itemRequest->refresh());
+    }
+
+    /** POST /api/item-requests/{id}/proxy {name} — the requester: someone else picks the goods up (a new code, the old one void). */
+    public function createProxy(Request $request, ItemRequest $itemRequest): JsonResponse
+    {
+        abort_unless($itemRequest->requester_id === $request->user()->id, 403, 'Hanya peminta yang bisa mewakilkan pengambilan.');
+        $data = $request->validate(['name' => ['required', 'string', 'max:150']]);
+        app(ItemRequestProxyService::class)->create($itemRequest, $data['name']);
+
+        return $this->show($request, $itemRequest->refresh());
+    }
+
+    /** GET /api/item-requests/{id}/proxy-people?q= — the requester picks the representative from data pekerja. */
+    public function proxyPeople(Request $request, ItemRequest $itemRequest): JsonResponse
+    {
+        abort_unless($itemRequest->requester_id === $request->user()->id, 403, 'Hanya peminta yang bisa mewakilkan pengambilan.');
+
+        return response()->json(['data' => ItemRequestProxyService::people((string) $request->query('q', ''))]);
+    }
+
+    /** DELETE /api/item-requests/{id}/proxy — the requester takes it back (picks up themself). */
+    public function cancelProxy(Request $request, ItemRequest $itemRequest): JsonResponse
+    {
+        abort_unless($itemRequest->requester_id === $request->user()->id, 403, 'Hanya peminta yang bisa membatalkan wakil.');
+        app(ItemRequestProxyService::class)->cancel($itemRequest);
 
         return $this->show($request, $itemRequest->refresh());
     }
@@ -556,7 +614,7 @@ class ItemRequestController extends Controller
             // where the request came from (office network or not) — IpClassifier
             'requester_location' => $r->requester_location ? IpClassifier::label($r->requester_location) : null,
             'divisi' => $r->divisi,
-            'needed_date' => $r->needed_date?->toDateString(), 'note' => $r->note,
+            'needed_date' => $r->needed_date?->toDateString(), 'note' => $r->note, 'verify_note' => $r->verify_note,
             'lines_count' => $r->lines_count ?? $r->lines()->count(),
             'open_lines_count' => $r->open_lines_count ?? $r->lines()->whereNull('decision')->count(),
             'processed_at' => $r->processed_at, 'created_at' => $r->created_at,

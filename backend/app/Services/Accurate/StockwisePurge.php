@@ -120,6 +120,7 @@ class StockwisePurge
             $movements->delete();
             $photos->delete();
             DB::table('item_requests')->whereIn('id', $requests ?: [0])->delete(); // lines, approvals, fulfillments go with it
+            DB::table('ppb_saved_drafts')->delete();
             DB::table('ppb_drafts')->delete();
             DB::table('purchase_orders')->whereIn('id', $po ?: [0])->delete();
             DB::table('npbg')->whereIn('id', $npbg ?: [0])->delete();

@@ -66,6 +66,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       logout,
       hasPermission: (slug) => !!user && user.permissions.includes(slug),
       hasRole: (...slugs) => !!user && slugs.some((s) => user.roles.includes(s)),
+      setCurrentUser: setUser,
     }),
     [user, isLoading, login, logout],
   )

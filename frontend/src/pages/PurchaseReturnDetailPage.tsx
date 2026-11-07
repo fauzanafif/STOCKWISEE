@@ -14,18 +14,21 @@ import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { confirmDialog } from '@/components/ui/confirm'
 import { DetailFallback } from '@/components/DetailFallback'
+import { openImage } from '@/components/ui/lightbox'
+import { DocPage, DocSection, MetaList, TONE_EDGE } from '@/components/doc/DocLayout'
+import { cn } from '@/lib/utils'
 
-const fmtDate = (v: string | null) => (v ? new Date(v).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : '-')
+const fmtDate = (v: string | null) => (v ? new Date(v).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '-')
 const fmtQty = (n: number) => n.toLocaleString('id-ID', { maximumFractionDigits: 2 })
 const fmtRp = (n: number) => `Rp ${n.toLocaleString('id-ID', { maximumFractionDigits: 0 })}`
 
 function steps(r: PurchaseReturnDetail): TimelineStep[] {
   const cancelled = r.status === 'DIBATALKAN'
   return [
-    { key: 'DIBUAT', label: 'Retur dibuat', state: 'done', at: r.created_at, by: r.created_by_name, note: null },
-    { key: 'DIKIRIM', label: 'Dikirim ke vendor', state: r.sent_at ? 'done' : cancelled ? 'cancelled' : 'current', at: r.sent_at, by: r.sent_by_name, note: null },
+    { key: 'DIBUAT', label: 'Return created', state: 'done', at: r.created_at, by: r.created_by_name, note: null },
+    { key: 'DIKIRIM', label: 'Sent to vendor', state: r.sent_at ? 'done' : cancelled ? 'cancelled' : 'current', at: r.sent_at, by: r.sent_by_name, note: null },
     {
-      key: 'SELESAI', label: r.status === 'SELESAI' ? 'Selesai' : 'Diselesaikan vendor',
+      key: 'SELESAI', label: r.status === 'SELESAI' ? 'Done' : 'Settled by vendor',
       state: r.resolved_at ? 'done' : cancelled ? 'skipped' : r.sent_at ? 'current' : 'todo', at: r.resolved_at, by: r.resolved_by_name, note: null,
     },
   ]
@@ -43,37 +46,37 @@ function NextStep({ r }: { r: PurchaseReturnDetail }) {
 
   if (r.status === 'DIBUAT') {
     return (
-      <Card className="space-y-3 border-primary/40 bg-primary/5 p-4">
-        <div className="text-sm font-semibold">Kirim barang ke vendor</div>
+      <Card className={cn("space-y-3 p-4", TONE_EDGE.info)}>
+        <div className="text-sm font-semibold">Ship items to vendor</div>
         <input ref={file} type="file" accept="image/*" capture="environment" className="hidden"
           onChange={async (e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) setPhoto(await photoToDataUrl(f, 1600)) }} />
         <div className="flex flex-wrap items-center gap-2">
           {photo ? (
             <span className="relative inline-block overflow-hidden rounded-md border">
-              <img src={photo} alt="Bukti kirim" className="h-16 w-24 object-cover" />
-              <button type="button" onClick={() => setPhoto(null)} className="absolute right-0.5 top-0.5 rounded-full bg-card/90 p-0.5" aria-label="Hapus foto"><X className="size-3" /></button>
+              <img src={photo} alt="Shipping proof" className="h-16 w-24 object-cover" />
+              <button type="button" onClick={() => setPhoto(null)} className="absolute right-0.5 top-0.5 rounded-full bg-card/90 p-0.5" aria-label="Delete photo"><X className="size-3" /></button>
             </span>
           ) : (
-            <Button type="button" variant="outline" size="sm" onClick={() => file.current?.click()}><Camera className="size-4" /> Foto bukti kirim</Button>
+            <Button type="button" variant="outline" size="sm" onClick={() => file.current?.click()}><Camera className="size-4" /> Shipping proof photo</Button>
           )}
-          <Input className="min-w-0 flex-1" value={note} maxLength={255} onChange={(e) => setNote(e.target.value)} placeholder="Catatan, mis. via ekspedisi / no surat jalan (opsional)" />
+          <Input className="min-w-0 flex-1" value={note} maxLength={255} onChange={(e) => setNote(e.target.value)} placeholder="Notes, e.g. via courier / delivery note no. (optional)" />
         </div>
         {err && <p className="text-sm text-destructive">{err}</p>}
         <Button className="w-full" disabled={step.send.isPending} onClick={() => step.send.mutate({ note: note.trim() || null, photo }, { onError })}>
-          {step.send.isPending ? <Loader2 className="size-4 animate-spin" /> : <Truck className="size-4" />} Tandai sudah dikirim
+          {step.send.isPending ? <Loader2 className="size-4 animate-spin" /> : <Truck className="size-4" />} Mark as sent
         </Button>
       </Card>
     )
   }
   if (r.status === 'DIKIRIM') {
     return (
-      <Card className="space-y-3 border-primary/40 bg-primary/5 p-4">
-        <div className="text-sm font-semibold">Retur sudah diselesaikan vendor?</div>
-        <Input value={doneNote} maxLength={255} onChange={(e) => setDoneNote(e.target.value)} placeholder="Catatan (opsional), mis. diganti barang baru / dipotong tagihan" aria-label="Catatan" />
+      <Card className={cn("space-y-3 p-4", TONE_EDGE.info)}>
+        <div className="text-sm font-semibold">Has the vendor settled this return?</div>
+        <Input value={doneNote} maxLength={255} onChange={(e) => setDoneNote(e.target.value)} placeholder="Notes (optional), e.g. replaced with a new item / deducted from the bill" aria-label="Notes" />
         {err && <p className="text-sm text-destructive">{err}</p>}
-        <Button className="w-full bg-emerald-600 text-white hover:bg-emerald-700" disabled={step.resolve.isPending}
+        <Button className="w-full" disabled={step.resolve.isPending}
           onClick={() => step.resolve.mutate({ ref: null, note: doneNote.trim() || null }, { onError })}>
-          {step.resolve.isPending ? <Loader2 className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />} Selesai
+          {step.resolve.isPending ? <Loader2 className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />} Done
         </Button>
       </Card>
     )
@@ -84,10 +87,10 @@ function NextStep({ r }: { r: PurchaseReturnDetail }) {
 function Photo({ id, slot, label }: { id: number; slot: 'barang' | 'kirim'; label: string }) {
   const p = useReturnPhoto(id, slot, true)
   return (
-    <a href={p.data} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-lg border bg-muted">
+    <button type="button" onClick={() => p.data && openImage({ src: p.data, alt: label })} className="block w-full cursor-zoom-in overflow-hidden rounded-lg border bg-muted text-left" title="View photo">
       {p.data ? <img src={p.data} alt={label} className="h-36 w-full object-cover" /> : <div className="h-36" />}
       <div className="bg-card px-2 py-1 text-xs text-muted-foreground">{label}</div>
-    </a>
+    </button>
   )
 }
 
@@ -97,36 +100,57 @@ export function PurchaseReturnDetailPage() {
   const { data: r, isLoading } = usePurchaseReturn(Number(id))
   const step = useReturnStep(Number(id))
 
-  if (isLoading || !r) return <div className="space-y-4"><BackLink to="/purchase-returns" label="Retur Pembelian" /><DetailFallback loading={isLoading} /></div>
+  if (isLoading || !r) return <div className="space-y-4"><BackLink to="/purchase-returns" label="Return" /><DetailFallback loading={isLoading} /></div>
   const canManage = hasPermission('purchase_return.manage')
   const total = r.lines.reduce((s, l) => s + l.qty * (l.harga_satuan ?? 0), 0)
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6">
-      <BackLink to="/purchase-returns" label="Retur Pembelian" />
-
-      <header className="space-y-1">
-        <div className="flex items-start justify-between gap-3">
-          <h1 className="text-xl font-semibold">{r.vendor ?? '-'}</h1>
-          <ReturnStatusBadge status={r.status} />
-        </div>
-        <p className="text-sm text-muted-foreground">
-          <span className="font-mono">{r.number}</span> · dari {r.ri_id ? <Link to={`/ri/${r.ri_id}`} className="font-mono text-primary hover:underline">{r.no_ri}</Link> : <span className="font-mono">{r.no_ri}</span>}
-          {r.no_po && <> · <span className="font-mono">{r.no_po}</span></>} · {fmtDate(r.tgl_retur)}
-        </p>
-        <p className="text-sm"><span className="text-muted-foreground">Alasan: </span><span className="font-medium">{r.reason}</span>{r.note ? ` — ${r.note}` : ''}</p>
-      </header>
-
+    <DocPage
+      back={{ to: '/purchase-returns', label: 'Return' }}
+      kind="Return"
+      number={r.number}
+      status={<ReturnStatusBadge status={r.status} />}
+      subtitle={[r.vendor ?? '-', fmtDate(r.tgl_retur)].join(' · ')}
+      actions={canManage && r.status === 'DIBUAT' ? (
+        <Button size="sm" variant="outline" className="text-destructive hover:bg-destructive/5 hover:text-destructive" disabled={step.cancel.isPending}
+          onClick={async () => { if ((await confirmDialog({ message: 'Cancel this return?', danger: true }))) step.cancel.mutate() }}>Cancel return</Button>
+      ) : undefined}
+      aside={<>
+        <DocSection title="Information">
+          <MetaList items={[
+            { label: 'Vendor', value: r.vendor },
+            { label: 'Return date', value: fmtDate(r.tgl_retur) },
+            { label: 'From Receipt', value: r.ri_id ? <Link to={`/ri/${r.ri_id}`} className=" text-primary hover:underline">{r.no_ri}</Link> : <span className="">{r.no_ri}</span> },
+            { label: 'PO No', value: r.no_po ? <span className="">{r.no_po}</span> : null },
+            { label: 'Total', value: total > 0 ? <span className="font-semibold tabular-nums">{fmtRp(total)}</span> : null },
+          ]} />
+        </DocSection>
+        <DocSection title="Status">
+          <RequestTimeline steps={steps(r)} />
+          {(r.sent_note || r.resolution_ref || r.resolution_note) && (
+            <div className="mt-3 space-y-0.5 border-t pt-3 text-muted-foreground">
+              {r.sent_note && <p>Shipping: {r.sent_note}</p>}
+              {r.resolution_ref && <p>Reference: <span className=" text-foreground">{r.resolution_ref}</span></p>}
+              {r.resolution_note && <p>{r.resolution_note}</p>}
+            </div>
+          )}
+        </DocSection>
+      </>}
+    >
       {canManage && <NextStep r={r} />}
 
-      <section>
-        <h2 className="text-sm font-semibold">Barang <span className="font-normal text-muted-foreground">({r.lines.length})</span></h2>
+      <DocSection title="Return reason">
+        <p><span className="font-medium">{r.reason}</span>{r.note ? <span className="text-muted-foreground"> — {r.note}</span> : ''}</p>
+      </DocSection>
+
+      <DocSection title="Item" count={r.lines.length} flush
+        actions={total > 0 ? <span>Total <b className="tabular-nums">{fmtRp(total)}</b></span> : undefined}>
         <ul className="divide-y">
           {r.lines.map((l) => (
-            <li key={l.id} className="flex items-start justify-between gap-3 py-3 text-sm">
+            <li key={l.id} className="flex items-start justify-between gap-3 px-4 py-3">
               <div className="min-w-0">
                 <div className="break-words font-medium">{l.deskripsi_barang}</div>
-                <div className="font-mono text-xs text-muted-foreground">{l.kode_barang}</div>
+                <div className="text-[13px] text-muted-foreground">{l.kode_barang}</div>
               </div>
               <div className="shrink-0 text-right">
                 <div className="tabular-nums">{fmtQty(l.qty)} <span className="text-muted-foreground">{l.satuan ?? ''}</span></div>
@@ -135,34 +159,16 @@ export function PurchaseReturnDetailPage() {
             </li>
           ))}
         </ul>
-        {total > 0 && <div className="flex justify-between border-t pt-2 text-sm font-semibold"><span>Total</span><span className="tabular-nums">{fmtRp(total)}</span></div>}
-      </section>
+      </DocSection>
 
       {r.photos.length > 0 && (
-        <section className="grid grid-cols-2 gap-2">
-          {r.photos.includes('barang') && <Photo id={r.id} slot="barang" label="Foto barang" />}
-          {r.photos.includes('kirim') && <Photo id={r.id} slot="kirim" label="Bukti kirim" />}
-        </section>
-      )}
-
-      <section className="space-y-3">
-        <h2 className="text-sm font-semibold">Status</h2>
-        <RequestTimeline steps={steps(r)} />
-        {(r.sent_note || r.resolution_ref || r.resolution_note) && (
-          <div className="space-y-0.5 text-sm text-muted-foreground">
-            {r.sent_note && <p>Pengiriman: {r.sent_note}</p>}
-            {r.resolution_ref && <p>Referensi: <span className="font-mono text-foreground">{r.resolution_ref}</span></p>}
-            {r.resolution_note && <p>{r.resolution_note}</p>}
+        <DocSection title="Photo">
+          <div className="grid max-w-lg grid-cols-2 gap-2">
+            {r.photos.includes('barang') && <Photo id={r.id} slot="barang" label="Item photo" />}
+            {r.photos.includes('kirim') && <Photo id={r.id} slot="kirim" label="Shipping proof" />}
           </div>
-        )}
-      </section>
-
-      {canManage && r.status === 'DIBUAT' && (
-        <div className="border-t pt-4 text-sm">
-          <button type="button" disabled={step.cancel.isPending} className="text-muted-foreground hover:text-destructive"
-            onClick={async () => { if ((await confirmDialog('Batalkan retur ini?'))) step.cancel.mutate() }}>Batalkan retur</button>
-        </div>
+        </DocSection>
       )}
-    </div>
+    </DocPage>
   )
 }

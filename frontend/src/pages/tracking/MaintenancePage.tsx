@@ -19,14 +19,14 @@ import { confirmDialog } from '@/components/ui/confirm'
  */
 
 const ENTITY = 'maintenance_sub'
-const fmtDate = (v: string | null | undefined) => (v ? new Date(v).toLocaleDateString('id-ID') : '—')
+const fmtDate = (v: string | null | undefined) => (v ? new Date(v).toLocaleDateString('en-GB') : '—')
 const STATUS_HINT: Record<string, string> = {
-  REQUESTED: 'Permintaan sudah ada',
- ON_GOING: 'No. NPBG sudah ada sedang dikerjakan',
-  COMPLETED: 'No. NPBG, foto sesudah & tgl selesai lengkap',
-  INCOMPLETE: 'Permintaan belum ada',
+  REQUESTED: 'Request exists',
+ ON_GOING: 'NPBG No. exists; in progress',
+  COMPLETED: 'NPBG No., after photo & finish date complete',
+  INCOMPLETE: 'No request yet',
 }
-const STATUS_LABELS = { REQUESTED: 'REQUESTED', ON_GOING: 'ON-GOING', COMPLETED: 'COMPLETED', INCOMPLETE: 'Belum lengkap' }
+const STATUS_LABELS = { REQUESTED: 'REQUESTED', ON_GOING: 'ON-GOING', COMPLETED: 'COMPLETED', INCOMPLETE: 'Incomplete' }
 // Excel "Dropdown List": Bengkel
 const WORKSHOPS = ['SIG', 'CDO', '-', 'Bengkel Ambon', 'JAYA MAKMUR (PAK YUSUF)', 'KLINIK MOTOR']
 
@@ -56,7 +56,7 @@ const fromRow = (r: MaintenanceLine): Form => ({
   request_note: r.request_note ?? '', npbg_no: r.npbg_no ?? '', finish_date: r.finish_date ?? '', result_note: r.result_note ?? '',
 })
 const same = (a: Form, b: Form) => JSON.stringify(a) === JSON.stringify(b)
-const invalid = (f: Form) => (f.nopol_raw.trim() ? null : 'Isi Nopol')
+const invalid = (f: Form) => (f.nopol_raw.trim() ? null : 'Fill in Plate No')
 const toBody = (f: Form) => Object.fromEntries(Object.entries(f).map(([k, v]) => [k, v.trim() || null]))
 
 function MaintenanceTableRow({ row, canEdit, note, opts }: {
@@ -91,7 +91,7 @@ function MaintenanceTableRow({ row, canEdit, note, opts }: {
     }
   }
   async function remove() {
-    if (!row || !(await confirmDialog(`Hapus ${row.number} ${row.sub_no}?`))) return
+    if (!row || !(await confirmDialog(`Delete ${row.number} ${row.sub_no}?`))) return
     try {
       const order = (await api.delete<{ data: MaintenanceRow }>(`/api/maintenance-subs/${row.line_id}`)).data.data
       // the last Sub SPK gone: the No. SPK itself goes too
@@ -105,42 +105,42 @@ function MaintenanceTableRow({ row, canEdit, note, opts }: {
   return (
     <tr {...ed.rowProps} className={rowClass(isNew)}>
       <Td className="px-2 py-2 text-right tabular-nums text-muted-foreground">{row?.no ?? ''}</Td>
-      <Td>{ed.input('report_date', { type: 'date', 'aria-label': 'Tgl Laporan', className: 'min-w-[8rem]' })}</Td>
-      <Td className="whitespace-nowrap px-2 py-2 font-mono text-xs font-medium">{row?.number ?? <span className="text-muted-foreground">otomatis</span>}</Td>
-      <Td className="whitespace-nowrap px-2 py-2 font-mono text-xs">{row?.sub_no ?? 'SUB-01'}</Td>
+      <Td>{ed.input('report_date', { type: 'date', 'aria-label': 'Report Date', className: 'min-w-[8rem]' })}</Td>
+      <Td className="whitespace-nowrap px-2 py-2 text-[13px] font-medium">{row?.number ?? <span className="text-muted-foreground">automatic</span>}</Td>
+      <Td className="whitespace-nowrap px-2 py-2 text-[13px]">{row?.sub_no ?? 'SUB-01'}</Td>
       <Td className="min-w-[12rem]">
-        {ed.list('nopol_raw', opts?.nopols ?? [], { placeholder: isNew ? 'Nopol SPK baru…' : '', className: 'uppercase' })}
+        {ed.list('nopol_raw', opts?.nopols ?? [], { placeholder: isNew ? 'New SPK plate no…' : '', className: '' })}
         <div className="px-2"><InlineSaveBadge state={ed.state} error={ed.error} hint={ed.hint} /></div>
       </Td>
-      <Td className="min-w-[15rem]">{ed.area('problem_detail', { placeholder: isNew ? 'mis. REKONDISI ULANG BAK BELAKANG' : '' })}</Td>
+      <Td className="min-w-[15rem]">{ed.area('problem_detail', { placeholder: isNew ? 'e.g. REAR TRAY RECONDITIONING' : '' })}</Td>
       <Td>
-        <div className="flex items-center gap-1">{row && <CompactPhotoSlot entity={ENTITY} entityId={row.line_id} slot="before" label="Foto Sebelum" photo={row.photos.before} canEdit={canEdit} onChanged={refresh} />}
-        {row?.before_file_name && !row.photos.before && <span className="text-[11px] text-muted-foreground" title={row.before_file_name}>tanpa file</span>}</div>
+        <div className="flex items-center gap-1">{row && <CompactPhotoSlot entity={ENTITY} entityId={row.line_id} slot="before" label="Before Photo" photo={row.photos.before} canEdit={canEdit} onChanged={refresh} />}
+        {row?.before_file_name && !row.photos.before && <span className="text-[11px] text-muted-foreground" title={row.before_file_name}>no file</span>}</div>
       </Td>
       <Td className="min-w-[9rem]">{ed.list('workshop_raw', [...WORKSHOPS, ...(opts?.workshops ?? [])])}</Td>
       <Td className="min-w-[12rem]"><div className="flex items-center gap-1"><div className="min-w-0 flex-1">
-        {ed.input('request_note', { 'aria-label': 'Permintaan', placeholder: 'teks / foto' })}
-        </div>{row && <CompactPhotoSlot entity={ENTITY} entityId={row.line_id} slot="request" label="Permintaan" photo={row.photos.request} canEdit={canEdit} onChanged={refresh} />}</div>
+        {ed.input('request_note', { 'aria-label': 'Request', placeholder: 'text / photo' })}
+        </div>{row && <CompactPhotoSlot entity={ENTITY} entityId={row.line_id} slot="request" label="Request" photo={row.photos.request} canEdit={canEdit} onChanged={refresh} />}</div>
       </Td>
       <Td className="whitespace-nowrap px-2 py-2 text-center">{row && <ExcelStatusBadge status={row.status} hint={STATUS_HINT[row.status]} />}</Td>
       <Td className="min-w-[12rem]">
         {canEdit ? (
           <DocNumberInput compact type="npbg" value={ed.form.npbg_no} onChange={(v) => ed.change('npbg_no', v)}
             onPick={(d) => ed.setForm((s) => ({ ...s, problem_detail: s.problem_detail || (d.note ?? ''), nopol_raw: s.nopol_raw || (d.party ?? '') }))} />
- ) : <span className="block whitespace-nowrap px-2 py-1.5 font-mono text-xs">{row?.npbg_no ?? ''}</span>}
+ ) : <span className="block whitespace-nowrap px-2 py-1.5 text-[13px]">{row?.npbg_no ?? ''}</span>}
       </Td>
       <Td>
-        <div className="flex items-center gap-1">{row && <CompactPhotoSlot entity={ENTITY} entityId={row.line_id} slot="after" label="Foto Sesudah" photo={row.photos.after} canEdit={canEdit} onChanged={refresh} />}
-        {row?.after_file_name && !row.photos.after && <span className="text-[11px] text-muted-foreground" title={row.after_file_name}>tanpa file</span>}</div>
+        <div className="flex items-center gap-1">{row && <CompactPhotoSlot entity={ENTITY} entityId={row.line_id} slot="after" label="After Photo" photo={row.photos.after} canEdit={canEdit} onChanged={refresh} />}
+        {row?.after_file_name && !row.photos.after && <span className="text-[11px] text-muted-foreground" title={row.after_file_name}>no file</span>}</div>
       </Td>
-      <Td>{ed.input('finish_date', { type: 'date', 'aria-label': 'Tgl Selesai Pengerjaan', className: 'min-w-[8rem]' })}</Td>
+      <Td>{ed.input('finish_date', { type: 'date', 'aria-label': 'Work Finish Date', className: 'min-w-[8rem]' })}</Td>
       <Td className="min-w-[14rem]">{ed.area('result_note')}</Td>
       <Td className="px-2">{row && <NoteCell entity={ENTITY} rowKey={row.line_id} note={note} />}</Td>
       {canEdit && (
         <Td className="text-center">
           {row && (
-            <RowActions onAdd={() => void addSub()} addTitle={`Tambah Sub SPK ke ${row.number}`}
-              onDelete={row.status !== 'COMPLETED' ? () => void remove() : undefined} deleteTitle="Hapus Sub SPK" />
+            <RowActions onAdd={() => void addSub()} addTitle={`Add Sub SPK to ${row.number}`}
+              onDelete={row.status !== 'COMPLETED' ? () => void remove() : undefined} deleteTitle="Delete Sub SPK" />
           )}
         </Td>
       )}
@@ -148,8 +148,8 @@ function MaintenanceTableRow({ row, canEdit, note, opts }: {
   )
 }
 
-const headers = ['No', 'Tgl Laporan', 'No. SPK', 'Sub SPK', 'Nopol (Kendaraan)', 'Keterangan Awal', 'Foto Sebelum', 'Bengkel', 'Permintaan',
-  'Status Hasil Pengerjaan', 'No. NPBG', 'Foto Sesudah', 'Tgl Selesai Pengerjaan', 'Keterangan Akhir']
+const headers = ['No', 'Report Date', 'SPK No.', 'Sub SPK', 'Plate No. (Vehicle)', 'Initial Remarks', 'Before Photo', 'Workshop', 'Request',
+  'Work Result Status', 'NPBG No.', 'After Photo', 'Work Finish Date', 'Final Remarks']
 
 export function MaintenancePage() {
   const { hasPermission } = useAuth()
@@ -159,10 +159,10 @@ export function MaintenancePage() {
   const opts = useOptions()
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       <PageHeader
         title="Maintenance Assets"
- subtitle="Sesuai Excel Tracking Maintenance Assets satu baris per Sub SPK. Ketik langsung di tabel, tersimpan otomatis."
+ subtitle="As in the Maintenance Assets Tracking Excel; one row per Sub SPK. Type directly in the table; it saves automatically."
         icon={<Wrench className="size-5" />}
       />
       <InlineSheet<MaintenanceLine>
@@ -173,16 +173,16 @@ export function MaintenancePage() {
         notesEntity={ENTITY}
         statuses={['REQUESTED', 'ON_GOING', 'COMPLETED', 'INCOMPLETE']}
         statusLabels={STATUS_LABELS}
-        searchPlaceholder="Cari no. SPK, nopol, keterangan, bengkel, NPBG…"
+        searchPlaceholder="Search SPK no., plate no., remarks, workshop, NPBG…"
         exportDataset="maintenance"
         exportPermission="maintenance.view"
         toolbarExtra={
           <div className="flex flex-wrap gap-x-4 text-xs text-muted-foreground">
-            <span>Hari ini: <b className="text-foreground">{fmtDate(head.today)}</b></span>
-            {head.next && <span>No. SPK berikutnya: <b className="font-mono text-foreground">{head.next}</b></span>}
+            <span>Today: <b className="text-foreground">{fmtDate(head.today)}</b></span>
+            {head.next && <span>Next SPK No.: <b className=" text-foreground">{head.next}</b></span>}
           </div>
         }
-        hint={<>Status: Permintaan → <b>REQUESTED</b>, No. NPBG → <b>ON-GOING</b>, + Foto Sesudah & Tgl Selesai → <b>COMPLETED</b>. Tombol + = Sub SPK baru.</>}
+        hint={<>Status: Request → <b>REQUESTED</b>, NPBG No. → <b>ON-GOING</b>, + After Photo & Finish Date → <b>COMPLETED</b>. Button + = new Sub SPK.</>}
         renderRow={(r, note) => <MaintenanceTableRow row={r} canEdit={canEdit} note={note} opts={opts} />}
         newRow={canCreate ? <MaintenanceTableRow key="new" row={null} canEdit opts={opts} /> : null}
       />

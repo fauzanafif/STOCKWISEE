@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import { invalidTo } from '@/lib/notify'
 
-const fmtDate = (v: string | null) => (v ? new Date(v).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : '-')
+const fmtDate = (v: string | null) => (v ? new Date(v).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '-')
 const fmtQty = (n: number) => n.toLocaleString('id-ID', { maximumFractionDigits: 2 })
 
 /** Step 1: find the RI the goods came in on. */
@@ -21,22 +21,22 @@ function PickRi({ onPick }: { onPick: (noRi: string) => void }) {
   const { data, isFetching } = useRiSearch(debounced, true)
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       <div className="relative">
         <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-        <Input autoFocus className="pl-9" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cari no RI, vendor, no PO, atau nama barang" />
+        <Input autoFocus className="pl-9" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search Receipt no., vendor, PO no., or item name" />
       </div>
       <div className="divide-y rounded-lg border bg-card">
         {(data ?? []).map((r) => (
           <button key={r.no_ri} type="button" onClick={() => onPick(r.no_ri)} className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-muted/50">
             <div className="min-w-0 flex-1">
               <div className="font-medium">{r.vendor ?? '-'}</div>
-              <div className="text-xs text-muted-foreground"><span className="font-mono">{r.no_ri}</span> · {fmtDate(r.tgl_ri)} · {r.line_count} barang</div>
+              <div className="text-xs text-muted-foreground"><span className="">{r.no_ri}</span> · {fmtDate(r.tgl_ri)} · {r.line_count} items</div>
             </div>
             <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
           </button>
         ))}
-        {data && data.length === 0 && <p className="px-4 py-6 text-center text-sm text-muted-foreground">RI tidak ditemukan.</p>}
+        {data && data.length === 0 && <p className="px-4 py-6 text-center text-sm text-muted-foreground">Receipt not found.</p>}
         {!data && isFetching && <p className="flex justify-center py-6"><Loader2 className="size-5 animate-spin text-muted-foreground" /></p>}
       </div>
     </div>
@@ -67,11 +67,11 @@ export function PurchaseReturnNewPage() {
 
   const submit = () => {
     setErr(null)
-    if (picked.length === 0) return invalidTo(setErr, 'Centang barang yang diretur.')
+    if (picked.length === 0) return invalidTo(setErr, 'Tick the items to return.')
     const over = picked.find((l) => Number(qty[l.ri_id]) > l.returnable)
-    if (over) return invalidTo(setErr, `Jumlah ${over.deskripsi_barang} maksimal ${fmtQty(over.returnable)}.`)
-    if (!reason.trim()) return invalidTo(setErr, 'Pilih atau tulis alasan retur.')
-    if (!photo) return invalidTo(setErr, 'Upload foto barang yang diretur.')
+    if (over) return invalidTo(setErr, `Quantity ${over.deskripsi_barang} maximum ${fmtQty(over.returnable)}.`)
+    if (!reason.trim()) return invalidTo(setErr, 'Select or write a return reason.')
+    if (!photo) return invalidTo(setErr, 'Upload a photo of the returned item.')
     create.mutate({
       no_ri: noRi!, reason: reason.trim(), photo,
       lines: picked.map((l) => ({ ri_id: l.ri_id, qty: Number(qty[l.ri_id]) })),
@@ -79,13 +79,13 @@ export function PurchaseReturnNewPage() {
   }
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6">
-      <BackLink to="/purchase-returns" label="Retur Pembelian" />
-      <h1 className="text-xl font-semibold">Buat retur</h1>
+    <div className="space-y-4">
+      <BackLink to="/purchase-returns" label="Return" />
+      <h1 className="text-xl font-semibold tracking-tight">Create return</h1>
 
       {!noRi ? (
         <section className="space-y-2">
-          <h2 className="text-sm font-semibold">Dari RI mana?</h2>
+          <h2 className="text-sm font-semibold">Which Receipt?</h2>
           <PickRi onPick={(n) => setParams({ ri: n })} />
         </section>
       ) : (
@@ -93,13 +93,13 @@ export function PurchaseReturnNewPage() {
           <div className="flex items-start justify-between gap-3">
             <div>
               <div className="font-semibold">{ri.data?.vendor ?? '…'}</div>
-              <div className="text-sm text-muted-foreground"><span className="font-mono">{noRi}</span>{ri.data?.no_po ? ` · ${ri.data.no_po}` : ''} · {fmtDate(ri.data?.tgl_ri ?? null)}</div>
+              <div className="text-sm text-muted-foreground"><span className="">{noRi}</span>{ri.data?.no_po ? ` · ${ri.data.no_po}` : ''} · {fmtDate(ri.data?.tgl_ri ?? null)}</div>
             </div>
-            <button type="button" className="text-sm text-primary" onClick={() => setParams({})}>Ganti RI</button>
+            <button type="button" className="text-sm text-primary" onClick={() => setParams({})}>Change Receipt</button>
           </div>
 
           <section className="space-y-2">
-            <h2 className="text-sm font-semibold">Barang yang diretur</h2>
+            <h2 className="text-sm font-semibold">Returned items</h2>
             {ri.isLoading && <p className="flex justify-center py-6"><Loader2 className="size-5 animate-spin text-muted-foreground" /></p>}
             <div className="divide-y rounded-lg border bg-card">
               {lines.map((l) => {
@@ -108,18 +108,18 @@ export function PurchaseReturnNewPage() {
                 return (
                   <div key={l.ri_id} className={cn('flex items-center gap-3 px-4 py-3', none && 'opacity-50')}>
                     <input type="checkbox" className="size-4 shrink-0 accent-primary" checked={on} disabled={none} onChange={() => toggle(l.ri_id, l.returnable)}
-                      aria-label={`Retur ${l.deskripsi_barang}`} />
+                      aria-label={`Return ${l.deskripsi_barang}`} />
                     <div className="min-w-0 flex-1">
                       <div className="break-words text-sm font-medium">{l.deskripsi_barang}</div>
                       <div className="text-xs text-muted-foreground">
-                        diterima {fmtQty(l.received)} {l.satuan ?? ''}{l.returned > 0 ? ` · sudah diretur ${fmtQty(l.returned)}` : ''}
+                        received {fmtQty(l.received)} {l.satuan ?? ''}{l.returned > 0 ? ` · already returned ${fmtQty(l.returned)}` : ''}
                       </div>
                     </div>
                     {on && (
-                      <Input type="number" inputMode="decimal" min={0} max={l.returnable} step="any" className="w-24 text-right" aria-label={`Jumlah retur ${l.deskripsi_barang}`}
+                      <Input type="number" inputMode="decimal" min={0} max={l.returnable} step="any" className="w-24 text-right" aria-label={`Return quantity ${l.deskripsi_barang}`}
                         value={qty[l.ri_id]} onChange={(e) => setQty((q) => ({ ...q, [l.ri_id]: e.target.value }))} />
                     )}
-                    {none && <span className="text-xs text-muted-foreground">habis diretur</span>}
+                    {none && <span className="text-xs text-muted-foreground">fully returned</span>}
                   </div>
                 )
               })}
@@ -127,34 +127,34 @@ export function PurchaseReturnNewPage() {
           </section>
 
           <section className="space-y-2">
-            <h2 className="text-sm font-semibold">Alasan</h2>
+            <h2 className="text-sm font-semibold">Reason</h2>
             <div className="flex flex-wrap gap-1.5">
               {RETURN_REASONS.map((r) => (
                 <button key={r} type="button" onClick={() => setReason(r)}
                   className={cn('rounded-md border px-3 py-1 text-sm', reason === r ? 'border-primary bg-primary/10 font-medium text-primary' : 'bg-card hover:bg-muted')}>{r}</button>
               ))}
             </div>
-            <Input value={reason} maxLength={255} onChange={(e) => setReason(e.target.value)} placeholder="atau tulis alasan lain" />
+            <Input value={reason} maxLength={255} onChange={(e) => setReason(e.target.value)} placeholder="or write another reason" />
           </section>
 
           <section className="space-y-2">
-            <h2 className="text-sm font-semibold">Foto barang *</h2>
+            <h2 className="text-sm font-semibold">Item photo *</h2>
             <input ref={file} type="file" accept="image/*" capture="environment" className="hidden"
               onChange={async (e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) setPhoto(await photoToDataUrl(f, 1600)) }} />
             {photo ? (
               <div className="relative w-40 overflow-hidden rounded-lg border">
-                <img src={photo} alt="Foto barang retur" className="h-28 w-full object-cover" />
-                <button type="button" onClick={() => setPhoto(null)} className="absolute right-1 top-1 rounded-full bg-card/90 p-1" aria-label="Hapus foto"><X className="size-3.5" /></button>
+                <img src={photo} alt="Return item photo" className="h-28 w-full object-cover" />
+                <button type="button" onClick={() => setPhoto(null)} className="absolute right-1 top-1 rounded-full bg-card/90 p-1" aria-label="Delete photo"><X className="size-3.5" /></button>
               </div>
             ) : (
-              <Button type="button" variant="outline" size="sm" className="border-amber-400" onClick={() => file.current?.click()}><Camera className="size-4" /> Ambil / pilih foto</Button>
+              <Button type="button" variant="outline" size="sm" className="border-amber-400" onClick={() => file.current?.click()}><Camera className="size-4" /> Take / select photo</Button>
             )}
           </section>
 
           {err && <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{err}</p>}
           <Button className="w-full" size="lg" onClick={submit} disabled={create.isPending || picked.length === 0}>
             {create.isPending && <Loader2 className="size-4 animate-spin" />}
-            {picked.length === 0 ? 'Centang barang dulu' : `Buat retur (${picked.length} barang)`}
+            {picked.length === 0 ? 'Tick items first' : `Create return (${picked.length} items)`}
           </Button>
         </>
       )}

@@ -205,10 +205,12 @@ class NpbgApprovalService
                 continue;
             }
             $have = (float) DB::table('inventory')->where('item_id', $item->id)->sum(DB::raw('actual_qty - reserved_qty'));
-            if ((float) $row->kuantitas > $have + 0.0001) {
+            // the document keeps its unit; stock counts in the item's, at the ratio frozen on it
+            $need = (float) UomConverter::baseQty($row->kuantitas, $row->unit_ratio ?? 1);
+            if ($need > $have + 0.0001) {
                 throw ValidationException::withMessages(['status' => "Stok {$item->description} hanya ".rtrim(rtrim(number_format($have, 2, ',', '.'), '0'), ',').' — tidak cukup untuk NPBG ini.']);
             }
-            $left = (float) $row->kuantitas;
+            $left = $need;
             foreach (DB::table('inventory')->where('item_id', $item->id)->orderByRaw('(actual_qty - reserved_qty) DESC')->get() as $inv) {
                 $take = min($left, (float) $inv->actual_qty - (float) $inv->reserved_qty);
                 if ($take <= 0) {

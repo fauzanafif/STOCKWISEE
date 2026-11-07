@@ -9,20 +9,20 @@ import { useInfiniteRows } from '@/components/InfiniteRows'
 import { cn } from '@/lib/utils'
 
 const fmtDate = (v: string | null) =>
-  v ? new Date(v).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
+  v ? new Date(v).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
 
 /** Tampilan tiap jenis histori — ikon, warna badge, dan tanda +/- di angka qty. */
 const TYPE_STYLE: Record<ItemHistoryRow['type'], { icon: typeof ArrowDownToLine; label: string; badge: string; amount: string; sign: string }> = {
-  MASUK: { icon: ArrowDownToLine, label: 'Masuk', badge: 'bg-emerald-100 text-emerald-700', amount: 'text-emerald-700', sign: '+' },
-  KELUAR: { icon: ArrowUpFromLine, label: 'Keluar', badge: 'bg-amber-100 text-amber-700', amount: 'text-amber-700', sign: '−' },
-  ADJUST: { icon: SlidersHorizontal, label: 'Penyesuaian', badge: 'bg-slate-200 text-slate-700', amount: 'text-slate-700', sign: '' },
+  MASUK: { icon: ArrowDownToLine, label: 'In', badge: 'bg-emerald-100 text-emerald-700', amount: 'text-emerald-700', sign: '+' },
+  KELUAR: { icon: ArrowUpFromLine, label: 'Out', badge: 'bg-amber-100 text-amber-700', amount: 'text-amber-700', sign: '−' },
+  ADJUST: { icon: SlidersHorizontal, label: 'Adjustment', badge: 'bg-slate-200 text-slate-700', amount: 'text-slate-700', sign: '' },
 }
 
 const BASE_COLUMNS: Column<ItemHistoryRow>[] = [
-  { key: 'date', header: 'Tanggal', className: 'whitespace-nowrap', cell: (r) => fmtDate(r.date) },
+  { key: 'date', header: 'Date', className: 'whitespace-nowrap', cell: (r) => fmtDate(r.date) },
   {
     key: 'type',
-    header: 'Jenis',
+    header: 'Type',
     cell: (r) => {
       const s = TYPE_STYLE[r.type]
       const Icon = s.icon
@@ -33,10 +33,10 @@ const BASE_COLUMNS: Column<ItemHistoryRow>[] = [
       )
     },
   },
-  { key: 'doc', header: 'No. Dokumen', cell: (r) => (r.doc_no ? <DocLink no={r.doc_no} className="text-xs" /> : <span className="text-muted-foreground">—</span>) },
+  { key: 'doc', header: 'Document No.', cell: (r) => (r.doc_no ? <DocLink no={r.doc_no} className="text-xs" /> : <span className="text-muted-foreground">—</span>) },
   {
     key: 'counterparty',
-    header: 'Vendor / Pelanggan / Nopol',
+    header: 'Vendor / Customer / Plate No.',
     className: 'max-w-[200px]',
     cell: (r) => r.counterparty ? (
       <span className="block truncate" title={r.counterparty}>
@@ -49,9 +49,9 @@ const BASE_COLUMNS: Column<ItemHistoryRow>[] = [
 /** Kolom No. Seri hanya ditambahkan kalau barang ini memang punya histori bernomor seri (ban, aset, dll.) — supaya tabel tidak menampilkan kolom kosong untuk barang biasa. */
 const SERI_COLUMN: Column<ItemHistoryRow> = {
   key: 'seri',
-  header: 'No. Seri',
+  header: 'Serial No.',
   className: 'max-w-[160px]',
-  cell: (r) => r.no_seri ? <span className="block truncate font-mono text-xs" title={r.no_seri}>{r.no_seri}</span> : <span className="text-muted-foreground">—</span>,
+  cell: (r) => r.no_seri ? <span className="block truncate text-[13px]" title={r.no_seri}>{r.no_seri}</span> : <span className="text-muted-foreground">—</span>,
 }
 
 const TAIL_COLUMNS: Column<ItemHistoryRow>[] = [
@@ -62,12 +62,12 @@ const TAIL_COLUMNS: Column<ItemHistoryRow>[] = [
     cell: (r) => {
       if (r.qty == null) return <span className="text-muted-foreground">—</span>
       const s = TYPE_STYLE[r.type]
-      return <span className={cn('whitespace-nowrap font-mono text-xs font-semibold tabular-nums', s.amount)}>{s.sign}{Math.abs(r.qty).toLocaleString('id-ID')} {r.satuan ?? ''}</span>
+      return <span className={cn('whitespace-nowrap text-[13px] font-semibold tabular-nums', s.amount)}>{s.sign}{Math.abs(r.qty).toLocaleString('id-ID')} {r.satuan ?? ''}</span>
     },
   },
   {
     key: 'note',
-    header: 'Catatan',
+    header: 'Notes',
     className: 'max-w-[180px]',
     cell: (r) => r.note ? <span className="block truncate" title={r.note}>{r.note}</span> : <span className="text-muted-foreground">—</span>,
   },
@@ -98,7 +98,7 @@ export function ItemHistoryModal({
       open
       onClose={onClose}
       className="max-w-3xl"
-      title={<span className="font-mono text-sm">{itemCode}</span>}
+      title={<span className=" text-sm">{itemCode}</span>}
       description={itemDescription}
     >
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -112,7 +112,7 @@ export function ItemHistoryModal({
                 type === 'MASUK' ? 'bg-emerald-600 text-white' : 'bg-emerald-100 hover:bg-emerald-200',
               )}
             >
-              <ArrowDownToLine className="size-3.5" /> {data.summary.masuk} Masuk
+              <ArrowDownToLine className="size-3.5" /> {data.summary.masuk} In
             </button>
             <button
               type="button"
@@ -122,7 +122,7 @@ export function ItemHistoryModal({
                 type === 'KELUAR' ? 'bg-amber-600 text-white' : 'bg-amber-100 hover:bg-amber-200',
               )}
             >
-              <ArrowUpFromLine className="size-3.5" /> {data.summary.keluar} Keluar
+              <ArrowUpFromLine className="size-3.5" /> {data.summary.keluar} Out
             </button>
             <button
               type="button"
@@ -132,7 +132,7 @@ export function ItemHistoryModal({
                 type === 'ADJUST' ? 'bg-slate-600 text-white' : 'bg-slate-200 hover:bg-slate-300',
               )}
             >
-              <SlidersHorizontal className="size-3.5" /> {data.summary.adjust} Penyesuaian
+              <SlidersHorizontal className="size-3.5" /> {data.summary.adjust} Adjustment
             </button>
           </div>
         )}
@@ -149,7 +149,7 @@ export function ItemHistoryModal({
         rows={rows}
         rowKey={(r) => `${r.type}|${r.doc_no}|${r.date}|${r.qty}|${r.counterparty}|${r.note}`}
         isLoading={isLoading}
-        emptyText="Belum ada histori untuk barang ini."
+        emptyText="No history for this item yet."
         containerClassName="max-h-[50vh]"
         stickyHeader
         footer={footer}

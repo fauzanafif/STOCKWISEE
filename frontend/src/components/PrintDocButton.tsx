@@ -9,8 +9,14 @@ import { Modal } from '@/components/ui/modal'
 interface Calibration {
   x: number
   y: number
-  pageSize: 'exact' | 'auto'
+  pageSize: PageSize
+  mode: PrintMode
 }
+
+/** a4: A4 portrait, the document scaled to the sheet width; exact: the document's own sheet (A5 / A4); auto: the printer's paper */
+type PageSize = 'a4' | 'exact' | 'auto'
+/** full: plain paper, kop / labels / lines printed too; data: pre-printed paper, only the data */
+type PrintMode = 'full' | 'data'
 
 function calibrationKey(docType: string) {
   return `stockwise:print-calibration:${docType}`
@@ -25,17 +31,22 @@ function calibrationKey(docType: string) {
  * whole browser down on Print. 'auto' = no size at all (printer's current paper).
  */
 function pageSizeKey(docType: string) {
-  return `stockwise:print-page-size:v2:${docType}`
+  return `stockwise:print-page-size:v3:${docType}`
+}
+function modeKey(docType: string) {
+  return `stockwise:print-mode:${docType}`
 }
 
-const DEFAULT_CALIBRATION: Calibration = { x: 0, y: 0, pageSize: 'exact' }
+const DEFAULT_CALIBRATION: Calibration = { x: 0, y: 0, pageSize: 'a4', mode: 'full' }
 
 function readCalibration(docType: string): Calibration {
   try {
     const raw = localStorage.getItem(calibrationKey(docType))
     const offsets = raw ? (JSON.parse(raw) as Partial<Calibration>) : {}
-    const pageSize = localStorage.getItem(pageSizeKey(docType)) === 'auto' ? 'auto' : 'exact'
-    return { x: Number(offsets.x) || 0, y: Number(offsets.y) || 0, pageSize }
+    const size = localStorage.getItem(pageSizeKey(docType))
+    const pageSize: PageSize = size === 'exact' || size === 'auto' ? size : 'a4'
+    const mode: PrintMode = localStorage.getItem(modeKey(docType)) === 'data' ? 'data' : 'full'
+    return { x: Number(offsets.x) || 0, y: Number(offsets.y) || 0, pageSize, mode }
   } catch {
     return DEFAULT_CALIBRATION
   }
@@ -102,6 +113,7 @@ export function PrintDocButton({ url, docType, autoOpen = false, hideTrigger = f
     try {
       localStorage.setItem(calibrationKey(docType), JSON.stringify({ x: next.x, y: next.y }))
       localStorage.setItem(pageSizeKey(docType), next.pageSize)
+      localStorage.setItem(modeKey(docType), next.mode)
     } catch {
       /* ignore storage errors */
     }
@@ -112,7 +124,7 @@ export function PrintDocButton({ url, docType, autoOpen = false, hideTrigger = f
     setErr(null)
     try {
       const res = await api.get(url, {
-        params: { offset_x: calibration.x, offset_y: calibration.y, page_size: calibration.pageSize },
+        params: { offset_x: calibration.x, offset_y: calibration.y, page_size: calibration.pageSize, mode: calibration.mode },
         responseType: 'text',
       })
       setHtml(res.data as string)
@@ -141,7 +153,7 @@ export function PrintDocButton({ url, docType, autoOpen = false, hideTrigger = f
     setErr(null)
     try {
       const res = await api.get(url.replace(/\/print$/, '/print-pdf'), {
-        params: { offset_x: calibration.x, offset_y: calibration.y },
+        params: { offset_x: calibration.x, offset_y: calibration.y, page_size: calibration.pageSize, mode: calibration.mode },
         responseType: 'blob',
       })
       const name = /filename="([^"]+)"/.exec(String(res.headers['content-disposition'] ?? ''))?.[1] ?? `${docType}.pdf`
@@ -160,19 +172,23 @@ export function PrintDocButton({ url, docType, autoOpen = false, hideTrigger = f
     }
   }
 
+  const previewNote = calibration.mode === 'data'
+    ? 'Data saja: label, kop & garis hanya pratinjau (kertas pre-printed).'
+    : 'Lengkap: kop, judul, label, garis & tanda tangan ikut tercetak.'
+
   const previewFooter = (
     <>
       <span
         className="mr-auto hidden max-w-xs text-xs leading-snug text-muted-foreground md:block"
-        title="Unduh PDF lalu buka dengan Adobe Reader / SumatraPDF dan cetak di ukuran asli (100%) — lewat Windows seperti Accurate, tanpa mesin cetak browser."
+        title="Download the PDF, open it with Adobe Reader / SumatraPDF and print at actual size (100%); through Windows like Accurate, without the browser print engine."
       >
-        Browser tertutup saat print? Pakai <b>Unduh PDF</b> &amp; cetak dari Adobe Reader.
+        Browser closed while printing? Use <b>Download PDF</b> &amp; print from Adobe Reader.
       </span>
-      <Button variant="outline" size="sm" onClick={closePreview}>Tutup</Button>
+      <Button variant="outline" size="sm" onClick={closePreview}>Close</Button>
       <Button variant="outline" size="sm" disabled={pdfBusy} onClick={downloadPdf}>
-        <FileDown className="size-4" /> {pdfBusy ? 'Menyiapkan…' : 'Unduh PDF'}
+        <FileDown className="size-4" /> {pdfBusy ? 'Preparing…' : 'Download PDF'}
       </Button>
-      <Button size="sm" onClick={doPrint}><Printer className="size-4" /> Cetak</Button>
+      <Button size="sm" onClick={doPrint}><Printer className="size-4" /> Print</Button>
     </>
   )
 
@@ -182,22 +198,22 @@ export function PrintDocButton({ url, docType, autoOpen = false, hideTrigger = f
       <Modal
         open
         onClose={closePreview}
-        title="Cetak Dokumen"
-        description={open ? 'Label & kop hanya untuk pratinjau — saat dicetak, hanya data yang masuk ke kertas.' : undefined}
+        title="Print Document"
+        description={open ? previewNote : undefined}
         className={open ? 'max-w-4xl' : 'max-w-md'}
         footer={open ? previewFooter : (
           <>
-            <Button variant="outline" size="sm" onClick={closePreview}>Tutup</Button>
-            {err && <Button size="sm" disabled={busy} onClick={loadAndOpen}>Coba lagi</Button>}
+            <Button variant="outline" size="sm" onClick={closePreview}>Close</Button>
+            {err && <Button size="sm" disabled={busy} onClick={loadAndOpen}>Try again</Button>}
           </>
         )}
       >
         {open
           ? <>
               {err && <p className="mb-2 text-sm text-destructive">{err}</p>}
-              <iframe ref={iframeRef} srcDoc={html ?? ''} title="Dokumen cetak" className="h-[70vh] w-full rounded border bg-white" />
+              <iframe ref={iframeRef} srcDoc={html ?? ''} title="Printed document" className="h-[70vh] w-full rounded border bg-white" />
             </>
-          : <p className={err ? 'text-sm text-destructive' : 'text-sm text-muted-foreground'}>{err ?? 'Menyiapkan dokumen…'}</p>}
+          : <p className={err ? 'text-sm text-destructive' : 'text-sm text-muted-foreground'}>{err ?? 'Preparing document…'}</p>}
       </Modal>
     )
   }
@@ -206,13 +222,13 @@ export function PrintDocButton({ url, docType, autoOpen = false, hideTrigger = f
     <div className="inline-flex flex-col items-end gap-1">
       <div className="flex items-center gap-2">
         <Button size="sm" variant="outline" disabled={busy} onClick={loadAndOpen}>
-          <Printer className="size-4" /> {busy ? 'Menyiapkan…' : 'Cetak'}
+          <Printer className="size-4" /> {busy ? 'Preparing…' : 'Print'}
         </Button>
         <button
           type="button"
           className="text-muted-foreground hover:text-foreground"
-          title="Kalibrasi posisi cetak"
-          aria-label="Kalibrasi posisi cetak"
+          title="Print position calibration"
+          aria-label="Print position calibration"
           onClick={() => setShowCalibration((v) => !v)}
         >
           <SlidersHorizontal className="size-4" />
@@ -221,7 +237,7 @@ export function PrintDocButton({ url, docType, autoOpen = false, hideTrigger = f
       {showCalibration && (
         <div className="flex flex-wrap items-end gap-2 rounded-md border bg-card p-2 text-xs">
           <label className="space-y-1">
-            <span className="text-muted-foreground">Geser X (mm)</span>
+            <span className="text-muted-foreground">Shift X (mm)</span>
             <Input
               type="number"
               step="0.5"
@@ -231,7 +247,7 @@ export function PrintDocButton({ url, docType, autoOpen = false, hideTrigger = f
             />
           </label>
           <label className="space-y-1">
-            <span className="text-muted-foreground">Geser Y (mm)</span>
+            <span className="text-muted-foreground">Shift Y (mm)</span>
             <Input
               type="number"
               step="0.5"
@@ -241,14 +257,26 @@ export function PrintDocButton({ url, docType, autoOpen = false, hideTrigger = f
             />
           </label>
           <label className="space-y-1">
-            <span className="text-muted-foreground">Ukuran kertas</span>
+            <span className="text-muted-foreground">Print content</span>
             <Select
-              className="h-7 w-40"
-              value={calibration.pageSize}
-              onChange={(e) => saveCalibration({ ...calibration, pageSize: e.target.value as 'exact' | 'auto' })}
+              className="h-7 w-48"
+              value={calibration.mode}
+              onChange={(e) => saveCalibration({ ...calibration, mode: e.target.value as PrintMode })}
             >
-              <option value="exact">Ukuran dokumen (A5 / A4)</option>
-              <option value="auto">Ikut kertas printer</option>
+              <option value="full">Complete (plain paper)</option>
+              <option value="data">Data only (pre-printed paper)</option>
+            </Select>
+          </label>
+          <label className="space-y-1">
+            <span className="text-muted-foreground">Paper size</span>
+            <Select
+              className="h-7 w-44"
+              value={calibration.pageSize}
+              onChange={(e) => saveCalibration({ ...calibration, pageSize: e.target.value as PageSize })}
+            >
+              <option value="a4">A4 portrait (actual size)</option>
+              <option value="exact">Document size (A5 / A4)</option>
+              <option value="auto">Follow printer paper</option>
             </Select>
           </label>
           <Button size="sm" variant="ghost" className="h-7" onClick={() => saveCalibration(DEFAULT_CALIBRATION)}>
@@ -262,8 +290,8 @@ export function PrintDocButton({ url, docType, autoOpen = false, hideTrigger = f
         <Modal
           open
           onClose={closePreview}
-          title="Cetak Dokumen"
-          description="Label & kop hanya untuk pratinjau — saat dicetak, hanya data yang masuk ke kertas."
+          title="Print Document"
+          description={previewNote}
           className="max-w-4xl"
           footer={previewFooter}
         >
@@ -271,7 +299,7 @@ export function PrintDocButton({ url, docType, autoOpen = false, hideTrigger = f
           <iframe
             ref={iframeRef}
             srcDoc={html ?? ''}
-            title="Dokumen cetak"
+            title="Printed document"
             className="h-[70vh] w-full rounded border bg-white"
           />
         </Modal>

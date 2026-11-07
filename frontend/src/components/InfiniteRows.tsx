@@ -66,10 +66,10 @@ export function Pager({ page, lastPage, total, perPage, onPage, loading, onPerPa
   return (
     <div className={cn('flex flex-col gap-2 bg-card px-3 py-2.5 text-sm sm:flex-row sm:items-center sm:justify-between', loading && 'opacity-70', className)}>
       <div className="flex items-center gap-3 text-muted-foreground">
-        <span><b className="font-medium tabular-nums text-foreground">{from.toLocaleString('id-ID')}–{to.toLocaleString('id-ID')}</b> dari <span className="tabular-nums">{total.toLocaleString('id-ID')}</span></span>
+        <span><b className="font-medium tabular-nums text-foreground">{from.toLocaleString('id-ID')}–{to.toLocaleString('id-ID')}</b> from <span className="tabular-nums">{total.toLocaleString('id-ID')}</span></span>
         {onPerPage && (
           <label className="hidden items-center gap-1.5 sm:flex">
-            · Baris
+            · Rows
             <select className="h-7 rounded-md border bg-card px-1 text-sm text-foreground" value={perPage} onChange={(e) => onPerPage(Number(e.target.value))}>
               {[10, 20, 50, 100].map((n) => <option key={n} value={n}>{n}</option>)}
             </select>
@@ -77,9 +77,9 @@ export function Pager({ page, lastPage, total, perPage, onPage, loading, onPerPa
         )}
       </div>
       {lastPage > 1 && (
-        <div className="flex items-center gap-1" role="navigation" aria-label="Halaman">
+        <div className="flex items-center gap-1" role="navigation" aria-label="Page">
           <button type="button" className="flex h-7 w-7 items-center justify-center rounded-md border bg-card hover:bg-muted disabled:opacity-40"
-            disabled={page <= 1} onClick={(e) => go(page - 1, e.currentTarget)} aria-label="Halaman sebelumnya"><ChevronLeft className="size-4" /></button>
+            disabled={page <= 1} onClick={(e) => go(page - 1, e.currentTarget)} aria-label="Previous page"><ChevronLeft className="size-4" /></button>
           {pages.map((p, i) => (
             <span key={p} className="flex items-center">
               {i > 0 && p - pages[i - 1] > 1 && <span className="px-1 text-muted-foreground">…</span>}
@@ -90,7 +90,7 @@ export function Pager({ page, lastPage, total, perPage, onPage, loading, onPerPa
             </span>
           ))}
           <button type="button" className="flex h-7 w-7 items-center justify-center rounded-md border bg-card hover:bg-muted disabled:opacity-40"
-            disabled={page >= lastPage} onClick={(e) => go(page + 1, e.currentTarget)} aria-label="Halaman berikutnya"><ChevronRight className="size-4" /></button>
+            disabled={page >= lastPage} onClick={(e) => go(page + 1, e.currentTarget)} aria-label="Next page"><ChevronRight className="size-4" /></button>
         </div>
       )}
     </div>

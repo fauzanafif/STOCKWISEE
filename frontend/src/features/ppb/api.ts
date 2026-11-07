@@ -23,6 +23,9 @@ export interface Ppb {
   deskripsi_barang: string | null
   kuantitas: number | null
   satuan: string | null
+  /** frozen on the document, and the item's Base UOM when it differs */
+  unit_ratio?: number | null
+  base_satuan?: string | null
   qty_dipesan: number | null
   qty_diterima: number | null
   peminta: string | null
@@ -53,7 +56,9 @@ export interface Ppb {
   /** detail only: the "Menunggu PO" entry the approval put in the PO table (null once Accurate's PO replaced it) */
   approval_po?: { id: number; number: string } | null
   /** detail only: every line of the PPB document (the approval covers all of them) */
-  document_items?: { id: number; kode_barang: string | null; deskripsi_barang: string | null; kuantitas: number | null; satuan: string | null; peminta: string | null; catatan_baris: string | null }[]
+  document_items?: { id: number; kode_barang: string | null; deskripsi_barang: string | null; kuantitas: number | null; satuan: string | null; peminta: string | null; catatan_baris: string | null
+    /** where the line came from (its Draft PPB line): a Request Barang or Safety Stock; null = Accurate / manual */
+    reference?: { type: 'REQUEST' | 'SAFETY_STOCK' | 'DRAFT'; label: string; to: string; hint: string | null } | null }[]
 }
 
 /** MENUNGGU_DIREKTUR: a STOCKWISE PPB the Manager approved, waiting for the Direktur */
@@ -82,12 +87,12 @@ export interface PpbApprovalLog {
 }
 
 export const APPROVAL_STATUS: Record<PpbApprovalStatus, { label: string; variant: 'warning' | 'success' | 'danger' | 'neutral' }> = {
-  MENUNGGU: { label: 'Menunggu approval', variant: 'warning' },
-  MENUNGGU_DIREKTUR: { label: 'Menunggu Direktur', variant: 'warning' },
-  DISETUJUI: { label: 'Disetujui', variant: 'success' },
-  DITOLAK: { label: 'Ditolak', variant: 'danger' },
-  DIKEMBALIKAN: { label: 'Dikembalikan untuk revisi', variant: 'warning' },
-  TIDAK_PERLU: { label: 'Sebelum approval', variant: 'neutral' },
+  MENUNGGU: { label: 'Waiting for approval', variant: 'warning' },
+  MENUNGGU_DIREKTUR: { label: 'Waiting for Director', variant: 'warning' },
+  DISETUJUI: { label: 'Approved', variant: 'success' },
+  DITOLAK: { label: 'Rejected', variant: 'danger' },
+  DIKEMBALIKAN: { label: 'Returned for revision', variant: 'warning' },
+  TIDAK_PERLU: { label: 'Before approval', variant: 'neutral' },
 }
 
 /** Admin revised a PPB sent back: to the approval again. */
@@ -95,7 +100,7 @@ export function useResubmitPpb(id: number) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async (body: { quantities?: Record<number, number>; note?: string | null }) => (await api.post<{ data: Ppb }>(`/api/ppb/${id}/resubmit`, body)).data.data,
-    meta: { successMessage: 'PPB diajukan ulang ke approval.' },
+    meta: { successMessage: 'Purchase Request resubmitted to approval.' },
     onSuccess: () => Promise.all([qc.invalidateQueries({ queryKey: ['ppb'] }), qc.invalidateQueries({ queryKey: ['item-requests', 'approvals'] })]),
   })
 }
@@ -107,7 +112,7 @@ export function useDecidePpb(id: number) {
       (await api.post<{ data: Ppb }>(`/api/ppb/${id}/approval`, body)).data.data,
     meta: { successMessage: false },
     onSuccess: (_d, v) => {
-      toast.success(v.action === 'RETURN' ? 'PPB dikembalikan ke admin untuk revisi.' : v.action === 'REJECT' ? 'PPB ditolak.' : _d.approval?.status === 'MENUNGGU_DIREKTUR' ? 'Disetujui Manager — menunggu Direktur.' : 'PPB disetujui, masuk ke tabel PO.')
+      toast.success(v.action === 'RETURN' ? 'PPB returned to admin for revision.' : v.action === 'REJECT' ? 'PPB rejected.' : _d.approval?.status === 'MENUNGGU_DIREKTUR' ? 'Approved by Manager — waiting for Director.' : 'PPB approved, moved to the PO table.')
       return Promise.all([qc.invalidateQueries({ queryKey: ['ppb'] }), qc.invalidateQueries({ queryKey: ['item-requests', 'approvals'] }), qc.invalidateQueries({ queryKey: ['purchase-orders'] })])
     },
   })
@@ -185,24 +190,24 @@ export function usePpbVendorOptions() {
 
 /** Accurate requisition status: OPEN = masih berjalan, CLOSED = sudah selesai/ditutup. */
 export const PPB_STATUS: Record<string, { label: string; variant: 'success' | 'warning' }> = {
-  OPEN: { label: 'Terbuka', variant: 'warning' },
-  CLOSED: { label: 'Ditutup', variant: 'success' },
+  OPEN: { label: 'Open', variant: 'warning' },
+  CLOSED: { label: 'Closed', variant: 'success' },
 }
 
 type BadgeVariant = 'success' | 'warning' | 'danger' | 'neutral' | 'default'
 
 /** Per-line PPB status as Accurate holds it (backend App\Support\PpbLineStatus). */
 export const PPB_LINE_STATUS: Record<string, { label: string; variant: BadgeVariant; hint: string }> = {
-  REQUESTED: { label: 'Requested', variant: 'default', hint: 'Diminta, barang belum diterima (belum ada RI)' },
- SHORTAGE: { label: 'Shortage', variant: 'warning', hint: 'Baru diterima sebagian sisanya menyusul' },
-  COMPLETED: { label: 'Completed', variant: 'success', hint: 'Barang sudah diterima lengkap' },
- CLOSE: { label: 'Close', variant: 'neutral', hint: 'PPB ditutup di Accurate sisanya tidak dikirim' },
+  REQUESTED: { label: 'Requested', variant: 'default', hint: 'Requested, items not received yet (no Receipt)' },
+ SHORTAGE: { label: 'Shortage', variant: 'warning', hint: 'Partly received, the rest to follow' },
+  COMPLETED: { label: 'Completed', variant: 'success', hint: 'Items fully received' },
+ CLOSE: { label: 'Close', variant: 'neutral', hint: 'Purchase Request closed in Accurate; the rest not delivered' },
 }
 
 /** Excel "Amend" — a second status next to the one above (e.g. Amend + Requested). */
 export const PPB_AMEND = {
   label: 'Amend',
- hint: { NOTE: 'Tercantum di "PPB AMEND (…)" pembelian berubah / tidak jadi dibeli', CLOSED: 'PPB ditutup tanpa ada barang diterima tidak jadi dibeli' } as Record<string, string>,
+ hint: { NOTE: 'Listed under "PPB AMEND (…)": the purchase changed / was cancelled', CLOSED: 'Purchase Request closed with no items received; not purchased' } as Record<string, string>,
 }
 
 /**

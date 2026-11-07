@@ -42,6 +42,7 @@ class ItemController extends Controller
         $query->orderBy($sortable[$column] ?? 'items.code', $direction);
 
         $page = $query->paginate($perPage);
+        ItemResource::prime($page->getCollection());
 
         return response()->json([
             'data' => ItemResource::collection($page->getCollection())->resolve(),

@@ -27,18 +27,18 @@ function statusBadge(status: SyncBatchRow['status']) {
     PENDING: 'neutral',
   }
   const label: Record<SyncBatchRow['status'], string> = {
-    SUCCESS: 'Berhasil', PARTIAL: 'Sebagian', FAILED: 'Gagal', RUNNING: 'Berjalan', PENDING: 'Menunggu',
+    SUCCESS: 'Successful', PARTIAL: 'Partial', FAILED: 'Failed', RUNNING: 'Running', PENDING: 'Waiting',
   }
   return <Badge variant={map[status]}>{label[status] ?? status}</Badge>
 }
 
 /** SyncLog.action in plain words: INSERT = data baru, UPDATE = diubah, DELETE = sudah tidak ada di Accurate, ERROR = gagal. */
 const actionBadge: Record<string, { label: string; variant: 'success' | 'default' | 'neutral' | 'danger' }> = {
-  INSERT: { label: 'Baru', variant: 'success' },
-  UPDATE: { label: 'Diubah', variant: 'default' },
-  DELETE: { label: 'Dihapus', variant: 'danger' },
-  SKIP: { label: 'Tidak berubah', variant: 'neutral' },
-  ERROR: { label: 'Gagal', variant: 'danger' },
+  INSERT: { label: 'New', variant: 'success' },
+  UPDATE: { label: 'Changed', variant: 'default' },
+  DELETE: { label: 'Deleted', variant: 'danger' },
+  SKIP: { label: 'Unchanged', variant: 'neutral' },
+  ERROR: { label: 'Failed', variant: 'danger' },
 }
 
 /** "Kolom: sebelum → sesudah" — the first few inline, all of them when the row is opened. */
@@ -49,12 +49,12 @@ function ChangeList({ changes, limit }: { changes: SyncFieldChange[]; limit?: nu
       {shown.map((c) => (
         <li key={c.field} className="leading-snug">
           <span className="text-muted-foreground">{c.label}: </span>
-          <span className="text-muted-foreground line-through decoration-muted-foreground/50">{c.from ?? '(kosong)'}</span>
+          <span className="text-muted-foreground line-through decoration-muted-foreground/50">{c.from ?? '(empty)'}</span>
           <span className="px-1 text-muted-foreground">→</span>
-          <span className="font-medium">{c.to ?? '(kosong)'}</span>
+          <span className="font-medium">{c.to ?? '(empty)'}</span>
         </li>
       ))}
- {limit && changes.length > limit && <li className="text-primary">+{changes.length - limit} perubahan lain klik untuk lihat semua</li>}
+ {limit && changes.length > limit && <li className="text-primary">+{changes.length - limit} other changes; click to see all</li>}
     </ul>
   )
 }
@@ -71,7 +71,7 @@ function LogRow({ log }: { log: SyncLogRow }) {
           {log.entity_label}
         </span>
       </td>
-      <td className="px-2 py-1.5 font-mono whitespace-nowrap">
+      <td className="px-2 py-1.5 whitespace-nowrap">
         {log.document_old ? (
           <div>
             <div className="text-muted-foreground line-through">{log.document_old}</div>
@@ -82,7 +82,7 @@ function LogRow({ log }: { log: SyncLogRow }) {
       <td className="px-2 py-1.5">
         {log.item_code ? (
           <>
-            <span className="font-mono">{log.item_code}</span>
+            <span className="">{log.item_code}</span>
             {log.item_name && <div className="text-muted-foreground">{log.item_name}</div>}
           </>
  ) : ''}
@@ -102,7 +102,7 @@ function LogRow({ log }: { log: SyncLogRow }) {
   )
 }
 
-const ACTION_FILTERS: Array<[string, string]> = [['', 'Semua status'], ['UPDATE', 'Diubah'], ['INSERT', 'Baru'], ['DELETE', 'Dihapus'], ['ERROR', 'Gagal']]
+const ACTION_FILTERS: Array<[string, string]> = [['', 'Semua status'], ['UPDATE', 'Diubah'], ['INSERT', 'New'], ['DELETE', 'Dihapus'], ['ERROR', 'Failed']]
 
 function DetailPanel({ id, onClose }: { id: number; onClose: () => void }) {
   const [filters, setFilters] = useState<SyncLogFilters>({})
@@ -120,15 +120,15 @@ function DetailPanel({ id, onClose }: { id: number; onClose: () => void }) {
           </button>
         </div>
 
-        {isLoading && <p className="text-sm text-muted-foreground">Memuat…</p>}
+        {isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
 
         {data && (
           <>
             <dl className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
               <div><dt className="text-muted-foreground">Status</dt><dd>{statusBadge(data.status)}</dd></div>
-              <div><dt className="text-muted-foreground">Mulai</dt><dd>{new Date(data.started_at).toLocaleString('id-ID')}</dd></div>
- <div><dt className="text-muted-foreground">Selesai</dt><dd>{data.finished_at ? new Date(data.finished_at).toLocaleString('id-ID') : ''}</dd></div>
- <div><dt className="text-muted-foreground">Durasi</dt><dd>{data.duration_seconds != null ? `${data.duration_seconds.toFixed(1)}s` : ''}</dd></div>
+              <div><dt className="text-muted-foreground">Start</dt><dd>{new Date(data.started_at).toLocaleString('en-GB')}</dd></div>
+ <div><dt className="text-muted-foreground">Done</dt><dd>{data.finished_at ? new Date(data.finished_at).toLocaleString('en-GB') : ''}</dd></div>
+ <div><dt className="text-muted-foreground">Duration</dt><dd>{data.duration_seconds != null ? `${data.duration_seconds.toFixed(1)}s` : ''}</dd></div>
             </dl>
             {data.error_message && (
               <p className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{data.error_message}</p>
@@ -136,8 +136,8 @@ function DetailPanel({ id, onClose }: { id: number; onClose: () => void }) {
 
  {/* real changes per data type click one to filter */}
             <div className="flex flex-wrap gap-2 text-xs">
-              {entities.length === 0 && !filters.entity && <span className="text-muted-foreground">Tidak ada perubahan data pada sync ini.</span>}
-              {(filters.entity ? [{ entity: filters.entity, label: 'Semua jenis data', actions: {} }] : entities).map((e) => {
+              {entities.length === 0 && !filters.entity && <span className="text-muted-foreground">No data changes in this sync.</span>}
+              {(filters.entity ? [{ entity: filters.entity, label: 'All data types', actions: {} }] : entities).map((e) => {
                 const active = filters.entity === e.entity
                 const parts = Object.entries(e.actions).map(([a, n]) => `${n} ${actionBadge[a]?.label.toLowerCase() ?? a}`)
                 return (
@@ -146,7 +146,7 @@ function DetailPanel({ id, onClose }: { id: number; onClose: () => void }) {
                     onClick={() => setFilters((f) => ({ ...f, entity: active ? undefined : e.entity }))}
                     className={`rounded-md border px-2 py-1 transition ${active ? 'border-primary bg-primary/10' : 'bg-card hover:border-primary/40'}`}
                   >
-                    {active ? <>× Hapus filter jenis data</> : <><span className="font-medium">{e.label}</span> · {parts.join(', ')}</>}
+                    {active ? <>× Clear data type filter</> : <><span className="font-medium">{e.label}</span> · {parts.join(', ')}</>}
                   </button>
                 )
               })}
@@ -156,19 +156,19 @@ function DetailPanel({ id, onClose }: { id: number; onClose: () => void }) {
               className="flex flex-wrap items-center gap-2"
               onSubmit={(ev) => { ev.preventDefault(); setFilters((f) => ({ ...f, search: search.trim() || undefined })) }}
             >
-              <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Cari nomor dokumen / kode barang…" className="h-9 w-64 text-xs" />
+              <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search document no. / item code…" className="h-9 w-64 text-xs" />
               <Select value={filters.action ?? ''} onChange={(e) => setFilters((f) => ({ ...f, action: e.target.value || undefined }))} className="h-9 w-40 text-xs">
                 {ACTION_FILTERS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
               </Select>
-              <button type="submit" className="h-9 rounded-md border bg-card px-3 text-xs hover:border-primary/40">Cari</button>
-              {isFetching && <span className="text-xs text-muted-foreground">Memuat…</span>}
+              <button type="submit" className="h-9 rounded-md border bg-card px-3 text-xs hover:border-primary/40">Search</button>
+              {isFetching && <span className="text-xs text-muted-foreground">Loading…</span>}
             </form>
 
             <p className="text-xs text-muted-foreground">
               {data.log_shown < data.log_total
- ? `Menampilkan ${data.log_shown.toLocaleString('id-ID')} dari ${data.log_total.toLocaleString('id-ID')} perubahan gunakan filter / pencarian untuk mempersempit.`
-                : `${data.log_total.toLocaleString('id-ID')} perubahan.`}
-              {data.log_no_change > 0 && ` ${data.log_no_change.toLocaleString('id-ID')} baris tercatat "diubah" tanpa perubahan nyata (log lama) disembunyikan.`}
+ ? `Showing ${data.log_shown.toLocaleString('id-ID')} from ${data.log_total.toLocaleString('id-ID')} changes; use the filter / search to narrow down.`
+                : `${data.log_total.toLocaleString('id-ID')} changes.`}
+              {data.log_no_change > 0 && ` ${data.log_no_change.toLocaleString('id-ID')} rows logged as "changed" with no real change (old log) are hidden.`}
             </p>
 
             <div className="max-h-[28rem] overflow-y-auto rounded-md border bg-card">
@@ -176,15 +176,15 @@ function DetailPanel({ id, onClose }: { id: number; onClose: () => void }) {
                 <thead className="sticky top-0 bg-muted text-left">
                   <tr>
                     <th className="px-2 py-1.5">Data</th>
-                    <th className="px-2 py-1.5">Dokumen</th>
-                    <th className="px-2 py-1.5">Barang</th>
+                    <th className="px-2 py-1.5">Document</th>
+                    <th className="px-2 py-1.5">Item</th>
                     <th className="px-2 py-1.5">Status</th>
-                    <th className="px-2 py-1.5">Yang berubah (sebelum → sesudah)</th>
+                    <th className="px-2 py-1.5">What changed (before → after)</th>
                   </tr>
                 </thead>
                 <tbody>
                   {data.logs.length === 0 && (
-                    <tr><td colSpan={5} className="px-2 py-4 text-center text-muted-foreground">Tidak ada log.</td></tr>
+                    <tr><td colSpan={5} className="px-2 py-4 text-center text-muted-foreground">No logs.</td></tr>
                   )}
                   {data.logs.map((l) => (
                     <LogRow key={l.id} log={l} />
@@ -208,15 +208,15 @@ function SyncHistoryTab() {
   const { rows: scrollRows, footer: scrollFooter } = useInfiniteRows(data, page, setPage)
 
   const columns: Column<SyncBatchRow>[] = [
-    { key: 'code', header: 'Kode', cell: (r) => <span className="font-mono text-xs">{r.sync_code}</span> },
-    { key: 'date', header: 'Tanggal', cell: (r) => new Date(r.started_at).toLocaleString('id-ID') },
+    { key: 'code', header: 'Code', cell: (r) => <span className="text-[13px]">{r.sync_code}</span> },
+    { key: 'date', header: 'Date', cell: (r) => new Date(r.started_at).toLocaleString('en-GB') },
     { key: 'status', header: 'Status', cell: (r) => statusBadge(r.status) },
-    { key: 'read', header: 'Dibaca', cell: (r) => <span className="tabular-nums">{r.total_records}</span> },
-    { key: 'insert', header: 'Baru', cell: (r) => <span className="tabular-nums">{r.inserted_records}</span> },
-    { key: 'update', header: 'Diubah', cell: (r) => <span className="tabular-nums">{r.updated_records}</span> },
+    { key: 'read', header: 'Read', cell: (r) => <span className="tabular-nums">{r.total_records}</span> },
+    { key: 'insert', header: 'New', cell: (r) => <span className="tabular-nums">{r.inserted_records}</span> },
+    { key: 'update', header: 'Changed', cell: (r) => <span className="tabular-nums">{r.updated_records}</span> },
     {
       key: 'delete',
-      header: 'Dihapus',
+      header: 'Deleted',
       cell: (r) => <span className={`tabular-nums ${r.deleted_records > 0 ? 'text-destructive' : ''}`}>{r.deleted_records}</span>,
     },
     {
@@ -231,8 +231,8 @@ function SyncHistoryTab() {
       <SyncStatusCard />
 
       <div className="flex items-center justify-between pt-2">
-        <h2 className="text-base font-semibold">Riwayat Sync</h2>
-        <span className="text-xs text-muted-foreground">Klik baris untuk melihat detail</span>
+        <h2 className="text-base font-semibold">Sync History</h2>
+        <span className="text-xs text-muted-foreground">Click a row to see details</span>
       </div>
 
       {detailId != null && <DetailPanel id={detailId} onClose={() => setDetailId(null)} />}
@@ -244,7 +244,7 @@ function SyncHistoryTab() {
         rowKey={(r) => r.id}
         isLoading={isLoading}
         onRowClick={(r) => setDetailId(r.id)}
-        emptyText="Belum ada riwayat sync."
+        emptyText="No sync history yet."
       />
     </div>
   )
@@ -257,10 +257,10 @@ function SyncHistoryTab() {
  * (jadwal malam, di-sync keesokan paginya).
  */
 const RUN_STATUS: Record<string, { label: string; variant: 'success' | 'warning' | 'danger' | 'default' | 'neutral' }> = {
-  SUCCESS: { label: 'Berhasil', variant: 'success' },
-  PARTIAL: { label: 'Sebagian', variant: 'warning' },
-  FAILED: { label: 'Gagal', variant: 'danger' },
-  STAGED: { label: 'Staging saja', variant: 'default' },
+  SUCCESS: { label: 'Successful', variant: 'success' },
+  PARTIAL: { label: 'Partial', variant: 'warning' },
+  FAILED: { label: 'Failed', variant: 'danger' },
+  STAGED: { label: 'Staging only', variant: 'default' },
 }
 
 const EVENT_LEVEL: Record<AgentEvent['level'], 'danger' | 'warning' | 'neutral'> = {
@@ -274,16 +274,16 @@ const EVENT_LEVEL: Record<AgentEvent['level'], 'danger' | 'warning' | 'neutral'>
 const selectClass = 'h-9 max-w-full rounded-md border border-input bg-card px-3 text-sm'
 
 function fmt(time: string) {
-  return new Date(time).toLocaleString('id-ID')
+  return new Date(time).toLocaleString('en-GB')
 }
 
 function ago(time: string) {
   const minutes = Math.round((Date.now() - new Date(time).getTime()) / 60000)
-  if (minutes < 1) return 'baru saja'
-  if (minutes < 60) return `${minutes} menit lalu`
+  if (minutes < 1) return 'just now'
+  if (minutes < 60) return `${minutes} minutes ago`
   const hours = Math.round(minutes / 60)
-  if (hours < 48) return `${hours} jam lalu`
-  return `${Math.round(hours / 24)} hari lalu`
+  if (hours < 48) return `${hours} hours ago`
+  return `${Math.round(hours / 24)} days ago`
 }
 
 function StatCard({ icon, label, value, hint, tone }: { icon: React.ReactNode; label: string; value: string; hint?: string; tone?: 'danger' | 'success' }) {
@@ -316,21 +316,21 @@ function AgentSummary({ runs }: { runs: AgentRun[] }) {
     <div className="grid gap-3 sm:grid-cols-3">
       <StatCard
         icon={<Clock className="size-5" />}
-        label="Run terakhir"
-        value={last ? `${RUN_STATUS[last.status]?.label ?? last.status} · ${ago(last.time)}` : 'Belum ada'}
+        label="Last run"
+        value={last ? `${RUN_STATUS[last.status]?.label ?? last.status} · ${ago(last.time)}` : 'None yet'}
         hint={last ? fmt(last.time) : undefined}
         tone={last?.status === 'FAILED' ? 'danger' : undefined}
       />
       <StatCard
         icon={<CheckCircle2 className="size-5" />}
-        label="Terakhir berhasil"
-        value={lastOk ? ago(lastOk.time) : 'Belum ada'}
+        label="Last successful"
+        value={lastOk ? ago(lastOk.time) : 'None yet'}
         hint={lastOk ? `${fmt(lastOk.time)} · ${lastOk.source}` : undefined}
         tone="success"
       />
       <StatCard
         icon={<AlertTriangle className="size-5" />}
-        label="Gagal 7 hari terakhir"
+        label="Failed in the last 7 days"
         value={`${failed7d} run`}
         tone={failed7d > 0 ? 'danger' : undefined}
       />
@@ -339,10 +339,10 @@ function AgentSummary({ runs }: { runs: AgentRun[] }) {
 }
 
 const RUN_MODE_LABEL: Record<string, string> = {
-  snapshot: 'Salin GDB ke staging',
-  full: 'Salin GDB + sync',
+  snapshot: 'Copy GDB to staging',
+  full: 'Copy GDB + sync',
   sync_only: 'Sync staging',
-  sync_now: 'Sync terjadwal (salin GDB + sync)',
+  sync_now: 'Scheduled sync (copy GDB + sync)',
 }
 
 /** Is a Sync Agent job running now (manual or scheduled), and how did the last one end. */
@@ -354,7 +354,7 @@ function AgentRunBanner({ status }: { status: AgentRunStatus | undefined }) {
     return (
       <div className="flex items-center gap-2 rounded-md border border-primary/30 bg-primary/5 p-3 text-sm">
         <Loader2 className="size-4 animate-spin text-primary" />
- <span><b>Sync Agent sedang berjalan:</b> {mode} · mulai {status.started_at ? fmt(status.started_at) : ''}</span>
+ <span><b>Sync Agent is running:</b> {mode} · start {status.started_at ? fmt(status.started_at) : ''}</span>
       </div>
     )
   }
@@ -364,8 +364,8 @@ function AgentRunBanner({ status }: { status: AgentRunStatus | undefined }) {
     <div className={`flex items-center gap-2 rounded-md border p-3 text-sm ${good ? 'border-green-600/30 bg-green-600/5' : 'border-destructive/30 bg-destructive/5'}`}>
       {good ? <CheckCircle2 className="size-4 text-green-600" /> : <AlertTriangle className="size-4 text-destructive" />}
       <span>
- Job terakhir: <b>{mode}</b> {good ? 'berhasil' : status.result === 'interrupted' ? 'terhenti di tengah jalan' : 'gagal (lihat riwayat di bawah)'}
-        {status.finished_at ? ` · selesai ${fmt(status.finished_at)}` : ''}
+ Last job: <b>{mode}</b> {good ? 'successful' : status.result === 'interrupted' ? 'stopped midway' : 'failed (see history below)'}
+        {status.finished_at ? ` · done ${fmt(status.finished_at)}` : ''}
       </span>
     </div>
   )
@@ -398,15 +398,14 @@ function AgentLogTab() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm text-muted-foreground">Riwayat penyalinan data Accurate ke STOCKWISE, termasuk yang gagal sebelum masuk Riwayat Sync.</p>
         <Button size="sm" variant="outline" onClick={() => refetch()} disabled={isFetching}>
-          <RefreshCw className={`size-4 ${isFetching ? 'animate-spin' : ''}`} /> Muat ulang
+          <RefreshCw className={`size-4 ${isFetching ? 'animate-spin' : ''}`} /> Reload
         </Button>
       </div>
 
-      {isLoading && <p className="text-sm text-muted-foreground">Memuat…</p>}
+      {isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
       {data && !data.log_available && (
-        <Card><CardContent className="p-4 text-sm text-muted-foreground">Folder log agent tidak ditemukan di server.</CardContent></Card>
+        <Card><CardContent className="p-4 text-sm text-muted-foreground">Agent log folder not found on the server.</CardContent></Card>
       )}
 
       {data?.log_available && (
@@ -419,7 +418,7 @@ function AgentLogTab() {
                 className={`rounded px-3 py-1.5 text-sm ${tab === 'runs' ? 'bg-primary/10 font-medium text-primary' : 'text-muted-foreground hover:text-foreground'}`}
                 onClick={() => setTab('runs')}
               >
-                Riwayat Run ({data.runs.length})
+                Run History ({data.runs.length})
               </button>
               <button
                 className={`rounded px-3 py-1.5 text-sm ${tab === 'events' ? 'bg-primary/10 font-medium text-primary' : 'text-muted-foreground hover:text-foreground'}`}
@@ -428,22 +427,22 @@ function AgentLogTab() {
                 Event Detail ({data.events.length})
               </button>
             </div>
-            <Input placeholder="Cari…" className="max-w-xs" value={search} onChange={(e) => setSearch(e.target.value)} />
+            <Input placeholder="Search…" className="max-w-xs" value={search} onChange={(e) => setSearch(e.target.value)} />
             {tab === 'runs' ? (
               <select className={selectClass} value={status} onChange={(e) => setStatus(e.target.value)}>
-                <option value="">Semua status</option>
+                <option value="">All statuses</option>
                 {Object.entries(RUN_STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
               </select>
             ) : (
               <select className={selectClass} value={level} onChange={(e) => setLevel(e.target.value)}>
-                <option value="">Semua level</option>
+                <option value="">All levels</option>
                 <option value="ERROR">Error</option>
                 <option value="WARNING">Warning</option>
                 <option value="INFO">Info</option>
               </select>
             )}
             {dataUpdatedAt > 0 && (
-              <span className="ml-auto text-xs text-muted-foreground">Diperbarui {new Date(dataUpdatedAt).toLocaleTimeString('id-ID')} · otomatis tiap 1 menit</span>
+              <span className="ml-auto text-xs text-muted-foreground">Updated {new Date(dataUpdatedAt).toLocaleTimeString('en-GB')} · automatic every 1 minute</span>
             )}
           </div>
 
@@ -452,21 +451,21 @@ function AgentLogTab() {
               <table className="w-full text-sm">
                 <thead className="sticky top-0 z-10 bg-muted/60 text-left">
                   <tr>
-                    <th className="px-3 py-2">Waktu</th>
-                    <th className="px-3 py-2">Sumber</th>
+                    <th className="px-3 py-2">Time</th>
+                    <th className="px-3 py-2">Source</th>
                     <th className="px-3 py-2">Status</th>
-                    <th className="px-3 py-2">Keterangan</th>
+                    <th className="px-3 py-2">Remarks</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {runs.length === 0 && <tr><td colSpan={4} className="px-3 py-6 text-center text-muted-foreground">Tidak ada run yang cocok.</td></tr>}
+                  {runs.length === 0 && <tr><td colSpan={4} className="px-3 py-6 text-center text-muted-foreground">No matching runs.</td></tr>}
                   {runs.map((r) => (
                     <tr key={`${r.time}-${r.source}`} className="border-t align-top">
                       <td className="whitespace-nowrap px-3 py-2">
                         {fmt(r.time)}
                         <div className="text-xs text-muted-foreground">{ago(r.time)}</div>
                       </td>
-                      <td className="px-3 py-2 font-mono text-xs">{r.source}</td>
+                      <td className="px-3 py-2 text-[13px]">{r.source}</td>
                       <td className="px-3 py-2">
                         <Badge variant={RUN_STATUS[r.status]?.variant ?? 'neutral'}>{RUN_STATUS[r.status]?.label ?? r.status}</Badge>
                       </td>
@@ -479,13 +478,13 @@ function AgentLogTab() {
               <table className="w-full text-sm">
                 <thead className="sticky top-0 z-10 bg-muted/60 text-left">
                   <tr>
-                    <th className="px-3 py-2">Waktu</th>
+                    <th className="px-3 py-2">Time</th>
                     <th className="px-3 py-2">Level</th>
-                    <th className="px-3 py-2">Pesan</th>
+                    <th className="px-3 py-2">Message</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {events.length === 0 && <tr><td colSpan={3} className="px-3 py-6 text-center text-muted-foreground">Tidak ada event yang cocok.</td></tr>}
+                  {events.length === 0 && <tr><td colSpan={3} className="px-3 py-6 text-center text-muted-foreground">No matching events.</td></tr>}
                   {events.map((e, i) => (
                     <tr key={`${e.time}-${i}`} className="border-t align-top">
                       <td className="whitespace-nowrap px-3 py-2">{fmt(e.time)}</td>
@@ -497,7 +496,6 @@ function AgentLogTab() {
               </table>
             )}
           </div>
-          <p className="text-xs text-muted-foreground">Menampilkan 50 run dan 100 event terakhir. Detail lengkap ada di file log agent di server (D:\01.STOCKWISE\Logs).</p>
         </>
       )}
     </div>
@@ -505,8 +503,8 @@ function AgentLogTab() {
 }
 
 const TOP_TABS = [
-  { key: 'history' as const, label: 'Riwayat Sync', icon: RefreshCw },
-  { key: 'agent' as const, label: 'Log Agen', icon: ScrollText },
+  { key: 'history' as const, label: 'Sync History', icon: RefreshCw },
+  { key: 'agent' as const, label: 'Agent Log', icon: ScrollText },
 ]
 
 /**
@@ -530,21 +528,21 @@ export function SyncPage() {
   const busy = startRun.isPending || !!runStatus?.running
 
   async function syncNow() {
-    if (!(await confirmDialog('Salin database Accurate ke staging STOCKWISE, lalu sync ke STOCKWISE?\n\nFile Accurate hanya dibaca; staging lama tetap disimpan sebagai cadangan. Salinan otomatis ditolak bila Accurate sedang menulis ke file saat disalin.'))) return
+    if (!(await confirmDialog('Copy the Accurate database to STOCKWISE staging, then sync to STOCKWISE?\n\nThe Accurate file is only read; the old staging stays as a backup. The copy is refused automatically if Accurate is writing to the file while copying.'))) return
     startRun.mutate('full')
   }
 
   return (
     <div className="space-y-4">
       <PageHeader
-        title="Sinkron & Log Accurate"
-        subtitle={`Data Accurate masuk otomatis jam ${SYNC_SCHEDULE}.`}
+        title="Accurate Sync & Log"
+        subtitle={`Accurate data comes in automatically at ${SYNC_SCHEDULE}.`}
         icon={<DatabaseZap className="size-5" />}
         actions={
           canRun && (
             <Button disabled={busy} onClick={syncNow}>
               {busy ? <Loader2 className="size-4 animate-spin" /> : <DatabaseZap className="size-4" />}
-              {busy ? 'Sedang sinkron…' : 'Sinkron Sekarang'}
+              {busy ? 'Syncing…' : 'Sync Now'}
             </Button>
           )
         }
@@ -558,7 +556,7 @@ export function SyncPage() {
             key={key}
             onClick={() => setTab(key)}
             className={`inline-flex items-center gap-1.5 rounded-sm px-3 py-1.5 text-sm font-medium transition ${
-              tab === key ? 'bg-card shadow-sm' : 'text-muted-foreground hover:text-foreground'
+              tab === key ? 'bg-card' : 'text-muted-foreground hover:text-foreground'
             }`}
           >
             <Icon className="size-4" /> {label}

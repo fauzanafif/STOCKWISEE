@@ -15,7 +15,7 @@ export function NopolInput({ value, onChange, label = 'Nopol (Kendaraan)', requi
   return (
     <div className="space-y-1">
       <Label htmlFor={id}>{label}{required && ' *'}</Label>
-      <Input id={id} list={`${id}-list`} placeholder="mis. W 8985 QF (HINO DUTRO)" value={value} onChange={(e) => onChange(e.target.value)} />
+      <Input id={id} list={`${id}-list`} placeholder="e.g. W 8985 QF (HINO DUTRO)" value={value} onChange={(e) => onChange(e.target.value)} />
       <datalist id={`${id}-list`}>
         {data?.map((v) => <option key={v.name} value={v.name} />)}
       </datalist>
@@ -28,7 +28,7 @@ export function DocSummary({ doc }: { doc: AccurateDocSummary }) {
     <div className="space-y-1 rounded-md border bg-muted/30 p-2 text-xs">
       <div className="flex flex-wrap gap-x-3">
         <DocLink no={doc.number} className="font-medium" />
-        {doc.date && <span>{new Date(doc.date).toLocaleDateString('id-ID')}</span>}
+        {doc.date && <span>{new Date(doc.date).toLocaleDateString('en-GB')}</span>}
         {doc.party && <span className="text-muted-foreground">{doc.party}</span>}
       </div>
       <ul className="space-y-0.5">
@@ -38,7 +38,7 @@ export function DocSummary({ doc }: { doc: AccurateDocSummary }) {
             <span className="shrink-0 tabular-nums">{l.qty} {l.unit}</span>
           </li>
         ))}
-        {doc.lines.length > 6 && <li className="text-muted-foreground">+{doc.lines.length - 6} barang lainnya</li>}
+        {doc.lines.length > 6 && <li className="text-muted-foreground">+{doc.lines.length - 6} other items</li>}
       </ul>
       {doc.note && <p className="line-clamp-2 text-muted-foreground"><DocText text={doc.note} /></p>}
     </div>
@@ -87,13 +87,13 @@ export function DocNumberInput({ type, value, onChange, label, optional = true, 
     <div className="space-y-1">
       {!compact && (
         <Label htmlFor={id}>
-          {label ?? (type === 'npbg' ? 'No. NPBG' : 'No. RI')}
-          {optional && <span className="font-normal text-muted-foreground"> (opsional)</span>}
+          {label ?? (type === 'npbg' ? 'NPBG No.' : 'RI No.')}
+          {optional && <span className="font-normal text-muted-foreground"> (optional)</span>}
         </Label>
       )}
       <div className="relative">
-        <Input id={id} className="pr-8 font-mono uppercase" autoComplete="off" role="combobox" aria-expanded={open}
-          placeholder={type === 'npbg' ? 'Ketik / pilih, mis. NA/25/VIII/009' : 'Ketik / pilih, mis. RI/NV/25/VIII/019'}
+        <Input id={id} className="pr-8" autoComplete="off" role="combobox" aria-expanded={open}
+          placeholder={type === 'npbg' ? 'Type / select, e.g. NA/25/VIII/009' : 'Type / select, e.g. RI/NV/25/VIII/019'}
           value={value}
           onFocus={() => setOpen(true)}
           onBlur={() => setTimeout(() => setOpen(false), 150)}
@@ -109,7 +109,7 @@ export function DocNumberInput({ type, value, onChange, label, optional = true, 
           {(typed || open) && (isFetching || list.isFetching) && <Loader2 className="size-4 animate-spin text-muted-foreground" />}
           {typed && !isFetching && !list.isFetching && data && (
             compact && docHref(value) ? (
-              <Link to={docHref(value)!} onClick={(e) => e.stopPropagation()} title={`Buka ${value}`} className="text-emerald-600 hover:text-emerald-700">
+              <Link to={docHref(value)!} onClick={(e) => e.stopPropagation()} title={`Open ${value}`} className="text-emerald-600 hover:text-emerald-700">
                 <CheckCircle2 className="size-4" />
               </Link>
             ) : (
@@ -117,7 +117,7 @@ export function DocNumberInput({ type, value, onChange, label, optional = true, 
             )
           )}
           {typed && !isFetching && !list.isFetching && isError && (
- <span title="Nomor ini tidak ada di data Accurate (dokumen lama / salah ketik) pilih dari daftar."><XCircle className="size-4 text-destructive" /></span>
+ <span title="This number is not in the Accurate data (old document / typo); select from the list."><XCircle className="size-4 text-destructive" /></span>
           )}
         </span>
         {open && (
@@ -125,7 +125,7 @@ export function DocNumberInput({ type, value, onChange, label, optional = true, 
             onMouseDown={(e) => e.preventDefault()}>
             {options.length === 0 && (
               <li className="px-2 py-1.5 text-xs text-muted-foreground">
-                {list.isFetching ? 'Mencari…' : 'Tidak ada dokumen yang cocok.'}
+                {list.isFetching ? 'Searching…' : 'No matching documents.'}
               </li>
             )}
             {options.map((d, i) => (
@@ -133,14 +133,14 @@ export function DocNumberInput({ type, value, onChange, label, optional = true, 
                 className={cn('cursor-pointer rounded px-2 py-1.5', i === active ? 'bg-muted' : 'hover:bg-muted/60')}
                 onMouseEnter={() => setActive(i)} onClick={() => pick(d)}>
                 <div className="flex flex-wrap items-center gap-x-2">
-                  <span className="font-mono text-xs font-medium">{d.number}</span>
-                  {d.date && <span className="text-xs text-muted-foreground">{new Date(d.date).toLocaleDateString('id-ID')}</span>}
+                  <span className="text-[13px] font-medium">{d.number}</span>
+                  {d.date && <span className="text-xs text-muted-foreground">{new Date(d.date).toLocaleDateString('en-GB')}</span>}
                   {d.party && <span className="truncate text-xs text-muted-foreground">· {d.party}</span>}
                 </div>
                 {d.note && <div className="line-clamp-2 text-xs text-muted-foreground">{d.note}</div>}
                 {d.lines[0] && (
                   <div className="truncate text-xs">
-                    {d.lines[0].description}{d.lines.length > 1 && <span className="text-muted-foreground"> +{d.lines.length - 1} barang</span>}
+                    {d.lines[0].description}{d.lines.length > 1 && <span className="text-muted-foreground"> +{d.lines.length - 1} items</span>}
                   </div>
                 )}
               </li>
@@ -148,7 +148,7 @@ export function DocNumberInput({ type, value, onChange, label, optional = true, 
           </ul>
         )}
       </div>
- {!compact && typed && !isFetching && isError && !open && <p className="text-xs text-destructive">Nomor ini tidak ada di data Accurate pilih dari daftar.</p>}
+ {!compact && typed && !isFetching && isError && !open && <p className="text-xs text-destructive">This number is not in the Accurate data; select from the list.</p>}
       {!compact && data && !open && <DocSummary doc={data} />}
     </div>
   )

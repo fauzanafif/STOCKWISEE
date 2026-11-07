@@ -84,16 +84,16 @@ export function SignaturePad({ onChange, height = 180 }: { onChange: (dataUrl: s
       <div className="relative overflow-hidden rounded-lg border-2 border-dashed bg-white">
         <canvas ref={canvas} style={{ height }} className="block w-full touch-none cursor-crosshair"
           onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onPointerLeave={up}
-          aria-label="Area tanda tangan" />
+          aria-label="Signature area" />
         {empty && (
           <span className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-1 text-sm text-slate-400">
-            <PenLine className="size-5" /> Tanda tangan di sini
+            <PenLine className="size-5" /> Sign here
           </span>
         )}
         <span aria-hidden className="pointer-events-none absolute inset-x-6 bottom-8 border-b border-slate-300" />
       </div>
       <div className="flex justify-end">
-        <Button type="button" variant="ghost" size="sm" onClick={clear} disabled={empty}><Eraser className="size-4" /> Ulangi</Button>
+        <Button type="button" variant="ghost" size="sm" onClick={clear} disabled={empty}><Eraser className="size-4" /> Repeat</Button>
       </div>
     </div>
   )

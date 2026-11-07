@@ -48,7 +48,7 @@ export interface OtherRow extends Base {
 }
 
 const STATUS: Record<string, { label: string; variant: 'success' | 'warning' | 'default' }> = {
-  CLEAR: { label: 'CLEAR', variant: 'success' }, PENDING: { label: 'PENDING', variant: 'warning' }, INCOMPLETE: { label: 'Belum lengkap', variant: 'default' },
+  CLEAR: { label: 'CLEAR', variant: 'success' }, PENDING: { label: 'PENDING', variant: 'warning' }, INCOMPLETE: { label: 'Incomplete', variant: 'default' },
 }
 const STATUS_LABELS = Object.fromEntries(Object.entries(STATUS).map(([k, v]) => [k, v.label]))
 const StatusBadge = ({ status }: { status: string }) => <Badge variant={STATUS[status]?.variant ?? 'default'}>{STATUS[status]?.label ?? status}</Badge>
@@ -68,7 +68,7 @@ function useSheetApi(sheet: 'matrix' | 'other', id: number | undefined) {
     return r.data
   }
   const remove = async () => {
-    if (!id || !(await confirmDialog('Hapus baris ini?'))) return
+    if (!id || !(await confirmDialog('Delete this row?'))) return
     try {
       await api.delete(`/api/used-return-sheets/${sheet}/${id}`)
       refresh()
@@ -92,7 +92,7 @@ function MatrixTableRow({ row, canEdit, note }: { row: MatrixRow | null; canEdit
   const s = useSheetApi('matrix', row?.id)
   const ed = useSheetRow<MatrixRow, MForm>({
     row, fromRow: mFrom, emptyForm: mEmpty, isSame: same, canEdit,
-    invalid: (f) => (f.npbg_no.trim() || f.ri_no.trim() ? null : 'Isi No NPBG atau No RI'),
+    invalid: (f) => (f.npbg_no.trim() || f.ri_no.trim() ? null : 'Fill in NPBG No or RI No'),
     save: (f) => s.save({
       npbg_date: f.npbg_date || null, npbg_no: t(f.npbg_no), ri_date: f.ri_date || null, ri_no: t(f.ri_no), note: t(f.note),
       components: Object.fromEntries(COMPONENTS.filter(([c]) => f[c].trim() !== '').map(([c]) => [c, num(f[c])])),
@@ -102,21 +102,21 @@ function MatrixTableRow({ row, canEdit, note }: { row: MatrixRow | null; canEdit
   return (
     <tr {...ed.rowProps} className={rowClass(isNew)}>
       <Td className="px-2 py-2 text-right tabular-nums text-muted-foreground">{row?.no ?? ''}</Td>
-      <Td>{ed.input('npbg_date', { type: 'date', 'aria-label': 'Tgl NPBG', className: 'min-w-[8rem]' })}</Td>
+      <Td>{ed.input('npbg_date', { type: 'date', 'aria-label': 'NPBG Date', className: 'min-w-[8rem]' })}</Td>
       <Td className="min-w-[12rem]">
         {canEdit ? (
           <DocNumberInput compact type="npbg" value={ed.form.npbg_no} onChange={(v) => ed.change('npbg_no', v)}
             onPick={(d) => ed.setForm((x) => ({ ...x, npbg_date: d.date ?? x.npbg_date }))} />
- ) : <span className="block whitespace-nowrap px-2 py-1.5 font-mono text-xs">{row?.npbg_no ?? ''}</span>}
+ ) : <span className="block whitespace-nowrap px-2 py-1.5 text-[13px]">{row?.npbg_no ?? ''}</span>}
         <div className="px-2"><InlineSaveBadge state={ed.state} error={ed.error} hint={ed.hint} /></div>
       </Td>
       <Td className="whitespace-nowrap px-2 py-2 text-center">{row && <StatusBadge status={row.status} />}</Td>
-      <Td>{ed.input('ri_date', { type: 'date', 'aria-label': 'Tgl RI', className: 'min-w-[8rem]' })}</Td>
+      <Td>{ed.input('ri_date', { type: 'date', 'aria-label': 'RI Date', className: 'min-w-[8rem]' })}</Td>
       <Td className="min-w-[12rem]">
         {canEdit ? (
           <DocNumberInput compact type="ri" value={ed.form.ri_no} onChange={(v) => ed.change('ri_no', v)}
             onPick={(d) => ed.setForm((x) => ({ ...x, ri_date: d.date ?? x.ri_date, note: x.note || (d.note ?? '') }))} />
- ) : <span className="block whitespace-nowrap px-2 py-1.5 font-mono text-xs">{row?.ri_no ?? ''}</span>}
+ ) : <span className="block whitespace-nowrap px-2 py-1.5 text-[13px]">{row?.ri_no ?? ''}</span>}
       </Td>
       {COMPONENTS.map(([c, label]) => (
         <Td key={c}>
@@ -149,7 +149,7 @@ function OtherTableRow({ row, canEdit, note }: { row: OtherRow | null; canEdit: 
   const s = useSheetApi('other', row?.id)
   const ed = useSheetRow<OtherRow, OForm>({
     row, fromRow: oFrom, emptyForm: oEmpty, isSame: same, canEdit,
-    invalid: (f) => (f.description.trim() || f.npbg_no.trim() ? null : 'Isi Deskripsi Barang atau No NPBG'),
+    invalid: (f) => (f.description.trim() || f.npbg_no.trim() ? null : 'Fill in Item Description or NPBG No'),
     save: (f) => s.save({
       npbg_date: f.npbg_date || null, npbg_no: t(f.npbg_no), description: t(f.description), qty: num(f.qty), unit: t(f.unit),
       item_no: f.item_no ? Number(f.item_no) : null, out_file_name: t(f.out_file_name), ri_no: t(f.ri_no),
@@ -160,7 +160,7 @@ function OtherTableRow({ row, canEdit, note }: { row: OtherRow | null; canEdit: 
   return (
     <tr {...ed.rowProps} className={rowClass(isNew)}>
       <Td className="px-2 py-2 text-right tabular-nums text-muted-foreground">{row?.no ?? ''}</Td>
-      <Td>{ed.input('npbg_date', { type: 'date', 'aria-label': 'Tgl NPBG', className: 'min-w-[8rem]' })}</Td>
+      <Td>{ed.input('npbg_date', { type: 'date', 'aria-label': 'NPBG Date', className: 'min-w-[8rem]' })}</Td>
       <Td className="min-w-[12rem]">
         {canEdit ? (
           <DocNumberInput compact type="npbg" value={ed.form.npbg_no} onChange={(v) => ed.change('npbg_no', v)}
@@ -168,27 +168,27 @@ function OtherTableRow({ row, canEdit, note }: { row: OtherRow | null; canEdit: 
               ...x, npbg_date: d.date ?? x.npbg_date, description: x.description || (d.lines[0]?.description ?? ''),
               unit: d.lines[0]?.unit ?? x.unit, qty: x.qty || String(d.lines[0]?.qty ?? ''),
             }))} />
- ) : <span className="block whitespace-nowrap px-2 py-1.5 font-mono text-xs">{row?.npbg_no ?? ''}</span>}
+ ) : <span className="block whitespace-nowrap px-2 py-1.5 text-[13px]">{row?.npbg_no ?? ''}</span>}
       </Td>
       <Td className="min-w-[15rem]">
-        {ed.area('description', { placeholder: isNew ? 'Ketik barang…' : '' })}
+        {ed.area('description', { placeholder: isNew ? 'Type an item…' : '' })}
         <div className="px-2"><InlineSaveBadge state={ed.state} error={ed.error} hint={ed.hint} /></div>
       </Td>
-      <Td>{ed.input('qty', { inputMode: 'decimal', 'aria-label': 'Kuantitas', className: 'min-w-[4rem] text-right tabular-nums' })}</Td>
-      <Td>{ed.input('unit', { 'aria-label': 'Satuan', className: 'min-w-[4.5rem]' })}</Td>
+      <Td>{ed.input('qty', { inputMode: 'decimal', 'aria-label': 'Quantity', className: 'min-w-[4rem] text-right tabular-nums' })}</Td>
+      <Td>{ed.input('unit', { 'aria-label': 'Unit', className: 'min-w-[4.5rem]' })}</Td>
       <Td>{ed.input('item_no', { type: 'number', min: 1, 'aria-label': 'Item No', className: 'min-w-[4rem] text-right' })}</Td>
       <Td className="min-w-[11rem]">{ed.list('out_file_name', row?.helper_out ? [row.helper_out] : [], { placeholder: row?.helper_out ?? '', className: 'text-xs' })}</Td>
-      <Td>{row && <CompactPhotoSlot entity="used_return_line" entityId={row.id} slot="out" label="Foto Keluar" photo={row.photos?.out} canEdit={canEdit} onChanged={s.refresh} />}</Td>
+      <Td>{row && <CompactPhotoSlot entity="used_return_line" entityId={row.id} slot="out" label="Out Photo" photo={row.photos?.out} canEdit={canEdit} onChanged={s.refresh} />}</Td>
       <Td className="whitespace-nowrap px-2 py-2 text-center">{row && <StatusBadge status={row.status} />}</Td>
       <Td className="min-w-[12rem]">
         {canEdit ? (
           <DocNumberInput compact type="ri" value={ed.form.ri_no} onChange={(v) => ed.change('ri_no', v)}
             onPick={(d) => ed.setForm((x) => ({ ...x, note: x.note || (d.note ?? '') }))} />
- ) : <span className="block whitespace-nowrap px-2 py-1.5 font-mono text-xs">{row?.ri_no ?? ''}</span>}
+ ) : <span className="block whitespace-nowrap px-2 py-1.5 text-[13px]">{row?.ri_no ?? ''}</span>}
       </Td>
       <Td>{ed.input('return_item_no', { type: 'number', min: 1, 'aria-label': 'Item No2', className: 'min-w-[4rem] text-right' })}</Td>
       <Td className="min-w-[11rem]">{ed.list('in_file_name', row?.helper_in ? [row.helper_in] : [], { placeholder: row?.helper_in ?? '', className: 'text-xs' })}</Td>
-      <Td>{row && <CompactPhotoSlot entity="used_return_line" entityId={row.id} slot="in" label="Foto Terima" photo={row.photos?.in} canEdit={canEdit} onChanged={s.refresh} />}</Td>
+      <Td>{row && <CompactPhotoSlot entity="used_return_line" entityId={row.id} slot="in" label="Receipt Photo" photo={row.photos?.in} canEdit={canEdit} onChanged={s.refresh} />}</Td>
       <Td className="min-w-[15rem]">{ed.area('note')}</Td>
       <Td className="px-2">{row && <NoteCell entity="used_return_other" rowKey={row.id} note={note} />}</Td>
       {canEdit && <Td className="text-center">{row && <RowActions onDelete={() => void s.remove()} />}</Td>}
@@ -205,26 +205,26 @@ export function UsedReturnSheet({ sheet, headerExtra }: { sheet: 'matrix' | 'oth
   return (
     <div className="space-y-5">
       <PageHeader
-        title="Pengembalian Bekas"
+        title="Used Item Returns"
         subtitle={sheet === 'matrix'
- ? 'Sesuai Excel Tracking Pengembalian Bekas sheet Spare Part (surplus / shortage per komponen, minus = kurang). Ketik langsung di tabel, tersimpan otomatis.'
- : 'Sesuai Excel Tracking Pengembalian Bekas sheet Spare Part Lain (per barang, foto keluar / terima). Ketik langsung di tabel, tersimpan otomatis.'}
+ ? 'As in the Used Item Return Tracking Excel, Spare Part sheet (surplus / shortage per component, minus = short). Type directly in the table; it saves automatically.'
+ : 'As in the Used Item Return Tracking Excel, Other Spare Part sheet (per item, out / receipt photos). Type directly in the table; it saves automatically.'}
         icon={<Recycle className="size-5" />}
       />
       {headerExtra}
       {sheet === 'matrix' ? (
         <InlineSheet<MatrixRow> key="matrix" base="used-return-sheets/matrix" notesEntity="used_return_matrix" {...common}
-          headers={['No', 'Tgl NPBG', 'No NPBG', 'Status', 'Tgl RI', 'No RI', ...COMPONENTS.map(([, l]) => l), 'Keterangan']}
-          searchPlaceholder="Cari NPBG, RI, keterangan…"
-          hint={<>Status ikut Excel: <b>PENDING</b> = No NPBG ada; <b>CLEAR</b> = No RI diisi.</>}
+          headers={['No', 'Tgl NPBG', 'No NPBG', 'Status', 'Tgl RI', 'No RI', ...COMPONENTS.map(([, l]) => l), 'Remarks']}
+          searchPlaceholder="Search NPBG, RI, remarks…"
+          hint={<>Status follows Excel: <b>PENDING</b> = NPBG No. exists; <b>CLEAR</b> = RI No. filled.</>}
           renderRow={(r, note) => <MatrixTableRow row={r} canEdit={canEdit} note={note} />}
           newRow={canEdit ? <MatrixTableRow key="new" row={null} canEdit /> : null} />
       ) : (
         <InlineSheet<OtherRow> key="other" base="used-return-sheets/other" notesEntity="used_return_other" {...common}
-          headers={['No', 'Tgl NPBG', 'No NPBG', 'Deskripsi Barang', 'Kuantitas', 'Satuan', 'Item No', 'Nama File (#.ext)', 'Foto Keluar', 'Status',
-            'No RI', 'Item No2', 'Nama File (#.ext2)', 'Foto Terima', 'Keterangan']}
-          searchPlaceholder="Cari NPBG, RI, barang, keterangan…"
-          hint={<>Status ikut Excel: <b>PENDING</b> = No NPBG ada; <b>CLEAR</b> = No RI + Foto Terima.</>}
+          headers={['No', 'Tgl NPBG', 'No NPBG', 'Item Description', 'Kuantitas', 'Unit', 'Item No', 'File Name (#.ext)', 'Out Photo', 'Status',
+            'No RI', 'Item No2', 'File Name (#.ext2)', 'Receipt Photo', 'Remarks']}
+          searchPlaceholder="Search NPBG, RI, item, remarks…"
+          hint={<>Status follows Excel: <b>PENDING</b> = NPBG No. exists; <b>CLEAR</b> = RI No. + Receipt Photo.</>}
           renderRow={(r, note) => <OtherTableRow row={r} canEdit={canEdit} note={note} />}
           newRow={canEdit ? <OtherTableRow key="new" row={null} canEdit /> : null} />
       )}

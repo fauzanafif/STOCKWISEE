@@ -1,17 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { ProxyPickup } from '@/components/itemRequests/ProxyPickup'
 import { Link, useLocation, useParams } from 'react-router-dom'
-import { AlertTriangle, Ban, CheckCircle2, ChevronLeft, ChevronRight, ClipboardList, Loader2, Copy, Lock, MessageSquare, MousePointerClick, PackageCheck, Plus, Search, Undo2 } from 'lucide-react'
+import { AlertTriangle, Ban, CheckCircle2, ChevronLeft, ChevronRight, Loader2, Copy, Lock, MessageSquare, PackageCheck, Plus, Search, Undo2 } from 'lucide-react'
 import { toast, invalidTo } from '@/lib/notify'
 import { useAuth } from '@/auth/AuthContext'
 import { apiErrorMessage } from '@/lib/api'
 import {
-  STAGE_INFO, trackUrl, useCancelItemRequest, useShareBase, useMatchLine, useCloseRemaining, useFulfill, useFulfillmentFile, useHandoverFile, useItemRequest,
+  STAGE_INFO, trackUrl, useCancelItemRequest, useRequestProxy, useShareBase, useMatchLine, useCloseRemaining, useFulfill, useFulfillmentFile, useHandoverFile, useItemRequest,
   useProcessItemRequest, useSetUrgency,
   type Fulfillment, type ItemRequestDetail, type ItemRequestLine, type LineStatus, type StockRecommendation,
 } from '@/features/itemRequests/api'
 import { ApprovalActions, HandoverQty, type HandoverDraft } from '@/components/itemRequests/ApprovalActions'
 import { StepsBar } from '@/components/itemRequests/RequestTimeline'
-import type { ItemLookupResult } from '@/features/inventory/api'
+import { useUnits, type ItemLookupResult } from '@/features/inventory/api'
+import { UomEquivalent } from '@/components/UomEquivalent'
 import { RequestStatusBadge } from '@/pages/ItemRequestListPage'
 import { BackLink } from '@/components/BackLink'
 import { ItemPicker } from '@/components/ItemPicker'
@@ -20,16 +22,18 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import { Select } from '@/components/ui/select'
 import { cn, copyText } from '@/lib/utils'
 import { BYPASS_TEXT, isAutoApproval } from '@/lib/approval'
 import { confirmDialog } from '@/components/ui/confirm'
+import { openImage } from '@/components/ui/lightbox'
 import { DetailFallback } from '@/components/DetailFallback'
 import { LineImagesCell, RequestImages } from '@/components/itemRequests/RequestImages'
 import { QtyProgress } from '@/components/QtyProgress'
 
-const fmtDate = (v: string | null) => (v ? new Date(v).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : '-')
-const fmtDateTime = (v: string | null) => (v ? new Date(v).toLocaleString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-')
+const fmtDate = (v: string | null) => (v ? new Date(v).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '-')
+const fmtDateTime = (v: string | null) => (v ? new Date(v).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-')
 const fmtQty = (n: number | string | null) => (n == null ? '?' : Number(n).toLocaleString('id-ID', { maximumFractionDigits: 2 }))
 /** "1,5" or "1.5" → 1.5; NaN when not a number */
 const num = (v: string) => Number(v.trim().replace(',', '.'))
@@ -37,10 +41,14 @@ const num = (v: string) => Number(v.trim().replace(',', '.'))
 const clean = (t: string | null | undefined) => (t ? t.replace(/\s*—\s*/g, ', ') : t)
 
 interface Choice {
+  /** the unit asked, when the warehouse corrects it */
+  unit?: string
   /** the Master Produk items picked for this requested item (one or more, in the order picked) */
   items: StockRecommendation[]
   /** how many of each picked item (its id → qty as typed) */
   qtys: Record<number, string>
+  /** given less than asked (e.g. 9 of 10, 1 kept in stock): why — required then */
+  reason?: string
 }
 
 /** "1,5" / "1.5" → 1.5; 0 when empty or not a number (a qty field) */
@@ -80,9 +88,9 @@ function split(choice: Choice) {
 
 /** Stock of a master item, as a short colored text. */
 function stockText(item: StockRecommendation, qty: number) {
-  if (!item.stock_known) return <span className="text-muted-foreground">stok ?</span>
+  if (!item.stock_known) return <span className="text-muted-foreground">stock ?</span>
   const a = item.available ?? 0
-  return <span className={a >= qty ? 'text-emerald-700' : a > 0 ? 'text-amber-700' : 'text-red-600'}>stok {fmtQty(a)}</span>
+  return <span className={a >= qty ? 'text-emerald-700' : a > 0 ? 'text-amber-700' : 'text-red-600'}>stock {fmtQty(a)}</span>
 }
 
 /** The master item already saved on a line, as a pick option. */
@@ -105,6 +113,10 @@ function OpenLine({ line, requestId, choice, onChange, onPick, saving }: {
   const [adding, setAdding] = useState(false)
   const options = extra && !line.recommendations.some((r) => r.id === extra.id) ? [...line.recommendations, extra] : line.recommendations
   const needed = Number(line.qty)
+  // the requester's unit; picking an item does not lose it
+  const askedUnit = choice.unit ?? line.requested_unit ?? line.satuan ?? ''
+  const { data: units } = useUnits()
+  const unitCodes = [...new Set([...(units ?? []).map((u) => u.code), ...(askedUnit ? [askedUnit] : [])])].sort()
 
   const toggleItem = (item: StockRecommendation) => {
     const on = choice.items.some((i) => i.id === item.id)
@@ -118,34 +130,52 @@ function OpenLine({ line, requestId, choice, onChange, onPick, saving }: {
     setSearching(false)
     if (!choice.items.some((i) => i.id === r.id)) toggleItem(r)
   }
-  // any amount: more than the stock is fine, the rest is bought after the approval
-  const setQty = (itemId: number, v: string) => onChange({ ...choice, qtys: { ...choice.qtys, [itemId]: v.replace(/[^\d.,]/g, '') } })
+  // more than the stock is fine (the rest is bought after the approval) — but never more than asked in all:
+  // while typing, an item takes at most what the others leave of the request
+  const [capped, setCapped] = useState<{ id: number; max: number } | null>(null)
+  const maxFor = (itemId: number) => round2(Math.max(0, needed - choice.items.filter((i) => i.id !== itemId).reduce((n, i) => n + qtyOf(choice.qtys[i.id]), 0)))
+  const setQty = (itemId: number, v: string) => {
+    const typed = v.replace(/[^\d.,]/g, '')
+    const max = maxFor(itemId)
+    if (qtyOf(typed) > max) {
+      setCapped({ id: itemId, max })
+      onChange({ ...choice, qtys: { ...choice.qtys, [itemId]: String(max) } })
+      return
+    }
+    setCapped(null)
+    onChange({ ...choice, qtys: { ...choice.qtys, [itemId]: typed } })
+  }
 
   const sum = split(choice)
   const diff = round2(sum.total - needed)
 
   return (
-    <Card className="space-y-4 rounded-2xl p-4 shadow-sm sm:p-5">
+    <Card className="space-y-4 rounded-lg p-4 sm:p-5">
       <div className="flex items-baseline justify-between gap-3">
         <div className="flex min-w-0 items-start gap-3">
           <div className="min-w-0 break-words text-base font-semibold">{line.deskripsi_peminta ?? line.deskripsi_barang}</div>
           <RequestImages requestId={requestId} lineId={line.id} slots={line.images} size="size-12" className="shrink-0 gap-1" />
         </div>
-        <div className="shrink-0 font-semibold tabular-nums">{fmtQty(line.qty)} <span className="font-normal text-muted-foreground">{line.satuan ?? ''}</span></div>
+        <div className="flex shrink-0 items-center gap-1.5 font-semibold tabular-nums">{fmtQty(line.qty)}
+          <Select className="h-8 w-24 font-normal" aria-label={`Requested unit ${line.deskripsi_peminta ?? line.deskripsi_barang}`} value={askedUnit} onChange={(e) => onChange({ ...choice, unit: e.target.value })}>
+            {!askedUnit && <option value="">Unit…</option>}
+            {unitCodes.map((c) => <option key={c} value={c}>{c}</option>)}
+          </Select>
+        </div>
       </div>
       {line.note && <p className="-mt-3 text-sm text-muted-foreground">{line.note}</p>}
 
       {/* which warehouse item */}
       <div className="-mb-2 flex items-center justify-between text-xs text-muted-foreground">
-        <span>Barang di Master Produk, boleh lebih dari satu (mis. buku Sidu + buku Sinar)</span>
-        {saving ? <span className="flex items-center gap-1"><Loader2 className="size-3 animate-spin" /> Menyimpan…</span>
-          : choice.items.length > 0 ? <span className="flex items-center gap-1 text-emerald-700"><CheckCircle2 className="size-3" /> {choice.items.length} barang dipilih</span>
-          : <span>Pilih barang untuk memenuhi permintaan</span>}
+        <span>Items in Product Master</span>
+        {saving ? <span className="flex items-center gap-1"><Loader2 className="size-3 animate-spin" /> Saving…</span>
+          : choice.items.length > 0 ? <span className="flex items-center gap-1 text-emerald-700"><CheckCircle2 className="size-3" /> {choice.items.length} items selected</span>
+          : <span>Select an item to fulfil the request</span>}
       </div>
       <div className="divide-y rounded-lg border">
         {/* every recommendation, best match first: 5 rows in view, the rest by scrolling */}
         <div className="max-h-[14.5rem] divide-y overflow-y-auto overscroll-contain">
-          {options.length === 0 && <p className="px-3 py-3 text-sm text-muted-foreground">Tidak ada rekomendasi, cari barang lain atau tambahkan ke Master Produk.</p>}
+          {options.length === 0 && <p className="px-3 py-3 text-sm text-muted-foreground">No recommendations; search another item or add it to the Product Master.</p>}
           {options.map((r, i) => {
             const isSelected = choice.items.some((item) => item.id === r.id)
             const q = qtyOf(choice.qtys[r.id])
@@ -155,19 +185,21 @@ function OpenLine({ line, requestId, choice, onChange, onPick, saving }: {
                 <label className="flex min-w-0 flex-1 basis-60 cursor-pointer items-center gap-3">
                   <input type="checkbox" className="size-4 shrink-0 accent-primary" checked={isSelected} onChange={() => toggleItem(r)} />
                   <span className="w-5 shrink-0 text-right text-xs tabular-nums text-muted-foreground">{i + 1}</span>
-                  <span className="min-w-0 flex-1 break-words">{r.description}<span className="ml-1.5 font-mono text-xs text-muted-foreground">{r.code}</span></span>
+                  <span className="min-w-0 flex-1 break-words">{r.description}<span className="ml-1.5 text-[13px] text-muted-foreground">{r.code}</span></span>
                   <span className="shrink-0 text-xs">{stockText(r, isSelected ? q : needed)}</span>
                 </label>
                 {isSelected && (
                   // phone: its own row under the name; wider: on the right
                   <div className="ml-14 flex items-center gap-2 sm:ml-0">
-                    <Input className="h-8 w-20 text-right tabular-nums" inputMode="decimal" aria-label={`Jumlah ${r.description}`}
-                      value={choice.qtys[r.id] ?? ''} onChange={(e) => setQty(r.id, e.target.value)} />
+                    <Input className={cn('h-8 w-20 text-right tabular-nums', capped?.id === r.id && 'border-red-400 focus-visible:border-red-500 focus-visible:ring-red-200')} inputMode="decimal"
+                      aria-label={`Quantity ${r.description}`} aria-invalid={capped?.id === r.id} title={`Maximum ${fmtQty(maxFor(r.id))}`}
+                      value={choice.qtys[r.id] ?? ''} onChange={(e) => setQty(r.id, e.target.value)} onBlur={() => setCapped(null)} />
                     <span className="w-36 text-xs leading-tight text-muted-foreground">
-                      {q <= 0 ? 'isi jumlahnya' : <>
-                        {fromStock > 0 && <span className="text-emerald-700">{fmtQty(fromStock)} dari stok</span>}
+                      {capped?.id === r.id ? <span className="font-medium text-red-600">Maks {fmtQty(capped.max)}: total may not exceed {fmtQty(needed)} {askedUnit}</span>
+                        : q <= 0 ? 'fill in the quantity' : askedUnit && r.unit && askedUnit !== r.unit ? <UomEquivalent qty={q} unit={askedUnit} itemId={r.id} /> : <>
+                        {fromStock > 0 && <span className="text-emerald-700">{fmtQty(fromStock)} from stock</span>}
                         {fromStock > 0 && q > fromStock && ' · '}
-                        {q > fromStock && <span className="text-amber-700">{fmtQty(round2(q - fromStock))} dibeli</span>}
+                        {q > fromStock && <span className="text-amber-700">{fmtQty(round2(q - fromStock))} purchased</span>}
                       </>}
                     </span>
                   </div>
@@ -176,17 +208,17 @@ function OpenLine({ line, requestId, choice, onChange, onPick, saving }: {
             )
           })}
         </div>
-        {options.length > 5 && <p className="bg-muted/30 px-3 py-1 text-center text-xs text-muted-foreground">{options.length} rekomendasi, scroll untuk melihat lainnya</p>}
+        {options.length > 5 && <p className="bg-muted/30 px-3 py-1 text-center text-xs text-muted-foreground">{options.length} recommendations, scroll to see more</p>}
         {searching ? (
           <div className="p-2"><ItemPicker onPick={fromLookup} /></div>
         ) : (
           <div className="flex flex-wrap px-3 py-2">
             <button type="button" onClick={() => setSearching(true)} className="flex items-center gap-2 px-3 py-2.5 text-sm text-primary">
-              <Search className="size-4" /> Cari barang lain
+              <Search className="size-4" /> Search another item
             </button>
             {hasPermission('item.create') && (
               <button type="button" onClick={() => setAdding(true)} className="flex items-center gap-2 px-3 py-2.5 text-sm text-primary">
-                <Plus className="size-4" /> Belum ada? Tambah ke Master Produk
+                <Plus className="size-4" /> Not there? Add to Product Master
               </button>
             )}
           </div>
@@ -201,23 +233,30 @@ function OpenLine({ line, requestId, choice, onChange, onPick, saving }: {
         }} />
 
       {choice.items.length === 0 ? (
-        <p className="text-sm text-amber-700">Pilih barang dari Master Produk. Belum ada? Tambahkan dulu.</p>
+        <p className="text-sm text-amber-700">Select an item from the Product Master. Not there? Add it first.</p>
       ) : (
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg bg-muted/40 px-3 py-2 text-sm">
           <span>
             <span className="text-muted-foreground">Total </span>
             <span className={cn('font-semibold tabular-nums', diff === 0 ? 'text-emerald-700' : 'text-red-600')}>{fmtQty(sum.total)}</span>
-            <span className="text-muted-foreground"> / {fmtQty(needed)} {line.satuan ?? ''}</span>
-            {diff !== 0 && <span className="ml-1.5 text-xs font-medium text-red-600">{diff > 0 ? `lebih ${fmtQty(diff)}` : `kurang ${fmtQty(-diff)}`}</span>}
+            <span className="text-muted-foreground"> / {fmtQty(needed)} {askedUnit}</span>
+            {diff !== 0 && <span className={cn('ml-1.5 text-xs font-medium', diff > 0 ? 'text-red-600' : 'text-amber-700')}>{diff > 0 ? `more ${fmtQty(diff)}` : `given less ${fmtQty(-diff)}`}</span>}
           </span>
-          {sum.stock > 0 && <span className="text-xs text-emerald-700">Dari stok {fmtQty(sum.stock)} → NPBG</span>}
-          {sum.buy > 0 && <span className="text-xs text-amber-700">Dibeli {fmtQty(sum.buy)} → Draft PPB</span>}
+          {sum.stock > 0 && <span className="text-xs text-emerald-700">From stock {fmtQty(sum.stock)} → Delivery Order</span>}
+          {sum.buy > 0 && <span className="text-xs text-amber-700">Purchased {fmtQty(sum.buy)} → Draft Purchase Request</span>}
           {choice.items.length > 1 && (
             <button type="button" className="ml-auto text-xs font-medium text-primary hover:underline" onClick={() => onChange({ ...choice, qtys: distribute(choice.items, needed) })}>
-              Bagi ulang otomatis
+              Redistribute automatically
             </button>
           )}
-          <span className="basis-full text-xs text-muted-foreground">Perkiraan dari stok sekarang; dicek lagi setelah approval. Yang kurang otomatis masuk Draft PPB.</span>
+          {diff < 0 && sum.total > 0 && (
+            // given less than asked on purpose (e.g. 1 kept in stock): why — the approvers and the requester read it
+            <div className="basis-full space-y-1">
+              <Label htmlFor={`reason-${line.id}`} className="text-xs text-amber-800">Reason for giving less than requested *</Label>
+              <Input id={`reason-${line.id}`} maxLength={255} value={choice.reason ?? ''} onChange={(e) => onChange({ ...choice, reason: e.target.value })}
+                placeholder="e.g. 1 left kept as warehouse reserve" className={cn('h-9 bg-card', !(choice.reason ?? '').trim() && 'border-amber-400')} />
+            </div>
+          )}
         </div>
       )}
     </Card>
@@ -241,7 +280,7 @@ function DecisionCell({ line }: { line: ItemRequestLine }) {
   return (
     <div className="space-y-0.5 leading-tight">
       {badge}
-      {line.closed_reason && <div className="text-xs text-muted-foreground">Ditutup: {clean(line.closed_reason)}</div>}
+      {line.closed_reason && <div className="text-xs text-muted-foreground">Closed: {clean(line.closed_reason)}</div>}
     </div>
   )
 }
@@ -258,7 +297,7 @@ function estimate(l: ItemRequestLine, status: string): { npbg: number; ppb: numb
 /** NPBG column: only the quantity given from stock (its NPBG and state in the tooltip). */
 function NpbgCell({ line, status }: { line: ItemRequestLine; status: string }) {
   const est = estimate(line, status)
-  if (est) return <span className="text-muted-foreground" title="Perkiraan dari stok sekarang, ditentukan sistem setelah approval">{fmtQty(est.npbg)}</span>
+  if (est) return <span className="text-muted-foreground" title="Estimated from current stock, set by the system after approval">{fmtQty(est.npbg)}</span>
   if (!line.npbg) return <span className="text-muted-foreground">0</span>
   const tip = line.npbg.docs.map((d) => `${d.no} · ${d.handed ? 'diserahkan' : 'siap diserahkan'}`).join(' | ')
   return <span className="font-semibold text-emerald-700" title={tip}>{fmtQty(line.npbg.qty)}</span>
@@ -267,11 +306,11 @@ function NpbgCell({ line, status }: { line: ItemRequestLine; status: string }) {
 /** PPB column: only the quantity to be bought (its Draft / PPB / PO and stage in the tooltip). */
 function PpbCell({ line, status }: { line: ItemRequestLine; status: string }) {
   const est = estimate(line, status)
-  if (est) return <span className="text-muted-foreground" title="Perkiraan dari stok sekarang, ditentukan sistem setelah approval">{fmtQty(est.ppb)}</span>
+  if (est) return <span className="text-muted-foreground" title="Estimated from current stock, set by the system after approval">{fmtQty(est.ppb)}</span>
   const p = line.ppb
   if (!p) return <span className="text-muted-foreground">0</span>
   const tip = [p.po_number ?? p.no_ppb ?? `Draft ${p.draft_number}`, p.stage].join(' · ')
-  return <span className={cn('font-semibold', p.stage.startsWith('Diterima') ? 'text-emerald-700' : 'text-indigo-700')} title={tip}>{fmtQty(p.qty)}</span>
+  return <span className={cn('font-semibold', p.stage.startsWith('Received') ? 'text-emerald-700' : 'text-indigo-700')} title={tip}>{fmtQty(p.qty)}</span>
 }
 
 /** The warehouse item (or the requester's words), with what was asked when it differs. */
@@ -287,6 +326,9 @@ function LineName({ line, requestId }: { line: ItemRequestLine; requestId: numbe
       <div className="break-words text-xs text-muted-foreground">
         {[line.kode_barang, line.satuan, matched && line.item_description && line.item_description !== displayName ? `cocok: ${line.item_description}` : null, line.note].filter(Boolean).join(' · ')}
       </div>
+      {line.requested_qty != null && line.unit_ratio != null && <div className="mt-0.5 text-xs tabular-nums text-primary">Requested {fmtQty(line.requested_qty)} {line.requested_unit} = {fmtQty(line.qty)} {line.satuan}</div>}
+      {line.uom_unmapped && <div className="mt-0.5 text-xs text-amber-700">Requested in "{line.requested_unit}", not in the UOM master: counted as written</div>}
+      {line.short_reason && <div className="mt-0.5 text-xs text-amber-700">Given less: {line.short_reason}</div>}
       {/* phone (cards): the images under the name */}
       {(line.images?.length ?? 0) > 0 && <RequestImages requestId={requestId} lineId={line.id} slots={line.images} size="size-11" className="mt-1.5 gap-1 sm:hidden" />}
     </div>
@@ -308,7 +350,7 @@ function ItemsTable({ req, selectedLineId, onSelectLine }: { req: ItemRequestDet
     const stock = l.on_hand ?? l.available
     if (stock == null) return ''
     const held = l.on_hand != null && l.available != null ? Math.round((l.on_hand - l.available) * 100) / 100 : 0
-    return <>{fmtQty(stock)}{held > 0 && <span className="block text-[11px] font-normal text-muted-foreground">dipesan {fmtQty(held)}</span>}</>
+    return <>{fmtQty(stock)}{held > 0 && <span className="block text-[11px] font-normal text-muted-foreground">on order {fmtQty(held)}</span>}</>
   }
   const stockTone = (l: ItemRequestLine) => {
     const need = l.remaining > 0 ? l.remaining : Number(l.approved_qty ?? l.qty)
@@ -324,9 +366,9 @@ function ItemsTable({ req, selectedLineId, onSelectLine }: { req: ItemRequestDet
             onClick={() => l.decision === null && onSelectLine(l.id)}>
             <div className="flex items-start justify-between gap-3"><LineName line={l} requestId={req.id} /><DecisionCell line={l} /></div>
             <dl className="grid gap-1 text-center text-xs" style={{ gridTemplateColumns: `repeat(${1 + (decided ? 1 : 0) + (handing ? 2 : 0) + 1}, minmax(0, 1fr))` }}>
-              {([['Diminta', fmtQty(l.qty)], ...(decided ? [['Disetujui', approvedCell(l)]] : []),
-                ...(handing ? [['Diminta/Diserahkan', l.approved_qty != null && l.decision !== 'TOLAK' ? <QtyProgress total={Number(l.approved_qty)} done={l.fulfilled_qty} className="mx-auto w-fit" /> : ''], ['Sisa', l.approved_qty != null ? <span>{fmtQty(left(l))}</span> : '']] : []),
-                ['Stok', <span className={stockTone(l)}>{stockOf(l)}</span>]] as [string, React.ReactNode][]).map(([k, v]) => (
+              {([['Requested', fmtQty(l.qty)], ...(decided ? [['Approved', approvedCell(l)]] : []),
+                ...(handing ? [['Requested/Handed Over', l.approved_qty != null && l.decision !== 'TOLAK' ? <QtyProgress total={Number(l.approved_qty)} done={l.fulfilled_qty} className="mx-auto w-fit" /> : ''], ['Balance', l.approved_qty != null ? <span>{fmtQty(left(l))}</span> : '']] : []),
+                ['Stock', <span className={stockTone(l)}>{stockOf(l)}</span>]] as [string, React.ReactNode][]).map(([k, v]) => (
                 <div key={k} className="rounded bg-muted/40 px-1 py-1.5">
                   <dt className="text-muted-foreground">{k}</dt>
                   <dd className="mt-0.5 font-semibold tabular-nums [&_input]:mx-auto [&_input]:h-7 [&_input]:w-14">{v}</dd>
@@ -334,8 +376,8 @@ function ItemsTable({ req, selectedLineId, onSelectLine }: { req: ItemRequestDet
               ))}
             </dl>
             <dl className="grid grid-cols-2 gap-1 text-center text-xs">
-              <div className="rounded bg-emerald-50/60 px-1 py-1.5"><dt className="text-muted-foreground">NPBG</dt><dd className="mt-0.5 tabular-nums">{l.decision === 'TOLAK' ? 0 : <NpbgCell line={l} status={req.status} />}</dd></div>
-              <div className="rounded bg-indigo-50/60 px-1 py-1.5"><dt className="text-muted-foreground">PPB</dt><dd className="mt-0.5 tabular-nums">{l.decision === 'TOLAK' ? 0 : <PpbCell line={l} status={req.status} />}</dd></div>
+              <div className="rounded bg-emerald-50/60 px-1 py-1.5"><dt className="text-muted-foreground">Delivery Order</dt><dd className="mt-0.5 tabular-nums">{l.decision === 'TOLAK' ? 0 : <NpbgCell line={l} status={req.status} />}</dd></div>
+              <div className="rounded bg-indigo-50/60 px-1 py-1.5"><dt className="text-muted-foreground">Purchase Request</dt><dd className="mt-0.5 tabular-nums">{l.decision === 'TOLAK' ? 0 : <PpbCell line={l} status={req.status} />}</dd></div>
             </dl>
           </li>
         ))}
@@ -343,23 +385,23 @@ function ItemsTable({ req, selectedLineId, onSelectLine }: { req: ItemRequestDet
 
       <div className="hidden overflow-x-auto sm:block">
         <table className="w-full text-sm">
-          <thead className="whitespace-nowrap border-b bg-muted/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
+          <thead className="whitespace-nowrap border-b bg-muted/40 text-left text-xs text-muted-foreground">
             <tr>
               <th className="w-10 px-4 py-2.5 font-medium">#</th>
-              <th className="min-w-[14rem] px-3 py-2.5 font-medium">Barang</th>
-              <th className="px-3 py-2.5 text-right font-medium">Diminta</th>
+              <th className="min-w-[14rem] px-3 py-2.5 font-medium">Item</th>
+              <th className="px-3 py-2.5 text-right font-medium">Requested</th>
               {decided && <>
-                <th className="px-3 py-2.5 text-right font-medium">Disetujui</th>
+                <th className="px-3 py-2.5 text-right font-medium">Approved</th>
                 {handing && <>
-                  <th className="px-3 py-2.5 font-medium" title="Per barang: jumlah disetujui / sudah diserahkan, mis. 10/5 = baru diserahkan 5 dari 10">Diminta/Diserahkan</th>
-                  <th className="px-3 py-2.5 text-right font-medium">Sisa</th>
+                  <th className="px-3 py-2.5 font-medium" title="Per item: approved / handed over quantity, e.g. 10/5 = 5 of 10 handed over">Requested/Handed Over</th>
+                  <th className="px-3 py-2.5 text-right font-medium">Balance</th>
                 </>}
               </>}
-              <th className="px-3 py-2.5 text-right font-medium">Stok</th>
-              <th className="px-3 py-2.5 text-right font-medium" title="Dikeluarkan dari stok">NPBG</th>
-              <th className="px-3 py-2.5 text-right font-medium" title="Stok tidak ada, dibeli sampai RI">PPB</th>
+              <th className="px-3 py-2.5 text-right font-medium">Stock</th>
+              <th className="px-3 py-2.5 text-right font-medium" title="Issued from stock">Delivery Order</th>
+              <th className="px-3 py-2.5 text-right font-medium" title="No stock, purchased until Receipt">Purchase Request</th>
               <th className="min-w-[9rem] px-4 py-2.5 font-medium">Status</th>
-              <th className="px-4 py-2.5 text-right font-medium">Gambar</th>
+              <th className="px-4 py-2.5 text-right font-medium">Image</th>
             </tr>
           </thead>
           <tbody className="divide-y">
@@ -422,24 +464,24 @@ function FulfillPanel({ req, panelRef }: { req: ItemRequestDetail; panelRef: Rea
   const submit = () => {
     setErr(null)
     for (const { p, v } of rows) {
-      if (!Number.isFinite(v) || v < 0) return invalidTo(setErr, `Jumlah ${p.deskripsi} tidak valid.`)
-      if (v > p.remaining) return invalidTo(setErr, `${p.deskripsi}: paling banyak sisa kebutuhan (${fmtQty(p.remaining)}).`)
-      if (v > 0 && p.available != null && v > p.available) return invalidTo(setErr, `${p.deskripsi}: stok hanya ${fmtQty(p.available)}.`)
+      if (!Number.isFinite(v) || v < 0) return invalidTo(setErr, `Quantity ${p.deskripsi} is not valid.`)
+      if (v > p.remaining) return invalidTo(setErr, `${p.deskripsi}: at most the remaining need (${fmtQty(p.remaining)}).`)
+      if (v > 0 && p.available != null && v > p.available) return invalidTo(setErr, `${p.deskripsi}: stock is only ${fmtQty(p.available)}.`)
     }
-    if (giving === 0 && shortage === 0) return invalidTo(setErr, 'Isi jumlah yang diserahkan, atau teruskan kekurangannya ke Draft PPB.')
+    if (giving === 0 && shortage === 0) return invalidTo(setErr, 'Fill in the quantity handed over, or pass the shortage on to Draft Purchase Request.')
     fulfill.mutate(rows.map(({ p, v }) => ({ line_id: p.line_id, qty: v, shortage_to_ppb: !!toPpb[p.line_id] && !p.in_procurement })), {
       onError: (e) => setErr(apiErrorMessage(e)),
     })
   }
   const doClose = () => {
     setErr(null)
-    if (!reason.trim()) return invalidTo(setErr, 'Tulis alasan menutup sisa kebutuhan.')
+    if (!reason.trim()) return invalidTo(setErr, 'Write the reason for closing the remaining need.')
     close.mutate({ reason: reason.trim() }, { onSuccess: () => { setClosing(false); setReason('') }, onError: (e) => setErr(apiErrorMessage(e)) })
   }
 
   return (
     <div ref={panelRef} id="siapkan" className="scroll-mt-4">
-      <Panel title="Siapkan barang dari stok" className="border-primary/30">
+      <Panel title="Prepare items from stock" className="border-primary/30">
         {req.can_fulfill && plan.length > 0 && (
           <ul className="divide-y">
             {rows.map(({ p, left }) => (
@@ -447,24 +489,21 @@ function FulfillPanel({ req, panelRef }: { req: ItemRequestDetail; panelRef: Rea
                 <div className="min-w-0">
                   <div className="break-words font-medium">{p.deskripsi}</div>
                   <div className="text-xs text-muted-foreground">
-                    {p.kode_barang && <span className="font-mono">{p.kode_barang} · </span>}
-                    sisa kebutuhan <b className="text-foreground">{fmtQty(p.remaining)} {p.satuan ?? ''}</b> · stok tersedia{' '}
+                    {p.kode_barang && <span className="">{p.kode_barang} · </span>}
+                    remaining need <b className="text-foreground">{fmtQty(p.remaining)} {p.satuan ?? ''}</b> · stock available{' '}
                     <b className={(p.available ?? 0) < p.remaining ? 'text-red-600' : 'text-emerald-700'}>{p.available != null ? fmtQty(p.available) : ''}</b>
                   </div>
-                  {!p.item_id && <div className="mt-1 text-xs text-amber-700">Belum dicocokkan ke barang gudang, tidak bisa dikeluarkan dari stok.</div>}
+                  {!p.item_id && <div className="mt-1 text-xs text-amber-700">Not matched to a warehouse item yet, cannot be issued from stock.</div>}
                 </div>
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-2 sm:justify-end">
-                  <label className="flex items-center gap-2 text-xs text-muted-foreground">
-                    Diserahkan
-                    <Input className="h-8 w-24 text-right text-sm tabular-nums text-foreground" inputMode="decimal" aria-label={`Diserahkan ${p.deskripsi}`} disabled={!p.item_id}
-                      value={qty[p.line_id] ?? ''} onChange={(e) => setQty((q) => ({ ...q, [p.line_id]: e.target.value }))} />
-                  </label>
+                  {/* what the stock has now, never less: Gudang does not hand over part of it */}
+                  <span className="text-xs text-muted-foreground">Handed Over <b className="text-sm tabular-nums text-foreground">{fmtQty(num(qty[p.line_id] ?? '0') || 0)}</b> {p.satuan ?? ''}</span>
                   {left > 0 && (p.in_procurement ? (
-                    <span className="text-xs text-indigo-700">{fmtQty(left)} sedang dibeli</span>
+                    <span className="text-xs text-indigo-700">{fmtQty(left)} being purchased</span>
                   ) : (
                     <label className="flex cursor-pointer items-center gap-2 text-xs">
                       <input type="checkbox" className="size-4 accent-primary" checked={!!toPpb[p.line_id]} onChange={(e) => setToPpb((t) => ({ ...t, [p.line_id]: e.target.checked }))} />
-                      kekurangan {fmtQty(left)} ke Draft PPB
+                      short {fmtQty(left)} to Draft PPB
                     </label>
                   ))}
                 </div>
@@ -475,23 +514,23 @@ function FulfillPanel({ req, panelRef }: { req: ItemRequestDetail; panelRef: Rea
         <div className="space-y-3 border-t p-4">
           {closing && (
             <div className="space-y-2 rounded-lg border bg-muted/30 p-3">
-              <Label htmlFor="close-reason">Alasan menutup sisa kebutuhan *</Label>
-              <Input id="close-reason" autoFocus maxLength={255} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="mis. Tidak dibutuhkan lagi / diganti barang lain" />
+              <Label htmlFor="close-reason">Reason for closing the remaining need *</Label>
+              <Input id="close-reason" autoFocus maxLength={255} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. No longer needed / replaced by another item" />
               <div className="flex justify-end gap-2">
-                <Button size="sm" variant="ghost" onClick={() => { setClosing(false); setErr(null) }}>Batal</Button>
-                <Button size="sm" onClick={doClose} disabled={close.isPending}><Lock className="size-4" /> Tutup sisa</Button>
+                <Button size="sm" variant="ghost" onClick={() => { setClosing(false); setErr(null) }}>Cancel</Button>
+                <Button size="sm" onClick={doClose} disabled={close.isPending}><Lock className="size-4" /> Close the rest</Button>
               </div>
             </div>
           )}
           {err && <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{err}</p>}
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <span className="text-sm text-muted-foreground">
-              {req.can_fulfill ? `${giving} barang diserahkan${shortage ? ` · ${shortage} kekurangan ke Draft PPB` : ''} · stok langsung berkurang` : 'Masih ada sisa kebutuhan.'}
+              {req.can_fulfill ? `${giving} items handed over${shortage ? ` · ${shortage} shortage to Draft Purchase Request` : ''} · stock is reduced right away` : 'There is still a remaining need.'}
             </span>
             <div className="flex flex-wrap gap-2">
-              {req.can_close && !closing && <Button variant="outline" onClick={() => setClosing(true)}><Lock className="size-4" /> Tutup sisa</Button>}
+              {req.can_close && !closing && <Button variant="outline" onClick={() => setClosing(true)}><Lock className="size-4" /> Close the rest</Button>}
               {req.can_fulfill && plan.length > 0 && (
-                <Button onClick={submit} disabled={fulfill.isPending}><PackageCheck className="size-4" /> {fulfill.isPending ? 'Menyimpan…' : 'Buat NPBG & siapkan'}</Button>
+                <Button onClick={submit} disabled={fulfill.isPending}><PackageCheck className="size-4" /> {fulfill.isPending ? 'Saving…' : 'Create Delivery Order & prepare'}</Button>
               )}
             </div>
           </div>
@@ -506,14 +545,14 @@ function Fulfillments({ req, draft, onDraft }: { req: ItemRequestDetail; draft: 
   const list = req.fulfillments ?? []
   if (list.length === 0) return null
   return (
-    <Panel title={`NPBG & serah terima (${list.length})`}>
+    <Panel title={`Delivery Order & handover (${list.length})`}>
       <ul className="divide-y">
         {list.map((f) => req.can_handover && f.status !== 'DISERAHKAN' ? (
           // Gudang fixes here how much is handed over; the serah terima then only takes the photo and signature
           <li key={f.id} className="space-y-2 py-3">
             <div className="flex flex-wrap items-center justify-between gap-2 px-4 text-sm">
-              <span><span className="font-semibold">#{f.seq}</span> <span className="font-mono">{f.no_npbg}</span></span>
-              <span className="rounded bg-violet-50 px-1.5 py-0.5 text-xs font-medium text-violet-800">Tetapkan jumlah, lalu serah terima</span>
+              <span><span className="font-semibold">#{f.seq}</span> <span className="">{f.no_npbg}</span></span>
+              <span className="rounded bg-violet-50 px-1.5 py-0.5 text-xs font-medium text-violet-800">Set the quantity, then hand over</span>
             </div>
             <HandoverQty f={f} value={draft} onChange={onDraft} stock={Object.fromEntries(req.lines.map((l) => [l.id, l.on_hand ?? l.available]))}
               images={{ requestId: req.id, byLine: Object.fromEntries(req.lines.map((l) => [l.id, l.images ?? []])) }} />
@@ -525,9 +564,9 @@ function Fulfillments({ req, draft, onDraft }: { req: ItemRequestDetail; draft: 
 }
 
 const FULFIL_TONE: Record<Fulfillment['status'], [string, string]> = {
-  DISIAPKAN: ['bg-violet-50 text-violet-800', 'Siap serah terima'],
-  SIAP: ['bg-cyan-50 text-cyan-800', 'Siap serah terima'],
-  DISERAHKAN: ['bg-emerald-50 text-emerald-800', 'Sudah diserahkan'],
+  DISIAPKAN: ['bg-violet-50 text-violet-800', 'Ready for handover'],
+  SIAP: ['bg-cyan-50 text-cyan-800', 'Ready for handover'],
+  DISERAHKAN: ['bg-emerald-50 text-emerald-800', 'Handed over'],
 }
 
 function FulfillmentRow({ reqId, f }: { reqId: number; f: Fulfillment }) {
@@ -539,8 +578,8 @@ function FulfillmentRow({ reqId, f }: { reqId: number; f: Fulfillment }) {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <span className="font-semibold">#{f.seq}</span>
-          {npbgId ? <Link to={`/npbg/${npbgId}`} className="font-mono text-primary hover:underline">{f.no_npbg}</Link> : <span className="font-mono">{f.no_npbg}</span>}
-          {f.seq > 1 && <span className="text-xs text-muted-foreground">NPBG lanjutan</span>}
+          {npbgId ? <Link to={`/npbg/${npbgId}`} className=" text-primary hover:underline">{f.no_npbg}</Link> : <span className="">{f.no_npbg}</span>}
+          {f.seq > 1 && <span className="text-xs text-muted-foreground">Next Delivery Order</span>}
         </div>
         <span className={cn('rounded px-1.5 py-0.5 text-xs font-medium', FULFIL_TONE[f.status][0])}>{FULFIL_TONE[f.status][1]}</span>
       </div>
@@ -555,17 +594,18 @@ function FulfillmentRow({ reqId, f }: { reqId: number; f: Fulfillment }) {
         ))}
       </ul>
       <div className="text-xs text-muted-foreground">
-        Disiapkan {fmtDateTime(f.prepared_at)}{f.prepared_by ? ` · ${f.prepared_by}` : ''}
-        {f.handed_at && <> · diserahkan {fmtDateTime(f.handed_at)}{f.handed_by ? ` · ${f.handed_by}` : ''} · diterima {f.received_by ?? '-'}</>}
+        Prepared {fmtDateTime(f.prepared_at)}{f.prepared_by ? ` · ${f.prepared_by}` : ''}
+        {f.handed_at && <> · handed over {fmtDateTime(f.handed_at)}{f.handed_by ? ` · ${f.handed_by}` : ''} · received {f.received_by ?? '-'}</>}
       </div>
       {f.note && <div className="text-xs">{f.note}</div>}
       {f.status === 'DISERAHKAN' && (f.photo || f.signature) && (
         <div className="grid grid-cols-2 gap-2 pt-1">
-          <a href={photo.data} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-md border bg-muted">
-            {photo.data ? <img src={photo.data} alt={`Foto serah terima #${f.seq}`} className="h-28 w-full object-cover" /> : <div className="h-28" />}
-          </a>
-          <div className="flex flex-col rounded-md border bg-white p-1">
-            <div className="flex flex-1 items-center justify-center">{sign.data && <img src={sign.data} alt={`Tanda tangan #${f.seq}`} className="max-h-24 w-full object-contain" />}</div>
+          <button type="button" onClick={() => openImage([{ src: photo.data, alt: `Handover photo #${f.seq}` }, ...(sign.data ? [{ src: sign.data, alt: `Tanda tangan ${f.received_by ?? ''}` }] : [])])}
+            className="block cursor-zoom-in overflow-hidden rounded-md border bg-muted" title="View photo">
+            {photo.data ? <img src={photo.data} alt={`Handover photo #${f.seq}`} className="h-28 w-full object-cover" /> : <div className="h-28" />}
+          </button>
+          <div className="flex cursor-zoom-in flex-col rounded-md border bg-white p-1" onClick={() => sign.data && openImage({ src: sign.data, alt: `Tanda tangan ${f.received_by ?? ''}` })}>
+            <div className="flex flex-1 items-center justify-center">{sign.data && <img src={sign.data} alt={`Signature #${f.seq}`} className="max-h-24 w-full object-contain" />}</div>
             <div className="border-t pt-0.5 text-center text-xs text-slate-600">{f.received_by ?? '-'}</div>
           </div>
         </div>
@@ -582,19 +622,20 @@ function HandoverProof({ req }: { req: ItemRequestDetail }) {
   const sign = useHandoverFile(req.id, 'signature', !!h?.signature)
   if (!h) return null
   return (
-    <Panel title="Bukti serah terima" aside={<span className="text-xs text-muted-foreground">{fmtDateTime(h.at)}</span>}>
+    <Panel title="Handover proof" aside={<span className="text-xs text-muted-foreground">{fmtDateTime(h.at)}</span>}>
       <div className="grid grid-cols-2 gap-3 p-4">
-        <a href={photo.data} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-md border bg-muted">
-          {photo.data ? <img src={photo.data} alt="Foto serah terima" className="h-44 w-full object-cover" /> : <div className="h-44" />}
-        </a>
-        <div className="flex flex-col rounded-md border bg-white p-2">
-          <div className="flex flex-1 items-center justify-center">{sign.data && <img src={sign.data} alt="Tanda tangan penerima" className="max-h-36 w-full object-contain" />}</div>
+        <button type="button" onClick={() => openImage([{ src: photo.data, alt: 'Handover photo' }, ...(sign.data ? [{ src: sign.data, alt: 'Recipient signature' }] : [])])}
+          className="block cursor-zoom-in overflow-hidden rounded-md border bg-muted" title="View photo">
+          {photo.data ? <img src={photo.data} alt="Handover photo" className="h-44 w-full object-cover" /> : <div className="h-44" />}
+        </button>
+        <div className="flex cursor-zoom-in flex-col rounded-md border bg-white p-2" onClick={() => sign.data && openImage({ src: sign.data, alt: 'Recipient signature' })}>
+          <div className="flex flex-1 items-center justify-center">{sign.data && <img src={sign.data} alt="Recipient signature" className="max-h-36 w-full object-contain" />}</div>
           <div className="border-t pt-1 text-center text-xs text-slate-600">{h.received_by ?? '-'}</div>
         </div>
       </div>
       <dl className="divide-y border-t px-4 text-sm">
-        <Row label="Diterima oleh">{h.received_by ?? '-'}</Row>
-        <Row label="Diserahkan oleh">{h.by ?? '-'}</Row>
+        <Row label="Received by">{h.received_by ?? '-'}</Row>
+        <Row label="Handed over by">{h.by ?? '-'}</Row>
       </dl>
     </Panel>
   )
@@ -603,7 +644,7 @@ function HandoverProof({ req }: { req: ItemRequestDetail }) {
 /** A titled card (Classroom-like: rounded, a plain title). */
 function Panel({ title, aside, children, className }: { title: string; aside?: React.ReactNode; children: React.ReactNode; className?: string }) {
   return (
-    <Card className={cn('overflow-hidden rounded-2xl shadow-sm', className)}>
+    <Card className={cn('overflow-hidden rounded-lg', className)}>
       <div className="flex items-center justify-between gap-2 border-b px-4 py-3 sm:px-5">
         <h2 className="text-[15px] font-medium">{title}</h2>
         {aside}
@@ -623,22 +664,22 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 }
 
 const LOG_TEXT: Record<string, string> = {
-  'ADMIN.VALIDASI': 'Diverifikasi admin gudang',
-  'MANAGER.APPROVE': 'Disetujui Manager', 'MANAGER.REJECT': 'Ditolak Manager', 'MANAGER.RETURN': 'Dikembalikan Manager untuk perbaikan',
-  'DIREKTUR.APPROVE': 'Disetujui Direktur', 'DIREKTUR.REJECT': 'Ditolak Direktur', 'DIREKTUR.RETURN': 'Dikembalikan Direktur untuk perbaikan',
-  'GUDANG.APPROVE': 'Barang disiapkan gudang', 'GUDANG.REJECT': 'Ditolak gudang',
-  'GUDANG.FULFILL': 'NPBG dibuat dari stok', 'GUDANG.CONFIRM': 'Jumlah diserahkan ditetapkan gudang', 'GUDANG.SHORTAGE': 'Kekurangan ke Draft PPB', 'GUDANG.CLOSE': 'Sisa kebutuhan ditutup',
-  'SERAH_TERIMA.HANDOVER': 'Barang diserahkan',
+  'ADMIN.VALIDASI': 'Verified by warehouse admin',
+  'MANAGER.APPROVE': 'Approved by Manager', 'MANAGER.REJECT': 'Rejected by Manager', 'MANAGER.RETURN': 'Returned by Manager for correction',
+  'DIREKTUR.APPROVE': 'Approved by Director', 'DIREKTUR.REJECT': 'Rejected by Director', 'DIREKTUR.RETURN': 'Returned by Director for correction',
+  'GUDANG.APPROVE': 'Prepared by warehouse', 'GUDANG.REJECT': 'Rejected by warehouse',
+  'GUDANG.FULFILL': 'Delivery Order created from stock', 'GUDANG.CONFIRM': 'Quantity handed over is set by the warehouse', 'GUDANG.SHORTAGE': 'Shortage to Draft PPB', 'GUDANG.CLOSE': 'Remaining need closed',
+  'SERAH_TERIMA.HANDOVER': 'Items handed over',
 }
 
 /** Everything that happened to the request, oldest first. */
 function Activity({ req }: { req: ItemRequestDetail }) {
   const items = [
-    { at: req.created_at, text: 'Request dibuat', by: req.requester_name, note: null as string | null, bad: false },
-    ...(req.approval_log.length === 0 && req.processed_at ? [{ at: req.processed_at, text: 'Diproses admin gudang', by: req.processed_by_name, note: null, bad: false }] : []),
+    { at: req.created_at, text: 'Request created', by: req.requester_name, note: null as string | null, bad: false },
+    ...(req.approval_log.length === 0 && req.processed_at ? [{ at: req.processed_at, text: 'Processed by warehouse admin', by: req.processed_by_name, note: null, bad: false }] : []),
     ...[...req.approval_log].reverse().map((a) => ({ at: a.at ?? '', text: isAutoApproval(a.note) ? BYPASS_TEXT : LOG_TEXT[`${a.stage}.${a.action}`] ?? a.action,
-      by: isAutoApproval(a.note) ? `bypass ${a.user_name ?? 'Direktur'}` : a.user_name, note: isAutoApproval(a.note) ? null : clean(a.note) ?? null, bad: a.action === 'REJECT' || a.action === 'RETURN' })),
-    ...(req.status === 'DIBATALKAN' ? [{ at: '', text: 'Request dibatalkan', by: null, note: null, bad: true }] : []),
+      by: isAutoApproval(a.note) ? `bypass ${a.user_name ?? 'Director'}` : a.user_name, note: isAutoApproval(a.note) ? null : clean(a.note) ?? null, bad: a.action === 'REJECT' || a.action === 'RETURN' })),
+    ...(req.status === 'DIBATALKAN' ? [{ at: '', text: 'Request cancelled', by: null, note: null, bad: true }] : []),
   ]
   return (
     <ol className="space-y-3 p-4">
@@ -661,6 +702,7 @@ export function ItemRequestDetailPage() {
   const { user, hasPermission } = useAuth()
   const { data: req, isLoading } = useItemRequest(Number(id))
   const cancel = useCancelItemRequest(Number(id))
+  const proxy = useRequestProxy(Number(id))
   const proc = useProcessItemRequest(Number(id))
   const urgency = useSetUrgency(Number(id))
   const match = useMatchLine(Number(id))
@@ -679,6 +721,7 @@ export function ItemRequestDetailPage() {
     setSelectedLineId((id) => (id !== null && open.some((l) => l.id === id) ? id : open[0]?.id ?? null))
   }, [open])
   const [pelanggan, setPelanggan] = useState('')
+  const [verifyNote, setVerifyNote] = useState('')
   const [tipe, setTipe] = useState<'Penjualan' | 'Non Penjualan'>('Non Penjualan')
   const [err, setErr] = useState<string | null>(null)
 
@@ -700,7 +743,7 @@ export function ItemRequestDetailPage() {
   const [draft, setDraft] = useState<HandoverDraft>({ qty: {}, drop: {} })
   useEffect(() => { setDraft({ qty: {}, drop: {} }) }, [req?.status])
 
-  if (isLoading || !req) return <div className="space-y-4"><BackLink to="/item-requests" label="Request Barang" /><DetailFallback loading={isLoading} /></div>
+  if (isLoading || !req) return <div className="space-y-4"><BackLink to="/item-requests" label="Item Request" /><DetailFallback loading={isLoading} /></div>
 
   const canCancel = req.status === 'MENUNGGU' && (req.requester_id === user?.id || hasPermission('item_request.process'))
   const info = STAGE_INFO[req.status]
@@ -710,25 +753,32 @@ export function ItemRequestDetailPage() {
   const submit = () => {
     setErr(null)
     const unmatched = open.find((l) => choices[l.id]?.items.length === 0)
-    if (unmatched) return invalidTo(setErr, `"${unmatched.deskripsi_peminta ?? unmatched.deskripsi_barang}" belum dipilih dari Master Produk, kalau belum ada, tambahkan dulu.`)
-    if (!pelanggan.trim()) return invalidTo(setErr, 'Isi Pelanggan untuk NPBG.')
+    if (unmatched) return invalidTo(setErr, `"${unmatched.deskripsi_peminta ?? unmatched.deskripsi_barang}" is not selected from the Product Master yet; if it is not there, add it first.`)
+    if (!pelanggan.trim()) return invalidTo(setErr, 'Fill in the Customer for the Delivery Order.')
     
     // the picked items together: exactly what was asked (the stock decides NPBG / Draft PPB after the approval)
     const empty = open.find((l) => choices[l.id]?.items.some((it) => qtyOf(choices[l.id].qtys[it.id]) <= 0))
-    if (empty) return invalidTo(setErr, `Isi jumlah setiap barang untuk "${empty.deskripsi_peminta ?? empty.deskripsi_barang}", atau hapus centangnya.`)
-    const badQty = open.find((l) => split(choices[l.id]).total !== Number(l.qty))
-    if (badQty) return invalidTo(setErr, `Jumlah "${badQty.deskripsi_peminta ?? badQty.deskripsi_barang}" harus ${fmtQty(badQty.qty)} ${badQty.satuan ?? ''} (yang diminta). Saat ini: ${fmtQty(split(choices[badQty.id]).total)}. Stok kurang tidak apa-apa: sisanya dibeli lewat Draft PPB.`)
+    if (empty) return invalidTo(setErr, `Fill in the quantity of each item for "${empty.deskripsi_peminta ?? empty.deskripsi_barang}", or untick it.`)
+    const over = open.find((l) => split(choices[l.id]).total > Number(l.qty) || split(choices[l.id]).total <= 0)
+    if (over) return invalidTo(setErr, `Quantity of "${over.deskripsi_peminta ?? over.deskripsi_barang}" 1–${fmtQty(over.qty)} ${over.satuan ?? ''} (requested). Short stock is fine: the rest is bought through Draft Purchase Request.`)
+    const noReason = open.find((l) => split(choices[l.id]).total < Number(l.qty) && !(choices[l.id].reason ?? '').trim())
+    if (noReason) { setSelectedLineId(noReason.id); return invalidTo(setErr, `"${noReason.deskripsi_peminta ?? noReason.deskripsi_barang}" is given less than requested: fill in the reason.`) }
 
     proc.mutate({
-      lines: Object.fromEntries(open.map((l) => [l.id, { items: choices[l.id].items.map((it) => ({ item_id: it.id, qty: qtyOf(choices[l.id].qtys[it.id]) })) }])),
+      lines: Object.fromEntries(open.map((l) => [l.id, {
+        items: choices[l.id].items.map((it) => ({ item_id: it.id, qty: qtyOf(choices[l.id].qtys[it.id]) })),
+        reason: split(choices[l.id]).total < Number(l.qty) ? (choices[l.id].reason ?? '').trim() : null,
+        ...(choices[l.id].unit ? { unit: choices[l.id].unit } : {}),
+      }])),
+      note: verifyNote.trim() || null,
       npbg: { pelanggan: pelanggan.trim(), tipe_npbg: tipe },
     }, { onError: (e) => setErr(apiErrorMessage(e)) })
   }
 
   const copyLink = async () => {
     const url = trackUrl(req.track_token, share.base)
-    if (await copyText(url)) toast.success('Link status disalin. Kirim ke peminta untuk memantau statusnya.')
-    else toast.error(`Tidak bisa menyalin otomatis. Salin manual: ${url}`, { duration: 15000 })
+    if (await copyText(url)) toast.success('Status link copied. Send it to the requester to follow the status.')
+    else toast.error(`Cannot copy automatically. Copy by hand: ${url}`, { duration: 15000 })
   }
 
   const overdue = !!req.needed_date && !['SELESAI', 'DITOLAK', 'DIBATALKAN'].includes(req.status) && new Date(req.needed_date) < new Date(new Date().toDateString())
@@ -742,12 +792,11 @@ export function ItemRequestDetailPage() {
     requestAnimationFrame(() => document.getElementById('verifikasi')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }))
   }
   // the round icon: green when done, red when rejected, grey when cancelled
-  const dot = req.status === 'SELESAI' ? 'bg-emerald-500' : req.status === 'DITOLAK' ? 'bg-red-500' : req.status === 'DIBATALKAN' ? 'bg-slate-400' : 'bg-primary'
   const title = [...new Set(req.lines.map((l) => l.deskripsi_peminta ?? l.deskripsi_barang))]
 
   return (
-    <div className="mx-auto max-w-6xl pb-8">
-      <BackLink to="/item-requests" label="Request Barang" />
+    <div className="pb-8">
+      <BackLink to="/item-requests" label="Item Request" />
 
       {/*
         Classroom's assignment page: the left column is the request (title, what is asked, its progress,
@@ -756,16 +805,15 @@ export function ItemRequestDetailPage() {
       */}
       <div className="mt-3 grid gap-5 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <header className="flex gap-3 border-b-2 border-primary/70 pb-4 sm:gap-4">
-          <span className={cn('mt-0.5 flex size-11 shrink-0 items-center justify-center rounded-full text-white sm:size-12', dot)}><ClipboardList className="size-6" /></span>
           <div className="min-w-0 flex-1 space-y-1">
-            <h1 className="break-words text-2xl font-normal leading-tight sm:text-[28px]">
-              {title.slice(0, 3).join(', ')}{title.length > 3 && <span className="text-muted-foreground"> +{title.length - 3} lainnya</span>}
+            <h1 className="break-words text-xl font-semibold leading-tight tracking-tight sm:text-2xl">
+              {title.slice(0, 3).join(', ')}{title.length > 3 && <span className="text-muted-foreground"> +{title.length - 3} others</span>}
             </h1>
             <div className="text-sm text-muted-foreground">
               {[req.requester_name, req.divisi].filter(Boolean).join(' · ')} · {fmtDateTime(req.created_at)}
             </div>
             <div className="flex flex-wrap items-center gap-2 pt-1">
-              <span className="font-mono text-sm font-semibold">{req.number}</span>
+              <span className=" text-sm font-semibold">{req.number}</span>
               <RequestStatusBadge status={req.status} label={req.status_label} />
               {req.urgency === 'URGENT' && <span className="inline-flex items-center gap-1 rounded-md bg-red-50 px-2 py-0.5 text-xs font-semibold text-red-700 ring-1 ring-inset ring-red-200"><AlertTriangle className="size-3.5" />Urgent</span>}
               <span className="text-xs text-muted-foreground">{req.form_label}{req.form_detail_label && req.form_detail ? ` · ${req.form_detail_label}: ${req.form_detail}` : ''}</span>
@@ -773,80 +821,87 @@ export function ItemRequestDetailPage() {
           </div>
           {/* like Classroom's "Tenggat" */}
           <div className="hidden shrink-0 text-right sm:block">
-            <div className="text-xs text-muted-foreground">Dibutuhkan</div>
-            <div className={cn('text-sm font-medium', overdue && 'text-red-600')}>{req.needed_date ? fmtDate(req.needed_date) : 'Tanpa tanggal'}</div>
-            {overdue && <div className="text-xs font-medium text-red-600">Terlambat</div>}
+            <div className="text-xs text-muted-foreground">Needed</div>
+            <div className={cn('text-sm font-medium', overdue && 'text-red-600')}>{req.needed_date ? fmtDate(req.needed_date) : 'No date'}</div>
+            {overdue && <div className="text-xs font-medium text-red-600">Late</div>}
           </div>
         </header>
 
         {/* ---- your part (right, sticky) */}
         <aside className="space-y-4 lg:col-start-2 lg:row-span-2 lg:row-start-1">
           <div className="space-y-4 lg:sticky lg:top-20">
-            <Card className="overflow-hidden rounded-2xl shadow-md">
+            <Card className="overflow-hidden rounded-lg shadow-md">
               <div className="space-y-3 p-4">
                 <div className="flex items-center justify-between gap-2">
-                  <h2 className="text-lg font-normal">Tindakan Anda</h2>
-                  {req.needed_date && <span className={cn('text-xs sm:hidden', overdue ? 'font-medium text-red-600' : 'text-muted-foreground')}>{overdue ? 'Terlambat · ' : 'Perlu '}{fmtDate(req.needed_date)}</span>}
+                  <h2 className="text-lg font-normal">Your Action</h2>
+                  {req.needed_date && <span className={cn('text-xs sm:hidden', overdue ? 'font-medium text-red-600' : 'text-muted-foreground')}>{overdue ? 'Late · ' : 'Needed '}{fmtDate(req.needed_date)}</span>}
                 </div>
 
                 {open.length > 0 ? (
                   // admin gudang: verify, then send to approval
                   <div className="space-y-3">
                     <div>
-                      <div className="flex justify-between text-sm"><span>Barang dicocokkan</span><span className="tabular-nums font-medium">{matched} / {open.length}</span></div>
+                      <div className="flex justify-between text-sm"><span>Items matched</span><span className="tabular-nums font-medium">{matched} / {open.length}</span></div>
                       <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary transition-all" style={{ width: `${(matched / open.length) * 100}%` }} /></div>
-                      <p className="mt-1.5 text-xs text-muted-foreground">Pilih barang Master Produk & jumlahnya di bagian Verifikasi barang. Stok kurang tidak apa-apa: setelah approval sisanya otomatis ke Draft PPB.</p>
                     </div>
-                    <div className="space-y-1"><Label htmlFor="pr-pelanggan" className="text-xs">Pelanggan NPBG</Label><Input id="pr-pelanggan" value={pelanggan} maxLength={200} onChange={(e) => setPelanggan(e.target.value)} /></div>
-                    <div className="space-y-1"><Label htmlFor="pr-tipe" className="text-xs">Tipe NPBG</Label>
+                    <div className="space-y-1"><Label htmlFor="pr-pelanggan" className="text-xs">Delivery Order Customer</Label><Input id="pr-pelanggan" value={pelanggan} maxLength={200} onChange={(e) => setPelanggan(e.target.value)} /></div>
+                    <div className="space-y-1"><Label htmlFor="pr-tipe" className="text-xs">Delivery Order Type</Label>
                       <Select id="pr-tipe" value={tipe} onChange={(e) => setTipe(e.target.value as typeof tipe)}><option>Non Penjualan</option><option>Penjualan</option></Select>
+                    </div>
+                    <div className="space-y-1"><Label htmlFor="pr-note" className="text-xs">Admin notes (optional)</Label>
+                      <Textarea id="pr-note" rows={2} maxLength={1000} value={verifyNote} onChange={(e) => setVerifyNote(e.target.value)} placeholder="Read by Manager, Director & requester" />
                     </div>
                     {err && <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{err}</p>}
                     <Button className="w-full" onClick={submit} disabled={proc.isPending}>
-                      <CheckCircle2 className="size-4" /> {proc.isPending ? 'Mengirim…' : 'Kirim ke approval'}
+                      <CheckCircle2 className="size-4" /> {proc.isPending ? 'Sending…' : 'Send to approval'}
                     </Button>
                   </div>
                 ) : myTurn ? (
                   <div className="space-y-3">
                     <div>
-                      <div className="text-sm font-medium">{req.can_handover ? 'Siapkan & serah terima barang' : req.can_fulfill ? 'Siapkan barang dari stok' : req.approve_as === 'DIREKTUR' && req.status === 'APPROVAL_MANAGER' ? 'Menunggu Manager — Anda bisa langsung approve sebagai Direktur' : `Menunggu approval Anda (${info.who})`}</div>
-                      <p className="mt-0.5 text-xs text-muted-foreground">{req.can_approve ? `${info.hint} Ada yang kurang sesuai? Klik Revisi, admin gudang yang memperbaiki.` : info.hint}</p>
+                      <div className="text-sm font-medium">{req.can_handover ? 'Prepare & hand over items' : req.can_fulfill ? 'Prepare items from stock' : req.approve_as === 'DIREKTUR' && req.status === 'APPROVAL_MANAGER' ? 'Waiting for Manager — you can approve directly as Director' : `Waiting for your approval (${info.who})`}</div>
                     </div>
                     <div className="[&_button]:w-full [&>div]:flex-col [&>div]:items-stretch">
                       <ApprovalActions req={req} handover={draft} onPrepare={() => prepareRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })} />
                     </div>
                   </div>
                 ) : (
-                  <div className="flex gap-3 rounded-xl bg-muted/50 p-3 text-sm">
+                  <div className="flex gap-3 rounded-lg bg-muted/50 p-3 text-sm">
                     <CheckCircle2 className={cn('mt-0.5 size-4 shrink-0', req.status === 'SELESAI' ? 'text-emerald-600' : 'text-muted-foreground')} />
                     <div>
-                      <div className="font-medium">{req.status === 'SELESAI' ? 'Selesai — barang sudah diterima' : 'Tidak ada yang perlu Anda lakukan'}</div>
-                      <p className="text-xs text-muted-foreground">{info ? `Sekarang: ${info.who ? `${info.who} — ` : ''}${req.status_label}` : req.status_label}</p>
+                      <div className="font-medium">{req.status === 'SELESAI' ? 'Done — items received' : 'Nothing for you to do'}</div>
+                      <p className="text-xs text-muted-foreground">{info ? `Now: ${info.who ? `${info.who} — ` : ''}${req.status_label}` : req.status_label}</p>
                     </div>
                   </div>
                 )}
               </div>
 
+              {(req.can_proxy || req.proxy?.code) && (
+                <div className="border-t p-4">
+                  <ProxyPickup number={req.number} proxy={req.proxy} busy={proxy.create.isPending || proxy.cancel.isPending}
+                    onCreate={(name) => proxy.create.mutateAsync(name)} onCancel={() => proxy.cancel.mutateAsync()} searchPeople={proxy.people} />
+                </div>
+              )}
               {(req.track_token || canProcess || canCancel) && (
                 <div className="flex flex-wrap gap-1 border-t bg-muted/20 px-2 py-2">
-                  {req.track_token && <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={copyLink}><Copy className="size-3.5" /> Salin link status</Button>}
+                  {req.track_token && <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={copyLink}><Copy className="size-3.5" /> Copy status link</Button>}
                   {canProcess && (
                     <Button size="sm" variant="ghost" className={cn('h-8 text-xs', req.urgency !== 'URGENT' && 'text-red-700 hover:text-red-800')} disabled={urgency.isPending}
                       onClick={() => urgency.mutate(req.urgency === 'URGENT' ? null : 'URGENT')}>
-                      <AlertTriangle className="size-3.5" /> {req.urgency === 'URGENT' ? 'Lepas urgent' : 'Tandai urgent'}
+                      <AlertTriangle className="size-3.5" /> {req.urgency === 'URGENT' ? 'Remove urgent' : 'Mark urgent'}
                     </Button>
                   )}
                   {canCancel && (
                     <Button size="sm" variant="ghost" className="h-8 text-xs text-destructive hover:text-destructive" disabled={cancel.isPending}
-                      onClick={async () => { if ((await confirmDialog('Batalkan request ini?'))) cancel.mutate() }}>
-                      <Ban className="size-3.5" /> Batalkan
+                      onClick={async () => { if ((await confirmDialog('Cancel this request?'))) cancel.mutate() }}>
+                      <Ban className="size-3.5" /> Cancel
                     </Button>
                   )}
                 </div>
               )}
             </Card>
 
-            <Card className="hidden overflow-hidden rounded-2xl lg:block">
+            <Card className="hidden overflow-hidden rounded-lg lg:block">
               <InfoList req={req} />
             </Card>
           </div>
@@ -855,29 +910,31 @@ export function ItemRequestDetailPage() {
         {/* ---- the request (left) */}
         <main className="min-w-0 space-y-5 lg:col-start-1 lg:row-start-2">
           {sentBack && (
-            <div className="flex gap-3 rounded-2xl border border-orange-300 bg-orange-50 p-4 text-sm">
+            <div className="flex gap-3 rounded-lg border border-orange-300 bg-orange-50 p-4 text-sm">
               <Undo2 className="mt-0.5 size-4 shrink-0 text-orange-700" />
               <div>
-                <div className="font-semibold text-orange-900">Dikembalikan untuk perbaikan{sentBack.user_name ? ` oleh ${sentBack.user_name}` : ''}</div>
+                <div className="font-semibold text-orange-900">Returned for correction{sentBack.user_name ? ` by ${sentBack.user_name}` : ''}</div>
                 <p className="text-orange-900/80">{clean(sentBack.note)}</p>
-                {canProcess && <p className="mt-1 text-xs text-orange-900/70">Verifikasi ulang barang di bawah, lalu kirim. Request kembali ke persetujuan.</p>}
               </div>
             </div>
           )}
 
           {req.note && (
-            <div className="whitespace-pre-wrap rounded-2xl bg-muted/40 px-4 py-3 text-sm"><span className="mb-0.5 block text-xs text-muted-foreground">Catatan peminta</span>{req.note}</div>
+            <div className="whitespace-pre-wrap rounded-lg bg-muted/40 px-4 py-3 text-sm"><span className="mb-0.5 block text-xs text-muted-foreground">Requester notes</span>{req.note}</div>
+          )}
+          {req.verify_note && (
+            <div className="whitespace-pre-wrap rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-950"><span className="mb-0.5 block text-xs text-blue-700">Warehouse admin notes</span>{req.verify_note}</div>
           )}
 
-          <Card className="rounded-2xl px-4 py-4 shadow-sm sm:px-5"><StepsBar steps={req.timeline} /></Card>
+          <Card className="rounded-lg px-4 py-4 sm:px-5"><StepsBar steps={req.timeline} /></Card>
 
           {/* what was asked → approved → given (NPBG) / bought (PPB); while verifying, a click picks the item below */}
-          <Panel title={`Barang yang diminta (${req.lines.length})`}
-            aside={open.length > 0 ? <span className="flex items-center gap-1 text-xs text-muted-foreground"><MousePointerClick className="size-3.5" /> Klik barang untuk diverifikasi</span> : undefined}>
+          <Panel title={`Requested items (${req.lines.length})`}
+            >
             <ItemsTable req={req} selectedLineId={open.length > 0 ? selectedLineId : null} onSelectLine={toLine} />
             {(req.images?.length ?? 0) > 0 && (
               <div className="space-y-2 border-t px-4 py-3 sm:px-5">
-                <div className="text-xs text-muted-foreground">Gambar dari peminta ({req.images!.length})</div>
+                <div className="text-xs text-muted-foreground">Images from requester ({req.images!.length})</div>
                 <RequestImages requestId={req.id} slots={req.images} size="size-24" />
               </div>
             )}
@@ -887,11 +944,11 @@ export function ItemRequestDetailPage() {
           {open.length > 0 && (
             <section id="verifikasi" className="scroll-mt-20 space-y-2">
               <div className="flex items-center justify-between gap-2 px-1">
-                <h2 className="text-[15px] font-medium">Verifikasi barang{selected ? <span className="font-normal text-muted-foreground"> · {selectedIdx + 1} dari {open.length}</span> : null}</h2>
+                <h2 className="text-[15px] font-medium">Item verification{selected ? <span className="font-normal text-muted-foreground"> · {selectedIdx + 1} from {open.length}</span> : null}</h2>
                 <div className="flex items-center gap-1">
-                  <span className="mr-1 text-xs text-muted-foreground">{matched} dari {open.length} dicocokkan</span>
-                  <Button variant="outline" size="sm" className="h-8 px-2" aria-label="Barang sebelumnya" disabled={selectedIdx <= 0} onClick={() => setSelectedLineId(open[selectedIdx - 1].id)}><ChevronLeft className="size-4" /></Button>
-                  <Button variant="outline" size="sm" className="h-8 px-2" aria-label="Barang berikutnya" disabled={selectedIdx < 0 || selectedIdx >= open.length - 1} onClick={() => setSelectedLineId(open[selectedIdx + 1].id)}><ChevronRight className="size-4" /></Button>
+                  <span className="mr-1 text-xs text-muted-foreground">{matched} from {open.length} matched</span>
+                  <Button type="button" variant="outline" size="sm" className="h-8 px-2" aria-label="Previous item" disabled={selectedIdx <= 0} onClick={() => setSelectedLineId(open[selectedIdx - 1].id)}><ChevronLeft className="size-4" /></Button>
+                  <Button type="button" variant="outline" size="sm" className="h-8 px-2" aria-label="Next item" disabled={selectedIdx < 0 || selectedIdx >= open.length - 1} onClick={() => setSelectedLineId(open[selectedIdx + 1].id)}><ChevronRight className="size-4" /></Button>
                 </div>
               </div>
               {selected && choices[selected.id] ? (
@@ -900,7 +957,7 @@ export function ItemRequestDetailPage() {
                   saving={match.isPending && match.variables?.lineId === selected.id}
                   onPick={(itemId) => match.mutate({ lineId: selected.id, itemId }, { onError: (e) => setErr(apiErrorMessage(e)) })} />
               ) : (
-                <Card className="rounded-2xl p-8 text-center text-sm text-muted-foreground">Klik barang di tabel "Barang yang diminta" untuk memverifikasinya.</Card>
+                <Card className="rounded-lg p-8 text-center text-sm text-muted-foreground">Select an item in the table to verify.</Card>
               )}
             </section>
           )}
@@ -910,9 +967,9 @@ export function ItemRequestDetailPage() {
           <HandoverProof req={req} />
 
           {/* like Classroom's class comments: what happened, in order */}
-          <Panel title="Aktivitas" aside={<MessageSquare className="size-4 text-muted-foreground" />}><Activity req={req} /></Panel>
+          <Panel title="Activity" aside={<MessageSquare className="size-4 text-muted-foreground" />}><Activity req={req} /></Panel>
 
-          <Card className="overflow-hidden rounded-2xl lg:hidden"><InfoList req={req} /></Card>
+          <Card className="overflow-hidden rounded-lg lg:hidden"><InfoList req={req} /></Card>
         </main>
       </div>
     </div>
@@ -923,14 +980,14 @@ export function ItemRequestDetailPage() {
 function InfoList({ req }: { req: ItemRequestDetail }) {
   return (
     <>
-      <div className="border-b px-4 py-3 text-[15px] font-medium">Informasi</div>
+      <div className="border-b px-4 py-3 text-[15px] font-medium">Information</div>
       <dl className="divide-y px-4 text-sm">
-        <Row label="Pemohon">{req.requester_name ?? '-'}</Row>
-        {req.requester_contact && <Row label="Kontak">{req.requester_contact}</Row>}
-        <Row label="Divisi">{req.divisi || '-'}</Row>
-        <Row label="Dikirim via">{req.source === 'LINK' ? 'Link form' : 'Aplikasi'}</Row>
-        {req.requester_location && <Row label="Jaringan"><span className={req.requester_location === 'Di Luar Kantor' ? 'text-amber-700' : ''}>{req.requester_location}</span></Row>}
-        <Row label="Diverifikasi">{req.processed_at ? `${fmtDateTime(req.processed_at)}${req.processed_by_name ? ` · ${req.processed_by_name}` : ''}` : 'Belum'}</Row>
+        <Row label="Requester">{req.requester_name ?? '-'}</Row>
+        {req.requester_contact && <Row label="Contact">{req.requester_contact}</Row>}
+        <Row label="Division">{req.divisi || '-'}</Row>
+        <Row label="Sent via">{req.source === 'LINK' ? 'Form links' : 'Application'}</Row>
+        {req.requester_location && <Row label="Network"><span className={req.requester_location === 'Outside Office' ? 'text-amber-700' : ''}>{req.requester_location}</span></Row>}
+        <Row label="Verified">{req.processed_at ? `${fmtDateTime(req.processed_at)}${req.processed_by_name ? ` · ${req.processed_by_name}` : ''}` : 'Not yet'}</Row>
       </dl>
     </>
   )

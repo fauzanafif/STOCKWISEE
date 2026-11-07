@@ -67,15 +67,16 @@ export function ExportBar({
   async function printNow() {
     setBusy('print')
     setErr(null)
-    const w = window.open('', '_blank')
     try {
       const res = await api.get(`/api/export/${dataset}`, { params: { ...filters, format: 'pdf', columns }, responseType: 'text' })
-      if (w) {
-        w.document.write(res.data as string)
-        w.document.close()
-      }
+      // printed from a hidden iframe on this page (its own onload prints): a new tab/window crashed Chrome on the office printer
+      const frame = document.createElement('iframe')
+      frame.setAttribute('aria-hidden', 'true')
+      frame.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0'
+      frame.srcdoc = res.data as string
+      document.body.appendChild(frame)
+      setTimeout(() => frame.remove(), 10 * 60_000)
     } catch (e) {
-      w?.close()
       setErr(apiErrorMessage(e))
     } finally {
       setBusy(null)
@@ -85,11 +86,11 @@ export function ExportBar({
   if (variant === 'menu') {
     return (
       <div className={className}>
-        <DropdownMenu label={busy ? 'Menyiapkan…' : 'Export'} icon={Download} busy={busy !== null} items={[
+        <DropdownMenu label={busy ? 'Preparing…' : 'Export'} icon={Download} busy={busy !== null} items={[
           { label: 'Excel (.xlsx)', icon: Download, onSelect: () => exportFile('xlsx'), hidden: !canExcel },
           { label: 'CSV', icon: Sheet, onSelect: () => exportFile('csv'), hidden: !canCsv },
           { label: 'PDF', icon: FileText, onSelect: () => exportFile('pdf'), hidden: !canPdf },
-          { label: 'Cetak', icon: Printer, onSelect: () => printNow(), hidden: !canPdf },
+          { label: 'Print', icon: Printer, onSelect: () => printNow(), hidden: !canPdf },
         ]} />
         {err && <p className="mt-2 text-sm text-destructive">{err}</p>}
       </div>
@@ -101,22 +102,22 @@ export function ExportBar({
       <div className="flex flex-wrap items-center gap-2">
         {canExcel && (
           <Button variant="outline" size="sm" disabled={busy !== null} onClick={() => exportFile('xlsx')}>
-            <Download className="size-4" /> {busy === 'xlsx' ? 'Menyiapkan…' : 'Excel'}
+            <Download className="size-4" /> {busy === 'xlsx' ? 'Preparing…' : 'Excel'}
           </Button>
         )}
         {canCsv && (
           <Button variant="outline" size="sm" disabled={busy !== null} onClick={() => exportFile('csv')}>
-            <Sheet className="size-4" /> {busy === 'csv' ? 'Menyiapkan…' : 'CSV'}
+            <Sheet className="size-4" /> {busy === 'csv' ? 'Preparing…' : 'CSV'}
           </Button>
         )}
         {canPdf && (
           <Button variant="outline" size="sm" disabled={busy !== null} onClick={() => exportFile('pdf')}>
-            <FileText className="size-4" /> {busy === 'pdf' ? 'Menyiapkan…' : 'PDF'}
+            <FileText className="size-4" /> {busy === 'pdf' ? 'Preparing…' : 'PDF'}
           </Button>
         )}
         {canPdf && (
           <Button variant="outline" size="sm" disabled={busy !== null} onClick={() => printNow()}>
-            <Printer className="size-4" /> {busy === 'print' ? 'Menyiapkan…' : 'Cetak'}
+            <Printer className="size-4" /> {busy === 'print' ? 'Preparing…' : 'Print'}
           </Button>
         )}
       </div>

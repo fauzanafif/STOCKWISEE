@@ -28,4 +28,15 @@ abstract class TestCase extends BaseTestCase
 
         return $user;
     }
+
+    /** A karyawan account named $name signs in to a Request Barang share link; returns the form session. */
+    protected function linkSession(string $linkToken, string $name): string
+    {
+        $username = strtolower(str_replace(' ', '', $name)).'_'.User::count();
+        User::factory()->create(['name' => $name, 'username' => $username, 'password' => 'rahasia123'])
+            ->roles()->attach(Role::where('slug', 'karyawan')->firstOrFail());
+
+        return $this->postJson("/api/public/item-request/{$linkToken}/login", ['username' => $username, 'password' => 'rahasia123'])
+            ->assertOk()->json('data.session');
+    }
 }

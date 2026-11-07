@@ -10,8 +10,8 @@ export function KembaliBekasLabel({ npbg }: { npbg: Pick<Npbg, 'kembali_bekas' |
   if (!npbg.kembali_bekas) return <span className="text-muted-foreground">—</span>
   const done = npbg.kembali_bekas_status === 'CLEAR'
   return (
-    <Badge variant={done ? 'success' : 'warning'} title="Masuk Tracking Pengembalian Bekas">
-      {done ? 'Bekas sudah kembali' : 'Bekas belum kembali'}
+    <Badge variant={done ? 'success' : 'warning'} title="Goes to Used Item Return Tracking">
+      {done ? 'Used item back' : 'Used item not back'}
     </Badge>
   )
 }
@@ -38,23 +38,23 @@ export function KembaliBekasToggle({ npbg, showLink = false }: { npbg: Pick<Npbg
   return (
     <span className="inline-flex items-center gap-2 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
       <label className={cn('inline-flex items-center gap-1.5 text-sm', canEdit && !busy ? 'cursor-pointer' : 'cursor-not-allowed opacity-70')}
-        title={canEdit ? 'Centang bila barang bekasnya harus dikembalikan — masuk ke Tracking Pengembalian Bekas' : 'Tidak punya akses ubah Pengembalian Bekas'}>
+        title={canEdit ? 'Tick if the used item must be returned; it goes into Used Item Return Tracking' : 'No access to change Used Item Returns'}>
         <input
           type="checkbox"
           className="size-4 accent-primary"
-          aria-label="Kembali bekas"
+          aria-label="Used item returned"
           checked={checked}
           disabled={!canEdit || busy}
           onChange={(e) => set.mutate({ id: npbg.id, checked: e.target.checked }, { onSuccess: setSaved })}
         />
-        {showLink && <span>Kembali bekas</span>}
+        {showLink && <span>Used item returned</span>}
       </label>
       {status && !busy && (
-        <Badge variant={status === 'CLEAR' ? 'success' : 'warning'}>{status === 'CLEAR' ? 'Sudah kembali' : status === 'PENDING' ? 'Belum kembali' : status}</Badge>
+        <Badge variant={status === 'CLEAR' ? 'success' : 'warning'}>{status === 'CLEAR' ? 'Returned' : status === 'PENDING' ? 'Not returned' : status}</Badge>
       )}
       {showLink && current.kembali_bekas && !busy && hasPermission('used_return.view') && (
         <Link to={`/used-returns?sheet=other&search=${encodeURIComponent(npbg.no_npbg ?? '')}`} className="text-xs text-primary hover:underline">
-          Lihat di Pengembalian Bekas
+          View in Used Item Returns
         </Link>
       )}
     </span>

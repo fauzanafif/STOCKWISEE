@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from 'react'
-import { Camera, CheckCircle2, FileText, Loader2, Printer, Upload, X } from 'lucide-react'
+import { Fragment, useEffect, useRef, useState } from 'react'
+import { Camera, CheckCircle2, ChevronDown, FileText, Loader2, Printer, Upload, X } from 'lucide-react'
+import { filledSerials, RiSerialEntry, RiSerialExcelButtons, serialProblem } from '@/components/RiSerialEntry'
 import { photoToDataUrl } from '@/components/tracking/EvidencePhoto'
-import { RI_SOURCE, useCreateRi, useCreateRiFromPo, useRiPoOrders, useRiUsedReturnLines, riJenis, type Ri, type RiCreatePayload, type RiFromPoPayload, type RiPoOrder, type RiSource, type RiUsedReturnLine } from '@/features/ri/api'
+import { downloadRiSerialTemplate, importRiSerials, RI_SOURCE, useCreateRi, useCreateRiFromPo, useRiPoOrders, useRiUsedReturnLines, riJenis, type Ri, type RiCreatePayload, type RiFromPoPayload, type RiPoOrder, type RiSource, type RiUsedReturnLine } from '@/features/ri/api'
 import { cn } from '@/lib/utils'
 import { useItemLookup, type ItemLookupResult } from '@/features/inventory/api'
 import { saveOnce } from '@/lib/duplicate'
@@ -11,7 +12,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { PrintDocButton } from '@/components/PrintDocButton'
-import { invalidTo } from '@/lib/notify'
+import { apiErrorMessage } from '@/lib/api'
+import { invalidTo, toast } from '@/lib/notify'
 
 interface Props {
   open: boolean
@@ -24,8 +26,8 @@ const JENIS_RI: Array<'NA' | 'ATK' | 'NV'> = ['NA', 'ATK', 'NV']
 function ItemSuggestions({ items, loading, onPick }: { items: ItemLookupResult[] | undefined; loading: boolean; onPick: (item: ItemLookupResult) => void }) {
   return (
     <ul className="absolute z-10 mt-1 max-h-56 w-full overflow-auto rounded-md border bg-card text-sm shadow-md">
-      {loading && <li className="px-3 py-2 text-muted-foreground">Mencari…</li>}
-      {!loading && (items?.length ?? 0) === 0 && <li className="px-3 py-2 text-muted-foreground">Tidak ada hasil.</li>}
+      {loading && <li className="px-3 py-2 text-muted-foreground">Searching…</li>}
+      {!loading && (items?.length ?? 0) === 0 && <li className="px-3 py-2 text-muted-foreground">No results.</li>}
       {items?.map((it) => (
         <li key={it.id}>
           <button
@@ -34,7 +36,7 @@ function ItemSuggestions({ items, loading, onPick }: { items: ItemLookupResult[]
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => onPick(it)}
           >
-            <span className="font-mono text-xs text-muted-foreground">{it.code}</span> {it.description}
+            <span className="text-[13px] text-muted-foreground">{it.code}</span> {it.description}
           </button>
         </li>
       ))}
@@ -52,6 +54,8 @@ const MAX_PHOTOS = 3
 /** documents of the delivery (surat jalan / invoice) of a RI dari PO */
 const MAX_DOCS = 3
 const fmtQty = (n: number) => n.toLocaleString('id-ID', { maximumFractionDigits: 2 })
+/** the "line" of a manual RI in its serial Excel */
+const MANUAL_KEY = 0
 
 export function RiFormModal({ open, onClose }: Props) {
   const create = useCreateRi()
@@ -66,7 +70,7 @@ export function RiFormModal({ open, onClose }: Props) {
   const [kuantitas, setKuantitas] = useState<number | ''>('')
   const [satuan, setSatuan] = useState('')
   const [hargaSatuan, setHargaSatuan] = useState<number | ''>('')
-  const [noSeri, setNoSeri] = useState('')
+  const [noSeri, setNoSeri] = useState<string[]>([])
   const [pemeriksa, setPemeriksa] = useState('')
   const [tglRi, setTglRi] = useState('')
   const [keterangan, setKeterangan] = useState('')
@@ -78,10 +82,11 @@ export function RiFormModal({ open, onClose }: Props) {
   const [createdDoc, setCreatedDoc] = useState<Ri | null>(null)
   // goods of a STOCKWISE PO: its lines count them as received (part or all)
   const [poSearch, setPoSearch] = useState('')
-  // "Dari PO": the picked PO, per line how much arrived and its serial numbers, and the documents
+  // "From PO": the picked PO, per line how much arrived and its serial numbers, and the documents
   const [poOrder, setPoOrder] = useState<RiPoOrder | null>(null)
   const [poQty, setPoQty] = useState<Record<number, string>>({})
-  const [poSeri, setPoSeri] = useState<Record<number, string>>({})
+  const [poSeri, setPoSeri] = useState<Record<number, string[]>>({})
+  const [serialsOpen, setSerialsOpen] = useState<number | null>(null)
   // RI dari PO: the proof per item (1 to 3 photos of each item received)
   const [poPhotos, setPoPhotos] = useState<Record<number, string[]>>({})
   const linePhotoInput = useRef<HTMLInputElement>(null)
@@ -105,7 +110,7 @@ export function RiFormModal({ open, onClose }: Props) {
     if (!open) return
     setDivisi('NV'); setVendor(''); setNoPo(''); setNoSuratJalan('')
     setKodeBarang(''); setDeskripsiBarang(''); setActiveField(null)
-    setKuantitas(''); setSatuan(''); setHargaSatuan(''); setNoSeri(''); setPemeriksa('')
+    setKuantitas(''); setSatuan(''); setHargaSatuan(''); setNoSeri([]); setSerialsOpen(null); setPemeriksa('')
     setTglRi(new Date().toISOString().slice(0, 10)); setKeterangan(''); setErr(null); setCreatedDoc(null); setPrinting(false)
     setPoSearch(''); setPhotos([]); setSource('PO'); setUsedLine(null); setUsedSearch('')
     setPoOrder(null); setPoQty({}); setPoSeri({}); setDocs([]); setPoPhotos({})
@@ -133,7 +138,7 @@ export function RiFormModal({ open, onClose }: Props) {
     if (!files?.length) return
     setErr(null)
     const room = MAX_PHOTOS - photos.length
-    if (files.length > room) setErr(`Foto bukti maksimal ${MAX_PHOTOS}. ${room > 0 ? `Hanya ${room} foto pertama yang dipakai.` : ''}`)
+    if (files.length > room) setErr(`Maximum proof photos ${MAX_PHOTOS}. ${room > 0 ? `Only ${room} first photo is used.` : ''}`)
     setReading(true)
     try {
       const made = await Promise.all([...files].slice(0, Math.max(0, room)).map((f) => photoToDataUrl(f, 1600)))
@@ -179,13 +184,13 @@ export function RiFormModal({ open, onClose }: Props) {
     const room = MAX_DOCS - docs.length
     const picked = [...files].slice(0, Math.max(0, room))
     const big = picked.find((f) => f.size > 10 * 1024 * 1024)
-    if (big) return invalidTo(setErr, `${big.name} lebih dari 10 MB.`)
+    if (big) return invalidTo(setErr, `${big.name} more than 10 MB.`)
     setReading(true)
     try {
       const made = await Promise.all(picked.map(async (f) => ({
         name: f.name,
         data: f.type.startsWith('image/') ? await photoToDataUrl(f, 2000) : await new Promise<string>((ok, fail) => {
-          const r = new FileReader(); r.onload = () => ok(String(r.result)); r.onerror = () => fail(new Error('File tidak terbaca.')); r.readAsDataURL(f)
+          const r = new FileReader(); r.onload = () => ok(String(r.result)); r.onerror = () => fail(new Error('The file cannot be read.')); r.readAsDataURL(f)
         }),
       })))
       setDocs((d) => [...d, ...made].slice(0, MAX_DOCS))
@@ -196,17 +201,76 @@ export function RiFormModal({ open, onClose }: Props) {
     }
   }
 
-  function submitFromPo() {
-    if (!poOrder) return invalidTo(setErr, 'Cari dan pilih PO-nya dulu, atau ganti sumber ke Manual.')
+  const typedQty = (id: number) => Number((poQty[id] ?? '').replace(',', '.'))
+
+  // a row per unit of what is arriving; a line with nothing typed yet counts what is left of it
+  async function exportPoSerials() {
+    if (!poOrder) return
+    setErr(null)
     const lines = poOrder.lines.flatMap((l) => {
-      const n = Number((poQty[l.id] ?? '').replace(',', '.'))
-      return poQty[l.id] && n > 0 ? [{ purchase_order_item_id: l.id, qty: n, no_seri: poSeri[l.id]?.trim() || null, photos: poPhotos[l.id] ?? [] }] : []
+      const qty = typedQty(l.id) > 0 ? typedQty(l.id) : l.remaining
+      return qty > 0 && Number.isInteger(qty) ? [{ key: l.id, kode: l.kode_barang, deskripsi: l.deskripsi, satuan: l.satuan, qty, serials: filledSerials(poSeri[l.id]) }] : []
     })
-    if (Object.values(poQty).some((v) => v.trim() !== '' && !(Number(v.replace(',', '.')) >= 0))) return invalidTo(setErr, 'Jumlah diterima harus angka.')
-    if (lines.length === 0) return invalidTo(setErr, 'Isi jumlah yang diterima minimal untuk satu barang.')
+    if (lines.length === 0) return invalidTo(setErr, 'No item with a whole quantity to export.')
+    await downloadRiSerialTemplate(poOrder.number, lines).catch((e) => setErr(apiErrorMessage(e)))
+  }
+
+  async function importPoSerials(file: File) {
+    if (!poOrder) return
+    setErr(null)
+    try {
+      const read = await importRiSerials(file)
+      const open = new Set(poOrder.lines.filter((l) => l.remaining > 0).map((l) => l.id))
+      if (read.some((l) => !open.has(l.key))) return invalidTo(setErr, `This file does not match PO ${poOrder.number}. Export it from this PO.`)
+      setPoSeri((m) => ({ ...m, ...Object.fromEntries(read.map((l) => [l.key, l.serials])) }))
+      // nothing typed yet: what the file holds is what arrived
+      setPoQty((q) => ({ ...q, ...Object.fromEntries(read.filter((l) => !q[l.key]?.trim()).map((l) => [l.key, String(l.serials.length)])) }))
+      const off = read.find((l) => poQty[l.key]?.trim() && typedQty(l.key) !== l.serials.length)
+      setSerialsOpen(off?.key ?? null)
+      toast.success(`${read.reduce((n, l) => n + l.serials.length, 0)} serial numbers imported for ${read.length} items.`)
+    } catch (e) {
+      setErr(apiErrorMessage(e))
+    }
+  }
+
+  async function exportManualSerials() {
+    setErr(null)
+    const qty = Number(kuantitas)
+    if (!Number.isInteger(qty) || qty <= 0) return invalidTo(setErr, 'Fill in a whole quantity first.')
+    await downloadRiSerialTemplate(noSuratJalan.trim() || 'RI', [{ key: MANUAL_KEY, kode: kodeBarang.trim() || null, deskripsi: deskripsiBarang.trim() || null, satuan: satuan.trim() || null, qty, serials: filledSerials(noSeri) }])
+      .catch((e) => setErr(apiErrorMessage(e)))
+  }
+
+  async function importManualSerials(file: File) {
+    setErr(null)
+    try {
+      const read = await importRiSerials(file)
+      if (read.length !== 1 || read[0].key !== MANUAL_KEY) return invalidTo(setErr, 'This file does not match this Receipt. Export it from this form.')
+      setNoSeri(read[0].serials)
+      if (!kuantitas) setKuantitas(read[0].serials.length)
+      toast.success(`${read[0].serials.length} serial numbers imported.`)
+    } catch (e) {
+      setErr(apiErrorMessage(e))
+    }
+  }
+
+  function submitFromPo() {
+    if (!poOrder) return invalidTo(setErr, 'Find and select the PO first, or change the source to Manual.')
+    const lines = poOrder.lines.flatMap((l) => {
+      const n = typedQty(l.id)
+      return poQty[l.id] && n > 0 ? [{ purchase_order_item_id: l.id, qty: n, serials: filledSerials(poSeri[l.id]), photos: poPhotos[l.id] ?? [] }] : []
+    })
+    if (Object.values(poQty).some((v) => v.trim() !== '' && !(Number(v.replace(',', '.')) >= 0))) return invalidTo(setErr, 'The received quantity must be a number.')
+    if (lines.length === 0) return invalidTo(setErr, 'Fill in the received quantity for at least one item.')
+    const noRatio = poOrder.lines.find((l) => typedQty(l.id) > 0 && l.unit_problem)
+    if (noRatio) return invalidTo(setErr, `${noRatio.deskripsi}: ${noRatio.unit_problem} Set it in UOM, Per item tab.`)
+    for (const l of poOrder.lines) {
+      const problem = typedQty(l.id) > 0 ? serialProblem(poSeri[l.id], typedQty(l.id)) : null
+      if (problem) { setSerialsOpen(l.id); return invalidTo(setErr, `${l.deskripsi}: ${problem}.`) }
+    }
     // the proof is per item
     const noPhoto = lines.find((l) => l.photos.length === 0)
-    if (noPhoto) return invalidTo(setErr, `Upload foto bukti untuk ${poOrder.lines.find((l) => l.id === noPhoto.purchase_order_item_id)?.deskripsi ?? 'barang yang diterima'}.`)
+    if (noPhoto) return invalidTo(setErr, `Upload a proof photo for ${poOrder.lines.find((l) => l.id === noPhoto.purchase_order_item_id)?.deskripsi ?? 'items received'}.`)
     const payload: RiFromPoPayload = {
       purchase_order_id: poOrder.id, divisi, no_surat_jalan: noSuratJalan.trim() || null, pemeriksa: pemeriksa.trim() || null,
       tgl_ri: tglRi || null, keterangan: keterangan.trim() || null, lines, documents: docs,
@@ -219,15 +283,20 @@ export function RiFormModal({ open, onClose }: Props) {
     setErr(null)
     if (source === 'PO') return submitFromPo()
     if (source === 'BEKAS' && !usedLine) {
-      invalidTo(setErr, 'Pilih barang bekas yang dikembalikan.')
+      invalidTo(setErr, 'Select the used item returned.')
       return
     }
     if (!deskripsiBarang.trim() || !kuantitas) {
-      invalidTo(setErr, 'Deskripsi Barang dan Kuantitas wajib diisi.')
+      invalidTo(setErr, 'Item Description and Quantity are required.')
+      return
+    }
+    const serialIssue = serialProblem(noSeri, Number(kuantitas))
+    if (serialIssue) {
+      invalidTo(setErr, `Serial numbers: ${serialIssue}.`)
       return
     }
     if (photos.length === 0) {
-      invalidTo(setErr, 'Upload minimal 1 foto bukti penerimaan barang.')
+      invalidTo(setErr, 'Upload at least 1 goods receipt proof photo.')
       return
     }
     const payload: RiCreatePayload = {
@@ -240,7 +309,7 @@ export function RiFormModal({ open, onClose }: Props) {
       kuantitas: Number(kuantitas),
       satuan: satuan.trim() || null,
       harga_satuan: hargaSatuan === '' ? null : Number(hargaSatuan),
-      no_seri: noSeri.trim() || null,
+      serials: filledSerials(noSeri),
       pemeriksa: pemeriksa.trim() || null,
       tgl_ri: tglRi || null,
       keterangan: keterangan.trim() || null,
@@ -258,21 +327,21 @@ export function RiFormModal({ open, onClose }: Props) {
 
   if (createdDoc) {
     return (
-      <Modal
+      <Modal form
         open={open}
         onClose={onClose}
-        title="RI Tersimpan"
-        description={`No. RI: ${createdDoc.no_ri}`}
+        title="Receipt Saved"
+        description={`Receipt No.: ${createdDoc.no_ri}`}
         className="max-w-md"
-        footer={<Button size="sm" onClick={onClose}>Selesai</Button>}
+        footer={<Button size="sm" onClick={onClose}>Done</Button>}
       >
         <div className="flex flex-col items-center gap-3 py-4 text-center">
           <CheckCircle2 className="size-10 text-emerald-600" />
           <p className="text-sm text-muted-foreground">
-            RI berhasil disimpan. Cetak sekarang untuk dicetak di kertas khusus RI.
+            Receipt saved. Print now on the special RI paper.
           </p>
           <Button size="sm" variant="outline" onClick={() => setPrinting(true)}>
-            <Printer className="size-4" /> Cetak
+            <Printer className="size-4" /> Print
           </Button>
         </div>
       </Modal>
@@ -280,58 +349,53 @@ export function RiFormModal({ open, onClose }: Props) {
   }
 
   return (
-    <Modal
+    <Modal page form
       open={open}
       onClose={onClose}
-      title="Tambah RI"
-      description="Penerimaan barang dicatat langsung di Stockwise: dari PO, pengembalian bekas, atau manual (barang apa saja)."
-      // "Dari PO" holds the PO's whole item table: a wide popup
+      title="Add Receipt"
+      description="Receipts recorded directly in Stockwise: from a PO, used-item return, or manual (any item)."
+      // "From PO" holds the PO's whole item table: a wide popup
       className={source === 'PO' && poOrder ? 'max-w-6xl' : 'max-w-2xl'}
       footer={
         <>
-          <Button variant="outline" size="sm" onClick={onClose}>Batal</Button>
+          <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
           <Button size="sm" disabled={create.isPending || createFromPo.isPending || reading} onClick={submit}>
-            {create.isPending || createFromPo.isPending ? 'Menyimpan…' : 'Simpan'}
+            {create.isPending || createFromPo.isPending ? 'Saving…' : 'Save'}
           </Button>
         </>
       }
     >
       <div className="space-y-4">
         <div className="space-y-1.5">
-          <Label>Sumber RI</Label>
-          <div className="grid grid-cols-3 gap-1 rounded-lg border bg-muted/40 p-1" role="tablist" aria-label="Sumber RI">
+          <Label>Receipt Source</Label>
+          <div className="grid grid-cols-3 gap-1 rounded-lg border bg-muted/40 p-1" role="tablist" aria-label="Receipt Source">
             {(['PO', 'BEKAS', 'MANUAL'] as RiSource[]).map((s) => (
               <button key={s} type="button" role="tab" aria-selected={source === s} onClick={() => pickSource(s)}
-                className={cn('rounded-md px-2 py-1.5 text-sm font-medium transition-colors', source === s ? 'bg-card text-primary shadow-sm ring-1 ring-border' : 'text-muted-foreground hover:text-foreground')}>
+                className={cn('rounded-md px-2 py-1.5 text-sm font-medium transition-colors', source === s ? 'bg-card text-primary ring-1 ring-border' : 'text-muted-foreground hover:text-foreground')}>
                 {RI_SOURCE[s]}
               </button>
             ))}
           </div>
-          <p className="text-xs text-muted-foreground">
-            {source === 'PO' ? 'Barang dari PO STOCKWISE: cari PO-nya, isi jumlah yang datang per barang (boleh sebagian), lalu upload bukti.'
-              : source === 'BEKAS' ? 'Barang bekas yang kembali dari NPBG bertanda "Kembali bekas". Tracking Pengembalian Bekas otomatis jadi Clear; barang bekas tidak menambah stok.'
-              : 'Barang apa saja, tidak terikat PO atau pengembalian bekas. Kalau kodenya ada di Master Produk, stoknya bertambah.'}
-          </p>
         </div>
 
         {source === 'BEKAS' && (
           <div className="space-y-1.5 rounded-lg border bg-muted/20 p-3">
-            <Label>Barang bekas yang dikembalikan *</Label>
+            <Label>Used item returned *</Label>
             {usedLine ? (
               <div className="flex items-center justify-between gap-2 text-sm">
-                <span className="min-w-0"><span className="font-mono">{usedLine.npbg_no}</span> · {usedLine.deskripsi} · {usedLine.qty ?? ''} {usedLine.satuan ?? ''}{usedLine.pelanggan ? ` · ${usedLine.pelanggan}` : ''}</span>
-                <Button size="sm" variant="ghost" onClick={() => setUsedLine(null)}>Lepas</Button>
+                <span className="min-w-0"><span className="">{usedLine.npbg_no}</span> · {usedLine.deskripsi} · {usedLine.qty ?? ''} {usedLine.satuan ?? ''}{usedLine.pelanggan ? ` · ${usedLine.pelanggan}` : ''}</span>
+                <Button size="sm" variant="ghost" onClick={() => setUsedLine(null)}>Release</Button>
               </div>
             ) : (
               <>
-                <Input value={usedSearch} onChange={(e) => setUsedSearch(e.target.value)} placeholder="Cari no. NPBG, barang, pelanggan / nopol" />
-                {usedLines.data && usedLines.data.length === 0 && <p className="text-xs text-muted-foreground">Tidak ada barang bekas yang menunggu dikembalikan.</p>}
+                <Input value={usedSearch} onChange={(e) => setUsedSearch(e.target.value)} placeholder="Search Delivery Order no., item, customer / plate no." />
+                {usedLines.data && usedLines.data.length === 0 && <p className="text-xs text-muted-foreground">No used items waiting to be returned.</p>}
                 {(usedLines.data?.length ?? 0) > 0 && (
                   <ul className="max-h-40 divide-y overflow-auto rounded-md border bg-card text-sm">
                     {usedLines.data!.map((l) => (
                       <li key={l.id}>
                         <button type="button" className="block w-full px-3 py-2 text-left hover:bg-muted" onClick={() => pickUsedLine(l)}>
-                          <span className="font-mono text-xs">{l.npbg_no}</span> {l.deskripsi}
+                          <span className="text-[13px]">{l.npbg_no}</span> {l.deskripsi}
                           <span className="text-muted-foreground"> · {l.qty ?? ''} {l.satuan ?? ''}{l.pelanggan ? ` · ${l.pelanggan}` : ''}</span>
                         </button>
                       </li>
@@ -350,26 +414,26 @@ export function RiFormModal({ open, onClose }: Props) {
             {poOrder ? (
               <>
                 <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-                  <span className="min-w-0"><span className="font-mono font-semibold">{poOrder.number}</span>{poOrder.vendor ? ` · ${poOrder.vendor}` : ''}{poOrder.date ? ` · ${new Date(poOrder.date).toLocaleDateString('id-ID')}` : ''}</span>
-                  <Button size="sm" variant="ghost" onClick={() => { setPoOrder(null); setPoQty({}); setPoSeri({}) }}>Ganti PO</Button>
+                  <span className="min-w-0"><span className=" font-semibold">{poOrder.number}</span>{poOrder.vendor ? ` · ${poOrder.vendor}` : ''}{poOrder.date ? ` · ${new Date(poOrder.date).toLocaleDateString('en-GB')}` : ''}</span>
+                  <Button size="sm" variant="ghost" onClick={() => { setPoOrder(null); setPoQty({}); setPoSeri({}) }}>Change PO</Button>
                 </div>
                 <div className="max-h-[55vh] overflow-auto rounded-lg border bg-card">
                   <table className="w-full min-w-[1200px] text-sm">
-                    <thead className="sticky top-0 z-10 whitespace-nowrap border-b bg-muted text-left text-xs uppercase tracking-wide text-muted-foreground">
+                    <thead className="sticky top-0 z-10 whitespace-nowrap border-b bg-muted text-left text-xs text-muted-foreground">
                       <tr>
                         <th className="w-10 px-3 py-2.5 text-center font-medium">No</th>
-                        <th className="px-3 py-2.5 font-medium">Kode</th>
-                        <th className="min-w-[16rem] px-3 py-2.5 font-medium">Deskripsi Barang</th>
+                        <th className="px-3 py-2.5 font-medium">Code</th>
+                        <th className="min-w-[16rem] px-3 py-2.5 font-medium">Item Description</th>
                         <th className="px-3 py-2.5 font-medium">Vendor</th>
-                        <th className="px-3 py-2.5 font-medium">Satuan</th>
-                        <th className="px-3 py-2.5 font-medium">No. PPB</th>
+                        <th className="px-3 py-2.5 font-medium">Unit</th>
+                        <th className="px-3 py-2.5 font-medium">Purchase Request No.</th>
                         <th className="px-3 py-2.5 text-right font-medium">Qty PO</th>
-                        <th className="px-3 py-2.5 text-right font-medium">Sudah Diterima</th>
-                        <th className="px-3 py-2.5 text-right font-medium">Sisa</th>
-                        <th className="px-3 py-2.5 text-right font-medium">Harga</th>
-                        <th className="bg-primary/10 px-3 py-2.5 text-right font-semibold text-primary">Diterima Sekarang</th>
-                        <th className="px-3 py-2.5 font-medium">No. Seri</th>
-                        <th className="px-3 py-2.5 font-medium">Foto Bukti</th>
+                        <th className="px-3 py-2.5 text-right font-medium">Received</th>
+                        <th className="px-3 py-2.5 text-right font-medium">Balance</th>
+                        <th className="px-3 py-2.5 text-right font-medium">Price</th>
+                        <th className="bg-primary/10 px-3 py-2.5 text-right font-semibold text-primary">Received Now</th>
+                        <th className="px-3 py-2.5 font-medium">Serial No.</th>
+                        <th className="px-3 py-2.5 font-medium">Proof Photo</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y">
@@ -378,46 +442,59 @@ export function RiFormModal({ open, onClose }: Props) {
                         const typed = poQty[l.id] ?? ''
                         const n = Number(typed.replace(',', '.'))
                         const partial = typed !== '' && n > 0 && n + 0.0001 < l.remaining
+                        const serialCount = filledSerials(poSeri[l.id]).length
+                        const serialIssue = typed !== '' && n > 0 ? serialProblem(poSeri[l.id], n) : null
                         return (
-                          <tr key={l.id} className={cn('align-top', done ? 'bg-muted/40 text-muted-foreground' : 'even:bg-muted/20 hover:bg-primary/5')}>
+                          <Fragment key={l.id}>
+                          <tr className={cn('align-top', done ? 'bg-muted/40 text-muted-foreground' : 'even:bg-muted/20 hover:bg-primary/5')}>
                             <td className="px-3 py-2.5 text-center tabular-nums text-muted-foreground">{i + 1}</td>
-                            <td className="whitespace-nowrap px-3 py-2.5 font-mono text-xs">{l.kode_barang ?? ''}</td>
+                            <td className="whitespace-nowrap px-3 py-2.5 text-[13px]">{l.kode_barang ?? ''}</td>
                             <td className="px-3 py-2.5 font-medium">{l.deskripsi}</td>
                             <td className="px-3 py-2.5">{l.vendor ?? ''}</td>
                             <td className="whitespace-nowrap px-3 py-2.5">{l.satuan ?? ''}</td>
-                            <td className="whitespace-nowrap px-3 py-2.5 font-mono text-xs">{l.no_ppb ?? ''}</td>
+                            <td className="whitespace-nowrap px-3 py-2.5 text-[13px]">{l.no_ppb ?? ''}</td>
                             <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums">{fmtQty(l.qty)}</td>
                             <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums">{fmtQty(l.received)}</td>
                             <td className="whitespace-nowrap px-3 py-2.5 text-right font-semibold tabular-nums">
-                              {done ? <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-xs font-medium text-emerald-700">Selesai</span> : fmtQty(l.remaining)}
+                              {done ? <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-xs font-medium text-emerald-700">Done</span> : fmtQty(l.remaining)}
                             </td>
                             <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums">{l.unit_price ? l.unit_price.toLocaleString('id-ID') : ''}</td>
                             <td className="bg-primary/5 px-3 py-2 text-right">
                               {!done && (
                                 <>
-                                  <Input className="ml-auto h-9 w-24 bg-card text-right font-semibold tabular-nums" inputMode="decimal" aria-label={`Diterima ${l.deskripsi}`}
+                                  <Input className="ml-auto h-9 w-24 bg-card text-right font-semibold tabular-nums" inputMode="decimal" aria-label={`Received ${l.deskripsi}`}
                                     value={typed} placeholder="0" onChange={(e) => setPoQty((q) => ({ ...q, [l.id]: e.target.value }))} />
-                                  {partial && <div className="mt-1 whitespace-nowrap text-[11px] text-amber-700">partial, sisa {fmtQty(Math.round((l.remaining - n) * 100) / 100)}</div>}
-                                  {typed !== '' && n > l.remaining + 0.0001 && <div className="mt-1 whitespace-nowrap text-[11px] text-amber-700">lebih {fmtQty(Math.round((n - l.remaining) * 100) / 100)}, tetap masuk stok</div>}
+                                  {n > 0 && l.base_unit && <div className="mt-1 whitespace-nowrap text-[11px] font-medium tabular-nums text-primary">= {fmtQty(Math.round(n * l.unit_ratio * 100) / 100)} {l.base_unit} in stock</div>}
+                                  {l.unit_problem && <div className="mt-1 max-w-[14rem] whitespace-normal text-left text-[11px] text-red-600">{l.unit_problem}</div>}
+                                  {partial && <div className="mt-1 whitespace-nowrap text-[11px] text-amber-700">partial, balance {fmtQty(Math.round((l.remaining - n) * 100) / 100)}</div>}
+                                  {typed !== '' && n > l.remaining + 0.0001 && <div className="mt-1 whitespace-nowrap text-[11px] text-amber-700">more {fmtQty(Math.round((n - l.remaining) * 100) / 100)}, still goes into stock</div>}
                                 </>
                               )}
                             </td>
                             <td className="px-3 py-2">
-                              {!done && <Input className="h-9 w-36" value={poSeri[l.id] ?? ''} placeholder="opsional" onChange={(e) => setPoSeri((q) => ({ ...q, [l.id]: e.target.value }))} aria-label={`No seri ${l.deskripsi}`} />}
+                              {!done && (
+                                <button type="button" disabled={!(n > 0) && serialCount === 0} aria-expanded={serialsOpen === l.id} aria-label={`Serial numbers ${l.deskripsi}`}
+                                  onClick={() => setSerialsOpen(serialsOpen === l.id ? null : l.id)}
+                                  className={cn('inline-flex h-9 items-center gap-1 whitespace-nowrap rounded-md border bg-card px-2.5 text-xs font-medium tabular-nums disabled:cursor-not-allowed disabled:opacity-50',
+                                    serialIssue ? 'border-amber-400 text-amber-700' : serialCount > 0 ? 'border-emerald-300 text-emerald-700' : 'text-muted-foreground hover:text-foreground')}>
+                                  {serialCount}{n > 0 && Number.isInteger(n) ? `/${fmtQty(n)}` : ''}
+                                  <ChevronDown className={cn('size-3.5 transition-transform', serialsOpen === l.id && 'rotate-180')} />
+                                </button>
+                              )}
                             </td>
                             <td className="px-3 py-2">
                               {!done && (
                                 <div className="flex items-center gap-1.5">
                                   {(poPhotos[l.id] ?? []).map((p, k) => (
                                     <div key={k} className="relative size-10 shrink-0 overflow-hidden rounded border bg-muted">
-                                      <img src={p} alt={`Foto ${l.deskripsi} ${k + 1}`} className="size-full object-cover" />
-                                      <button type="button" aria-label={`Hapus foto ${k + 1}`} onClick={() => setPoPhotos((m) => ({ ...m, [l.id]: (m[l.id] ?? []).filter((_, j) => j !== k) }))}
+                                      <img src={p} alt={`Photo ${l.deskripsi} ${k + 1}`} className="size-full object-cover" />
+                                      <button type="button" aria-label={`Delete photo ${k + 1}`} onClick={() => setPoPhotos((m) => ({ ...m, [l.id]: (m[l.id] ?? []).filter((_, j) => j !== k) }))}
                                         className="absolute right-0 top-0 rounded-bl bg-black/60 p-0.5 text-white"><X className="size-3" /></button>
                                     </div>
                                   ))}
                                   {(poPhotos[l.id]?.length ?? 0) < MAX_PHOTOS && (
                                     <button type="button" disabled={reading} onClick={() => { setPhotoFor(l.id); linePhotoInput.current?.click() }}
-                                      title={`Foto bukti ${l.deskripsi} (maks ${MAX_PHOTOS})`}
+                                      title={`Proof photo ${l.deskripsi} (maks ${MAX_PHOTOS})`}
                                       className={cn('flex size-10 shrink-0 items-center justify-center rounded border-2 border-dashed text-muted-foreground hover:border-primary hover:text-primary',
                                         typed !== '' && n > 0 && !(poPhotos[l.id]?.length) && 'border-amber-400 text-amber-600')}>
                                       <Camera className="size-4" />
@@ -427,6 +504,15 @@ export function RiFormModal({ open, onClose }: Props) {
                               )}
                             </td>
                           </tr>
+                          {serialsOpen === l.id && !done && (
+                            <tr className="bg-muted/30">
+                              <td colSpan={13} className="px-3 py-3">
+                                <RiSerialEntry qty={n} value={poSeri[l.id] ?? []} label={l.deskripsi} onChange={(v) => setPoSeri((m) => ({ ...m, [l.id]: v }))} />
+                                {serialIssue && <p className="mt-2 text-xs text-amber-700">{serialIssue}</p>}
+                              </td>
+                            </tr>
+                          )}
+                          </Fragment>
                         )
                       })}
                     </tbody>
@@ -435,22 +521,22 @@ export function RiFormModal({ open, onClose }: Props) {
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <input ref={linePhotoInput} type="file" accept="image/*" capture="environment" multiple className="hidden"
                     onChange={(e) => { if (photoFor != null) void addLinePhotos(photoFor, e.target.files); e.target.value = '' }} />
-                  <p className="text-xs text-muted-foreground">Isi jumlah yang datang saja, lalu foto bukti tiap barang itu (ikon kamera). Barang yang belum datang biarkan kosong, nanti bisa di-RI berikutnya.</p>
-                  <Button size="sm" variant="outline" className="h-7" onClick={() => setPoQty(Object.fromEntries(poOrder.lines.filter((l) => l.remaining > 0).map((l) => [l.id, String(l.remaining)])))}>Isi semua sisa</Button>
+                  <Button size="sm" variant="outline" className="h-7" onClick={() => setPoQty(Object.fromEntries(poOrder.lines.filter((l) => l.remaining > 0).map((l) => [l.id, String(l.remaining)])))}>Fill all remaining</Button>
+                  <RiSerialExcelButtons onExport={exportPoSerials} onImport={importPoSerials} />
                 </div>
               </>
             ) : (
               <>
-                <Input value={poSearch} onChange={(e) => setPoSearch(e.target.value)} placeholder="Cari no. PO, vendor, atau barang yang belum diterima" />
-                {poOrders.data && poOrders.data.length === 0 && <p className="text-xs text-muted-foreground">Tidak ada PO yang menunggu barang.</p>}
+                <Input value={poSearch} onChange={(e) => setPoSearch(e.target.value)} placeholder="Search PO no., vendor, or items not yet received" />
+                {poOrders.data && poOrders.data.length === 0 && <p className="text-xs text-muted-foreground">No POs are waiting for items.</p>}
                 {(poOrders.data?.length ?? 0) > 0 && (
                   <ul className="max-h-56 divide-y overflow-auto rounded-md border bg-card text-sm">
                     {poOrders.data!.map((o) => (
                       <li key={o.id}>
                         <button type="button" className="block w-full px-3 py-2 text-left hover:bg-muted" onClick={() => pickPoOrder(o)}>
-                          <span className="font-mono text-xs font-semibold">{o.number}</span>{o.vendor ? ` · ${o.vendor}` : ''}
+                          <span className="text-[13px] font-semibold">{o.number}</span>{o.vendor ? ` · ${o.vendor}` : ''}
                           <span className="block truncate text-xs text-muted-foreground">
-                            {o.lines.filter((l) => l.remaining > 0).length} barang menunggu: {o.lines.filter((l) => l.remaining > 0).map((l) => `${l.deskripsi} (${fmtQty(l.remaining)})`).join(', ')}
+                            {o.lines.filter((l) => l.remaining > 0).length} items waiting: {o.lines.filter((l) => l.remaining > 0).map((l) => `${l.deskripsi} (${fmtQty(l.remaining)})`).join(', ')}
                           </span>
                         </button>
                       </li>
@@ -463,7 +549,7 @@ export function RiFormModal({ open, onClose }: Props) {
         )}
         <div className="grid grid-cols-3 gap-3">
           <div className="space-y-1.5">
-            <Label>Jenis RI</Label>
+            <Label>Receipt type</Label>
             <Select value={divisi} onChange={(e) => setDivisi(e.target.value as 'NA' | 'ATK' | 'NV')}>
               {JENIS_RI.map((d) => <option key={d} value={d}>{riJenis(d)}</option>)}
             </Select>
@@ -475,7 +561,7 @@ export function RiFormModal({ open, onClose }: Props) {
           </div>
           )}
           <div className="space-y-1.5">
-            <Label>Tanggal RI</Label>
+            <Label>Receipt Date</Label>
             <Input type="date" value={tglRi} onChange={(e) => setTglRi(e.target.value)} />
           </div>
         </div>
@@ -483,17 +569,17 @@ export function RiFormModal({ open, onClose }: Props) {
         <div className="grid grid-cols-2 gap-3">
           {source !== 'PO' && (
           <div className="space-y-1.5">
-            <Label>No. PO (referensi)</Label>
-            <Input className="font-mono" value={noPo} onChange={(e) => setNoPo(e.target.value)} />
+            <Label>PO No. (reference)</Label>
+            <Input className="" value={noPo} onChange={(e) => setNoPo(e.target.value)} />
           </div>
           )}
           <div className="space-y-1.5">
-            <Label>No. Surat Jalan</Label>
+            <Label>Delivery Note No.</Label>
             <Input value={noSuratJalan} onChange={(e) => setNoSuratJalan(e.target.value)} />
           </div>
           {source === 'PO' && (
             <div className="space-y-1.5">
-              <Label>Pemeriksa</Label>
+              <Label>Inspector</Label>
               <Input value={pemeriksa} onChange={(e) => setPemeriksa(e.target.value)} />
             </div>
           )}
@@ -503,21 +589,21 @@ export function RiFormModal({ open, onClose }: Props) {
 
         <div className="grid grid-cols-2 gap-3">
           <div className="relative space-y-1.5">
-            <Label>Kode Barang</Label>
+            <Label>Item Code</Label>
             <Input
-              className="font-mono"
+              className=""
               value={kodeBarang}
               onChange={(e) => setKodeBarang(e.target.value)}
               onFocus={() => setActiveField('kode')}
               onBlur={() => setTimeout(() => setActiveField((f) => (f === 'kode' ? null : f)), 150)}
-              placeholder="mis. PUI.0019"
+              placeholder="e.g. PUI.0019"
             />
             {activeField === 'kode' && kodeBarang.trim().length >= 2 && (
               <ItemSuggestions items={suggestions} loading={searchingItems} onPick={pickItem} />
             )}
           </div>
           <div className="relative space-y-1.5">
-            <Label>Deskripsi Barang</Label>
+            <Label>Item Description</Label>
             <Input
               value={deskripsiBarang}
               onChange={(e) => setDeskripsiBarang(e.target.value)}
@@ -532,47 +618,49 @@ export function RiFormModal({ open, onClose }: Props) {
 
         <div className="grid grid-cols-3 gap-3">
           <div className="space-y-1.5">
-            <Label>Kuantitas</Label>
+            <Label>Quantity</Label>
             <Input type="number" min={0} step="0.01" value={kuantitas} onChange={(e) => setKuantitas(e.target.value ? Number(e.target.value) : '')} />
           </div>
           <div className="space-y-1.5">
-            <Label>Satuan</Label>
+            <Label>Unit</Label>
             <Input value={satuan} onChange={(e) => setSatuan(e.target.value)} placeholder="PCS, SET, …" />
           </div>
           <div className="space-y-1.5">
-            <Label>Harga Satuan</Label>
+            <Label>Unit Price</Label>
             <Input type="number" min={0} value={hargaSatuan} onChange={(e) => setHargaSatuan(e.target.value ? Number(e.target.value) : '')} />
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-1.5">
-            <Label>No. Seri</Label>
-            <Input value={noSeri} onChange={(e) => setNoSeri(e.target.value)} />
+        <div className="space-y-1.5">
+          <Label>Inspector</Label>
+          <Input value={pemeriksa} onChange={(e) => setPemeriksa(e.target.value)} />
+        </div>
+
+        <div className="space-y-2 rounded-lg border bg-muted/20 p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <Label>Serial No. <span className="font-normal tabular-nums text-muted-foreground">{filledSerials(noSeri).length}{Number.isInteger(Number(kuantitas)) && Number(kuantitas) > 0 ? `/${Number(kuantitas)}` : ''}</span></Label>
+            <RiSerialExcelButtons onExport={exportManualSerials} onImport={importManualSerials} />
           </div>
-          <div className="space-y-1.5">
-            <Label>Pemeriksa</Label>
-            <Input value={pemeriksa} onChange={(e) => setPemeriksa(e.target.value)} />
-          </div>
+          <RiSerialEntry qty={Number(kuantitas)} value={noSeri} onChange={setNoSeri} label="Item" />
         </div>
 
         </>}
 
         <div className="space-y-1.5">
-          <Label>Keterangan</Label>
+          <Label>Remarks</Label>
           <Input value={keterangan} onChange={(e) => setKeterangan(e.target.value)} />
         </div>
 
         {source !== 'PO' && (
         <div className="space-y-1.5">
-          <Label>Foto bukti penerimaan * <span className="font-normal text-muted-foreground">(minimal 1, maksimal {MAX_PHOTOS})</span></Label>
+          <Label>Receipt proof photo * <span className="font-normal text-muted-foreground">(minimum 1, maximum {MAX_PHOTOS})</span></Label>
           <input ref={photoInput} type="file" accept="image/*" capture="environment" multiple className="hidden"
             onChange={(e) => { void addPhotos(e.target.files); e.target.value = '' }} />
           <div className="grid grid-cols-3 gap-2">
             {photos.map((p, i) => (
               <div key={i} className="relative overflow-hidden rounded-lg border bg-muted">
-                <img src={p} alt={`Foto bukti ${i + 1}`} className="aspect-square w-full object-cover" />
-                <button type="button" aria-label={`Hapus foto ${i + 1}`} onClick={() => setPhotos((x) => x.filter((_, j) => j !== i))}
+                <img src={p} alt={`Proof photo ${i + 1}`} className="aspect-square w-full object-cover" />
+                <button type="button" aria-label={`Delete photo ${i + 1}`} onClick={() => setPhotos((x) => x.filter((_, j) => j !== i))}
                   className="absolute right-1 top-1 rounded-full bg-black/60 p-1 text-white hover:bg-black/80"><X className="size-3.5" /></button>
               </div>
             ))}
@@ -581,7 +669,7 @@ export function RiFormModal({ open, onClose }: Props) {
                 className={'flex aspect-square flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed text-xs text-muted-foreground transition-colors hover:border-primary hover:bg-primary/5 hover:text-primary'
                   + (photos.length === 0 ? ' border-amber-400' : '')}>
                 {reading ? <Loader2 className="size-6 animate-spin" /> : <Camera className="size-6" />}
-                <span className="font-medium">{reading ? 'Memproses…' : photos.length === 0 ? 'Ambil / pilih foto' : 'Tambah foto'}</span>
+                <span className="font-medium">{reading ? 'Processing…' : photos.length === 0 ? 'Take / select photo' : 'Add photo'}</span>
                 <span>{photos.length}/{MAX_PHOTOS}</span>
               </button>
             )}
@@ -591,19 +679,19 @@ export function RiFormModal({ open, onClose }: Props) {
 
         {source === 'PO' && (
           <div className="space-y-1.5">
-            <Label>Dokumen <span className="font-normal text-muted-foreground">(surat jalan / invoice, foto atau PDF, maksimal {MAX_DOCS})</span></Label>
+            <Label>Document <span className="font-normal text-muted-foreground">(delivery note / invoice, photo or PDF, maximum {MAX_DOCS})</span></Label>
             <input ref={docInput} type="file" accept="image/*,application/pdf" multiple className="hidden"
               onChange={(e) => { void addDocs(e.target.files); e.target.value = '' }} />
             <div className="flex flex-wrap gap-2">
               {docs.map((d, i) => (
                 <span key={i} className="inline-flex items-center gap-1.5 rounded-md border bg-card px-2 py-1 text-xs">
                   <FileText className="size-3.5 text-muted-foreground" /> <span className="max-w-[12rem] truncate">{d.name}</span>
-                  <button type="button" aria-label={`Hapus ${d.name}`} onClick={() => setDocs((x) => x.filter((_, j) => j !== i))} className="text-muted-foreground hover:text-destructive"><X className="size-3.5" /></button>
+                  <button type="button" aria-label={`Delete ${d.name}`} onClick={() => setDocs((x) => x.filter((_, j) => j !== i))} className="text-muted-foreground hover:text-destructive"><X className="size-3.5" /></button>
                 </span>
               ))}
               {docs.length < MAX_DOCS && (
                 <Button type="button" size="sm" variant="outline" className="h-8" disabled={reading} onClick={() => docInput.current?.click()}>
-                  <Upload className="size-3.5" /> Upload dokumen
+                  <Upload className="size-3.5" /> Upload document
                 </Button>
               )}
             </div>

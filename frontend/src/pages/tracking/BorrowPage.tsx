@@ -35,7 +35,7 @@ const fromRow = (r: BorrowRow): Form => ({
   return_note: r.return_note ?? '',
 })
 const same = (a: Form, b: Form) => JSON.stringify(a) === JSON.stringify(b)
-const invalid = (f: Form) => (!f.description_raw.trim() ? 'Isi Deskripsi Barang' : Number(f.qty.replace(',', '.')) > 0 ? null : 'Kuantitas harus > 0')
+const invalid = (f: Form) => (!f.description_raw.trim() ? 'Fill in Item Description' : Number(f.qty.replace(',', '.')) > 0 ? null : 'Kuantitas harus > 0')
 const t = (v: string) => v.trim() || null
 const toBody = (f: Form) => ({
   borrowed_at: f.borrowed_at || null, description_raw: t(f.description_raw), qty: Number(f.qty.replace(',', '.')), unit_raw: t(f.unit_raw),
@@ -59,19 +59,19 @@ function BorrowTableRow({ row, canEdit, canDelete, note, vendors }: {
   const editable = canEdit && !fromAccurate
 
   async function remove() {
-    if (!row || !(await confirmDialog(`Hapus baris Borrow "${row.description}"?`))) return
+    if (!row || !(await confirmDialog(`Delete Borrow row "${row.description}"?`))) return
     try { await del.mutateAsync(row.id) } catch (e) { window.alert(apiErrorMessage(e)) }
   }
 
   return (
- <tr {...ed.rowProps} className={rowClass(isNew)} title={fromAccurate ? 'Dari RI Accurate ubah di Accurate' : undefined}>
+ <tr {...ed.rowProps} className={rowClass(isNew)} title={fromAccurate ? 'From an Accurate RI; change it in Accurate' : undefined}>
       <Td className="px-2 py-2 text-right tabular-nums text-muted-foreground">{row?.no ?? ''}</Td>
-      <Td>{ed.input('borrowed_at', { type: 'date', 'aria-label': 'Tgl Pinjam', className: 'min-w-[8rem]', locked: fromAccurate })}</Td>
-      <Td className="min-w-[15rem]" title={row?.item_code ? `Kode barang ${row.item_code}` : undefined}>
-        {ed.area('description_raw', { placeholder: isNew ? 'Ketik barang yang dipinjam…' : '' })}
+      <Td>{ed.input('borrowed_at', { type: 'date', 'aria-label': 'Loan Date', className: 'min-w-[8rem]', locked: fromAccurate })}</Td>
+      <Td className="min-w-[15rem]" title={row?.item_code ? `Item code ${row.item_code}` : undefined}>
+        {ed.area('description_raw', { placeholder: isNew ? 'Type the borrowed item…' : '' })}
         <div className="px-2"><InlineSaveBadge state={ed.state} error={ed.error} hint={ed.hint} /></div>
       </Td>
-      <Td>{ed.input('qty', { inputMode: 'decimal', 'aria-label': 'Kuantitas', className: 'min-w-[4rem] text-right tabular-nums' })}</Td>
+      <Td>{ed.input('qty', { inputMode: 'decimal', 'aria-label': 'Quantity', className: 'min-w-[4rem] text-right tabular-nums' })}</Td>
       <Td className="min-w-[5rem]">{ed.list('unit_raw', ['PCS', 'UNIT', 'SET', 'BH', 'KG', 'M'])}</Td>
       <Td className="min-w-[10rem]">{ed.list('lender_name', vendors, { placeholder: 'Vendor' })}</Td>
       <Td className="min-w-[12rem]">{ed.area('condition_note')}</Td>
@@ -82,15 +82,15 @@ function BorrowTableRow({ row, canEdit, canDelete, note, vendors }: {
               ...s, borrowed_at: d.date ?? s.borrowed_at, lender_name: s.lender_name || (d.party ?? ''),
               description_raw: s.description_raw || (d.lines[0]?.description ?? ''), unit_raw: d.lines[0]?.unit ?? s.unit_raw,
             }))} />
- ) : <span className="block whitespace-nowrap px-2 py-1.5 font-mono text-xs">{row?.in_doc_no ?? ''}</span>}
-        </div>{row && <CompactPhotoSlot entity={ENTITY} entityId={row.id} slot="in" label="Tanda Terima" photo={row.photos?.in} canEdit={canEdit} onChanged={refresh} />}</div>
+ ) : <span className="block whitespace-nowrap px-2 py-1.5 text-[13px]">{row?.in_doc_no ?? ''}</span>}
+        </div>{row && <CompactPhotoSlot entity={ENTITY} entityId={row.id} slot="in" label="In Mark" photo={row.photos?.in} canEdit={canEdit} onChanged={refresh} />}</div>
       </Td>
       <Td className="whitespace-nowrap px-2 py-2 text-center">{row && <LoanStatusBadge kind="borrow" status={row.status} />}</Td>
       <Td className="min-w-[14rem]"><div className="flex items-center gap-1"><div className="min-w-0 flex-1">
         {editable ? (
           <DocNumberInput compact type="npbg" value={ed.form.out_doc_no} onChange={(v) => ed.change('out_doc_no', v)} />
- ) : <span className="block whitespace-nowrap px-2 py-1.5 font-mono text-xs">{row?.out_doc_no ?? ''}</span>}
-        </div>{row && <CompactPhotoSlot entity={ENTITY} entityId={row.id} slot="out" label="Tanda Keluar" photo={row.photos?.out} canEdit={canEdit} onChanged={refresh} />}</div>
+ ) : <span className="block whitespace-nowrap px-2 py-1.5 text-[13px]">{row?.out_doc_no ?? ''}</span>}
+        </div>{row && <CompactPhotoSlot entity={ENTITY} entityId={row.id} slot="out" label="Out Mark" photo={row.photos?.out} canEdit={canEdit} onChanged={refresh} />}</div>
       </Td>
       <Td className="min-w-[12rem]">{ed.area('return_note')}</Td>
       <Td className="px-2">{row && <NoteCell entity={ENTITY} rowKey={row.id} note={note} />}</Td>
@@ -104,7 +104,7 @@ function BorrowTableRow({ row, canEdit, canDelete, note, vendors }: {
   )
 }
 
-const headers = ['No', 'Tgl Pinjam', 'Deskripsi Barang', 'Kuantitas', 'Satuan', 'Vendor', 'Keterangan', 'Tanda Terima', 'Status', 'Tanda Keluar', 'Keterangan Barang Kembali']
+const headers = ['No', 'Loan Date', 'Item Description', 'Quantity', 'Unit', 'Vendor', 'Remarks', 'In Mark', 'Status', 'Out Mark', 'Returned Item Remarks']
 
 export function BorrowPage() {
   const { hasPermission } = useAuth()
@@ -113,10 +113,10 @@ export function BorrowPage() {
   const vendors = (useVendorOptions().data ?? []).map((v) => v.name)
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       <PageHeader
-        title="Pinjam Luar (Borrow)"
- subtitle="Sesuai Excel Tracking Borrow & Lend sheet Borrow: barang pihak luar yang dipinjam SIG. Ketik langsung di tabel, tersimpan otomatis."
+        title="External Borrow (Borrow)"
+ subtitle="As in the Borrow & Lend Tracking Excel, Borrow sheet: outside items borrowed by SIG. Type directly in the table; it saves automatically."
         icon={<ArrowLeftRight className="size-5" />}
       />
       <InlineSheet<BorrowRow>
@@ -127,10 +127,10 @@ export function BorrowPage() {
         notesEntity={ENTITY}
         statuses={['BORROWED', 'RETURNED', 'PARTIAL', 'INCOMPLETE']}
         statusLabels={BORROW_STATUS_LABELS}
-        searchPlaceholder="Cari barang, vendor, RI, NPBG, keterangan…"
+        searchPlaceholder="Search item, vendor, RI, NPBG, remarks…"
         exportDataset="borrow"
         exportPermission="borrow.view"
-        hint={<>Status: Tanda Terima → <b>SEDANG DIPINJAM</b>, Tanda Keluar → <b>LUNAS</b>.</>}
+        hint={<>Status: In Mark → <b>SEDANG DIPINJAM</b>, Out Mark → <b>LUNAS</b>.</>}
         renderRow={(r, note) => <BorrowTableRow row={r} canEdit={canEdit} canDelete={canEdit} note={note} vendors={vendors} />}
         newRow={canCreate ? <BorrowTableRow key="new" row={null} canEdit canDelete={false} vendors={vendors} /> : null}
       />

@@ -50,9 +50,9 @@ describe('UsersPage', () => {
     renderWithProviders(<UsersPage />)
 
     expect(await screen.findByText('budi')).toBeInTheDocument()
-    expect(screen.getByText('Nonaktif', { selector: 'span' })).toBeInTheDocument() // badge, not the filter <option>
-    expect(screen.getByText('khusus Super Admin')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Tambah Pengguna/ })).toBeInTheDocument()
+    expect(screen.getByText('Inactive', { selector: 'span' })).toBeInTheDocument() // badge, not the filter <option>
+    expect(screen.getByText('Super Admin only')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Add User/ })).toBeInTheDocument()
   })
 
   it('super admin gets actions on every row', async () => {
@@ -60,8 +60,10 @@ describe('UsersPage', () => {
     renderWithProviders(<UsersPage />)
 
     expect(await screen.findByText('budi')).toBeInTheDocument()
-    expect(screen.queryByText('khusus Super Admin')).not.toBeInTheDocument()
-    expect(screen.getAllByTitle('Reset password')).toHaveLength(2)
+    expect(screen.queryByText('Super Admin only')).not.toBeInTheDocument()
+    // Ubah on each row; reset password, (de)activate and delete sit in its ⋯ menu
+    expect(screen.getAllByRole('button', { name: 'Edit' })).toHaveLength(2)
+    expect(screen.getAllByTitle(/^Aksi lain /)).toHaveLength(2)
   })
 
   it('generated passwords always satisfy the backend rule (>=8, letters and digits)', () => {
@@ -84,7 +86,7 @@ describe('RolesPage', () => {
     renderWithProviders(<RolesPage />)
 
     expect(await screen.findByText('Staf X')).toBeInTheDocument()
-    expect(screen.getByText('Semua')).toBeInTheDocument()
-    expect(screen.getAllByTitle('Hapus')).toHaveLength(1)
+    expect(screen.getByText('All')).toBeInTheDocument()
+    expect(screen.getAllByTitle('Delete')).toHaveLength(1)
   })
 })

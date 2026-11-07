@@ -138,7 +138,7 @@ export function ItemsPage() {
   useEffect(() => setPage(1), [kind])
 
   async function remove(item: Item) {
-    if (!(await confirmDialog(`Hapus produk ${item.code} — ${item.description}?`))) return
+    if (!(await confirmDialog(`Delete product ${item.code} — ${item.description}?`))) return
     setErr(null)
     del.mutate(item.id, { onError: (e) => setErr(apiErrorMessage(e)) })
   }
@@ -146,19 +146,19 @@ export function ItemsPage() {
   const columns: Column<Item>[] = [
     {
       key: 'code',
-      header: 'Kode Produk',
+      header: 'Product Code',
       // Menempel (sticky) di kiri — tetap terlihat tanpa harus geser tabel ke
       // kanan, supaya kode barang & ikon histori selalu kelihatan di antara
       // banyak kolom kategori/analisis di sebelah kanannya.
       className: 'sticky left-0 z-10 whitespace-nowrap border-r bg-muted',
       cell: (r) => (
         <div className="flex items-center gap-2">
-          <span className="font-mono text-xs">{r.code}</span>
+          <span className="text-[13px]">{r.code}</span>
           <button
             className="text-muted-foreground hover:text-primary"
             onClick={(e) => { e.stopPropagation(); setHistoryItem(r) }}
-            title="Lihat histori barang"
-            aria-label="Lihat histori barang"
+            title="View item history"
+            aria-label="View item history"
           >
             <Eye className="size-4" />
           </button>
@@ -167,62 +167,66 @@ export function ItemsPage() {
     },
     {
       key: 'kind',
-      header: 'Jenis',
+      header: 'Type',
       className: 'whitespace-nowrap',
-      cell: (r) => <Badge variant={r.product_kind === 'JASA' ? 'warning' : 'neutral'}>{r.product_kind === 'JASA' ? 'Jasa' : 'Barang'}</Badge>,
+      cell: (r) => <Badge variant={r.product_kind === 'JASA' ? 'warning' : 'neutral'}>{r.product_kind === 'JASA' ? 'Services' : 'Item'}</Badge>,
     },
-    { key: 'induk', header: 'Kategori Induk', className: 'whitespace-nowrap', cell: (r) => r.category_breakdown?.induk ?? '—' },
-    { key: 'anak1', header: 'Kategori Anak 1', className: 'whitespace-nowrap', cell: (r) => r.category_breakdown?.anak_1 ?? '—' },
-    { key: 'anak2', header: 'Kategori Anak 2', className: 'whitespace-nowrap', cell: (r) => r.category_breakdown?.anak_2 ?? '—' },
-    { key: 'anak3', header: 'Kategori Anak 3', className: 'whitespace-nowrap', cell: (r) => r.category_breakdown?.anak_3 ?? '—' },
-    { key: 'description', header: 'Deskripsi Produk', className: 'whitespace-nowrap', cell: (r) => r.description },
+    { key: 'induk', header: 'Main Category', className: 'whitespace-nowrap', cell: (r) => r.category_breakdown?.induk ?? '—' },
+    { key: 'anak1', header: 'Sub Category 1', className: 'whitespace-nowrap', cell: (r) => r.category_breakdown?.anak_1 ?? '—' },
+    { key: 'anak2', header: 'Sub Category 2', className: 'whitespace-nowrap', cell: (r) => r.category_breakdown?.anak_2 ?? '—' },
+    { key: 'anak3', header: 'Sub Category 3', className: 'whitespace-nowrap', cell: (r) => r.category_breakdown?.anak_3 ?? '—' },
+    { key: 'description', header: 'Product Description', className: 'whitespace-nowrap', cell: (r) => r.description },
     { key: 'unit', header: 'UOM', className: 'whitespace-nowrap', cell: (r) => r.unit?.code ?? '—' },
     {
       key: 'qty',
       header: 'QTY',
       className: 'whitespace-nowrap',
-      cell: (r) => (r.accurate_qty_onhand != null ? <span className="tabular-nums">{r.accurate_qty_onhand}</span> : '—'),
+      cell: (r) => {
+        const q = r.stock_qty ?? r.accurate_qty_onhand
+        return q != null ? <span className="tabular-nums">{q}</span> : '—'
+      },
     },
     {
       key: 'forecast',
       header: 'Forecast',
       className: 'whitespace-nowrap',
       cell: (r) => {
-        const onOrder = r.accurate_qty_onorder ?? 0
         if (r.forecast_qty == null) return '—'
+        const inc = r.incoming
+        const parts = [inc?.ppb ? `+${inc.ppb} Purchase Request` : '', inc?.po ? `+${inc.po} PO` : ''].filter(Boolean)
         return (
-          <span className="tabular-nums" title={onOrder > 0 ? `QTY ${r.accurate_qty_onhand ?? 0} + PO ${onOrder}` : undefined}>
+          <span className="tabular-nums" title={inc?.total ? `QTY ${r.stock_qty ?? 0} + ${parts.join(' ')} (already approved): ${inc.docs.join(', ')}` : undefined}>
             {r.forecast_qty}
-            {onOrder > 0 && <span className="ml-1 text-xs text-muted-foreground">(+{onOrder} PO)</span>}
+            {parts.length > 0 && <span className="ml-1 text-xs text-muted-foreground">({parts.join(', ')})</span>}
           </span>
         )
       },
     },
     {
       key: 'blueprint',
-      header: 'Perlu Blueprint?',
+      header: 'Needs Blueprint?',
       className: 'whitespace-nowrap',
-      cell: (r) => <Badge variant={r.needs_blueprint ? 'warning' : 'neutral'}>{r.needs_blueprint ? 'Ya' : 'Tidak'}</Badge>,
+      cell: (r) => <Badge variant={r.needs_blueprint ? 'warning' : 'neutral'}>{r.needs_blueprint ? 'Yes' : 'No'}</Badge>,
     },
-    { key: 'alias', header: 'Nama Alias', className: 'whitespace-nowrap', cell: (r) => r.alias_name ?? '—' },
-    { key: 'gudang', header: 'Letak Gudang', className: 'whitespace-nowrap', cell: (r) => r.default_warehouse?.code ?? '—' },
-    { key: 'rak', header: 'Letak Rak', className: 'whitespace-nowrap', cell: (r) => r.default_location?.code ?? '—' },
+    { key: 'alias', header: 'Alias', className: 'whitespace-nowrap', cell: (r) => r.alias_name ?? '—' },
+    { key: 'gudang', header: 'Warehouse Location', className: 'whitespace-nowrap', cell: (r) => r.default_warehouse?.code ?? '—' },
+    { key: 'rak', header: 'Rack Location', className: 'whitespace-nowrap', cell: (r) => r.default_location?.code ?? '—' },
     {
       key: 'blueprint_img',
       header: 'Blueprint IMG',
       className: 'whitespace-nowrap',
-      cell: (r) => (r.blueprint_img_path ? <span className="font-mono text-xs">{r.blueprint_img_path}</span> : '—'),
+      cell: (r) => (r.blueprint_img_path ? <span className="text-[13px]">{r.blueprint_img_path}</span> : '—'),
     },
     {
       key: 'blueprint_pdf',
       header: 'Blueprint Detail PDF',
       className: 'whitespace-nowrap',
-      cell: (r) => (r.blueprint_pdf_path ? <span className="font-mono text-xs">{r.blueprint_pdf_path}</span> : '—'),
+      cell: (r) => (r.blueprint_pdf_path ? <span className="text-[13px]">{r.blueprint_pdf_path}</span> : '—'),
     },
     { key: 'lt', header: 'Lead Time', className: 'whitespace-nowrap', cell: (r) => (r.lead_time_days != null ? `${r.lead_time_days} hr` : '—') },
     {
       key: 'available',
-      header: 'Tersedia',
+      header: 'Available',
       className: 'whitespace-nowrap',
       cell: (r) =>
         r.analysis
@@ -234,7 +238,7 @@ export function ItemsPage() {
     { key: 'ss', header: 'Safety Stock', className: 'whitespace-nowrap', cell: (r) => r.analysis?.safety_stock ?? r.safety_stock ?? '—' },
     { key: 'min_pr', header: 'MIN PR', className: 'whitespace-nowrap', cell: (r) => r.min_pr ?? '—' },
     { key: 'status', header: 'Status', className: 'whitespace-nowrap', cell: (r) => (r.analysis ? <StatusBadge status={r.analysis.status} /> : '—') },
-    { key: 'priority', header: 'Prioritas', className: 'whitespace-nowrap', cell: (r) => (r.analysis ? <PriorityBadge level={r.analysis.priority_level} /> : '—') },
+    { key: 'priority', header: 'Priority', className: 'whitespace-nowrap', cell: (r) => (r.analysis ? <PriorityBadge level={r.analysis.priority_level} /> : '—') },
     ...(canEdit || canDelete
       ? [
           {
@@ -243,12 +247,12 @@ export function ItemsPage() {
             cell: (r: Item) => (
               <div className="flex items-center gap-2">
                 {canEdit && (
-                  <button className="text-muted-foreground hover:text-primary" onClick={() => openEdit(r)} aria-label="Ubah">
+                  <button className="text-muted-foreground hover:text-primary" onClick={() => openEdit(r)} aria-label="Edit">
                     <Pencil className="size-4" />
                   </button>
                 )}
                 {canDelete && (
-                  <button className="text-muted-foreground hover:text-destructive" onClick={() => remove(r)} aria-label="Hapus">
+                  <button className="text-muted-foreground hover:text-destructive" onClick={() => remove(r)} aria-label="Delete">
                     <Trash2 className="size-4" />
                   </button>
                 )}
@@ -285,10 +289,10 @@ export function ItemsPage() {
   const visibleColumns = columns.filter((c) => ALWAYS_VISIBLE.includes(c.key) || !hiddenCols.has(c.key))
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       <PageHeader
-        title={kind === 'JASA' ? 'Master Data · Jasa' : kind === 'BARANG' ? 'Master Data · Barang' : 'Master Data · Barang & Jasa'}
-        subtitle={`${data ? `${data.meta.total.toLocaleString('id-ID')} produk` : 'Memuat…'} — barang (punya stok) dan jasa, beserta kategorinya`}
+        title={kind === 'JASA' ? 'Master Data · Services' : kind === 'BARANG' ? 'Master Data · Items' : 'Master Data · Items & Services'}
+        subtitle={`${data ? `${data.meta.total.toLocaleString('id-ID')} product` : 'Loading…'} — items (with stock) and services, with their categories`}
         icon={<Package className="size-5" />}
         actions={
           <div className="flex flex-wrap items-center gap-2">
@@ -296,7 +300,7 @@ export function ItemsPage() {
             {hasPermission('item.create') && (
               <Button size="sm" onClick={openCreate}>
                 <Plus className="size-4" />
-                Tambah Produk
+                Add Product
               </Button>
             )}
           </div>
@@ -304,8 +308,8 @@ export function ItemsPage() {
       />
 
       {/* Semua / Barang / Jasa */}
-      <div className="inline-flex rounded-lg border bg-card p-0.5" role="tablist" aria-label="Jenis produk">
-        {([['', 'Semua'], ['BARANG', 'Barang'], ['JASA', 'Jasa']] as const).map(([k, label]) => (
+      <div className="inline-flex rounded-lg border bg-card p-0.5" role="tablist" aria-label="Product type">
+        {([['', 'All'], ['BARANG', 'Item'], ['JASA', 'Services']] as const).map(([k, label]) => (
           <button key={k || 'all'} type="button" role="tab" aria-selected={kind === k} onClick={() => setKind(k)}
             className={kind === k ? 'rounded-md bg-primary/10 px-4 py-1.5 text-sm font-medium text-primary' : 'rounded-md px-4 py-1.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground'}>
             {label}
@@ -318,7 +322,7 @@ export function ItemsPage() {
         <div className="relative">
           <Button size="sm" variant="outline" onClick={() => setColMenuOpen((v) => !v)}>
             <Columns3 className="size-4" />
-            Kolom
+            Columns
           </Button>
           {colMenuOpen && (
             <>
@@ -340,7 +344,7 @@ export function ItemsPage() {
         </div>
       }>
         <Input
-          placeholder="Cari kode / deskripsi…"
+          placeholder="Search code / description…"
           className="max-w-xs"
           value={search}
           onChange={(e) => {
@@ -356,7 +360,7 @@ export function ItemsPage() {
             setPage(1)
           }}
         >
-          <option value="">Semua Kategori Induk</option>
+          <option value="">All Main Categories</option>
           {indukOptions.map((c) => (
             <option key={c} value={c}>
               {c}
@@ -368,7 +372,7 @@ export function ItemsPage() {
           value={anak1}
           onChange={(e) => pickAnak1(e.target.value)}
         >
-          <option value="">Semua Kategori Anak 1</option>
+          <option value="">All Sub Category 1</option>
           {anak1Options.map((c) => (
             <option key={c} value={c}>
               {c}
@@ -381,7 +385,7 @@ export function ItemsPage() {
           disabled={!anak1 || anak2Options.length === 0}
           onChange={(e) => pickAnak2(e.target.value)}
         >
-          <option value="">Semua Kategori Anak 2</option>
+          <option value="">All Sub Category 2</option>
           {anak2Options.map((c) => (
             <option key={c} value={c}>
               {c}
@@ -397,7 +401,7 @@ export function ItemsPage() {
             setPage(1)
           }}
         >
-          <option value="">Semua Kategori Anak 3</option>
+          <option value="">All Sub Category 3</option>
           {anak3Options.map((c) => (
             <option key={c} value={c}>
               {c}
@@ -412,7 +416,7 @@ export function ItemsPage() {
             setPage(1)
           }}
         >
-          <option value="">Semua UOM</option>
+          <option value="">All UOM</option>
           {units?.map((u) => (
             <option key={u.id} value={u.id}>
               {u.code}
@@ -427,7 +431,7 @@ export function ItemsPage() {
             setPage(1)
           }}
         >
-          <option value="">Semua Gudang</option>
+          <option value="">All Warehouses</option>
           {warehouses?.map((w) => (
             <option key={w.id} value={w.id}>
               {w.name}
@@ -442,14 +446,14 @@ export function ItemsPage() {
             setPage(1)
           }}
         >
-          <option value="">Semua status</option>
-          <option value="AMAN">Aman</option>
-          <option value="TIDAK_AMAN">Tidak Aman</option>
-          <option value="BEP">Stok Habis (BEP)</option>
+          <option value="">All statuses</option>
+          <option value="AMAN">Safe</option>
+          <option value="TIDAK_AMAN">Unsafe</option>
+          <option value="BEP">Out of Stock (BEP)</option>
         </select>
       </FilterBar>
 
-      {isError && <p className="text-sm text-destructive">Gagal memuat data.</p>}
+      {isError && <p className="text-sm text-destructive">Failed to load data.</p>}
       {err && <p className="text-sm text-destructive">{err}</p>}
 
       <DataTable

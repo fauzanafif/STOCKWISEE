@@ -26,7 +26,7 @@ export function ActionMenu({ actions, className }: { actions: MenuAction[]; clas
 
   return (
     <div ref={box} className={cn('relative', className)}>
-      <button type="button" onClick={() => setOpen((o) => !o)} aria-label="Menu lainnya"
+      <button type="button" onClick={() => setOpen((o) => !o)} aria-label="More menu"
         className="inline-flex size-10 items-center justify-center rounded-full border bg-card text-muted-foreground active:bg-muted">
         <MoreVertical className="size-5" />
       </button>

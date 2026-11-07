@@ -19,7 +19,7 @@ class StockwiseNet
         $net = [];
         $in = DB::table('ri')->join('items', 'items.code', '=', 'ri.kode_barang')
             ->whereNull('ri.accurate_apinvoice_id')->whereNotNull('ri.created_by')->where('ri.created_at', '>=', $since)
-            ->groupBy('items.id')->selectRaw('items.id, SUM(ri.kuantitas) q')->pluck('q', 'id');
+            ->groupBy('items.id')->selectRaw('items.id, SUM(ri.kuantitas * COALESCE(ri.unit_ratio, 1)) q')->pluck('q', 'id');
         foreach ($in as $id => $q) {
             $net[(int) $id] = (float) $q;
         }

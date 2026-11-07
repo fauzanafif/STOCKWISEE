@@ -14,22 +14,22 @@ import { StatusBreakdown, type StateTone, type StatusRow } from './DashboardPart
 
 /** PPB per-line status (Excel "1. PPB - RI"), in workflow order. */
 const PPB_ROWS: { key: string; label: string; hint: string; tone: StateTone }[] = [
-  { key: 'REQUESTED', label: 'Requested', hint: 'Diminta, belum ada barang diterima', tone: 'running' },
-  { key: 'SHORTAGE', label: 'Shortage', hint: 'Baru diterima sebagian, sisanya menyusul', tone: 'partial' },
-  { key: 'COMPLETED', label: 'Completed', hint: 'Barang sudah diterima lengkap', tone: 'done' },
-  { key: 'CLOSE', label: 'Close', hint: 'Ditutup di Accurate, sisanya tidak dikirim', tone: 'closed' },
-  { key: 'AMEND', label: 'Amend', hint: 'Pembelian berubah / tidak jadi dibeli', tone: 'closed' },
-  { key: 'ERROR', label: 'Perlu dicek', hint: 'Status tidak sesuai data Accurate', tone: 'attention' },
+  { key: 'REQUESTED', label: 'Requested', hint: 'Requested, no items received yet', tone: 'running' },
+  { key: 'SHORTAGE', label: 'Shortage', hint: 'Partly received, the rest to follow', tone: 'partial' },
+  { key: 'COMPLETED', label: 'Completed', hint: 'Items fully received', tone: 'done' },
+  { key: 'CLOSE', label: 'Close', hint: 'Closed in Accurate, the rest not delivered', tone: 'closed' },
+  { key: 'AMEND', label: 'Amend', hint: 'Purchase changed / cancelled', tone: 'closed' },
+  { key: 'ERROR', label: 'Needs checking', hint: 'Status does not match Accurate data', tone: 'attention' },
 ]
 
 /** Purchase Order status (Accurate POs), in workflow order. */
 const PO_ROWS: { key: string; hint: string; tone: StateTone }[] = [
-  { key: 'SENT', hint: 'Sudah ke vendor, belum ada barang diterima', tone: 'running' },
-  { key: 'DIBELI', hint: 'PO STOCKWISE dengan bukti pembelian, menunggu RI', tone: 'running' },
-  { key: 'PARTIAL_RECEIVED', hint: 'Sebagian barang sudah diterima', tone: 'partial' },
-  { key: 'RECEIVED', hint: 'Semua barang sudah diterima', tone: 'done' },
-  { key: 'CLOSED', hint: 'Ditutup di Accurate', tone: 'closed' },
-  { key: 'CANCELLED', hint: 'Dibatalkan', tone: 'closed' },
+  { key: 'SENT', hint: 'Sent to vendor, no items received yet', tone: 'running' },
+  { key: 'DIBELI', hint: 'STOCKWISE PO with purchase proof, waiting for Receipt', tone: 'running' },
+  { key: 'PARTIAL_RECEIVED', hint: 'Some items received', tone: 'partial' },
+  { key: 'RECEIVED', hint: 'All items received', tone: 'done' },
+  { key: 'CLOSED', hint: 'Closed in Accurate', tone: 'closed' },
+  { key: 'CANCELLED', hint: 'Cancelled', tone: 'closed' },
 ]
 
 /** Known statuses in their fixed order; anything unexpected is still shown (gray), never dropped. */
@@ -53,17 +53,17 @@ export function ProcurementDashboard({ poStatus }: { poStatus?: { name: string; 
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <ChartCard title="Status Baris PPB" subtitle="Setiap baris barang PPB di Accurate, urut sesuai alur pengadaan"
+        <ChartCard title="Purchase Request Row Status" subtitle="Each Purchase Request item row in Accurate, in procurement order"
           empty={!inv.isLoading && ppbRows.every((r) => r.value === 0)}>
-          {inv.isLoading ? <p className="text-sm text-muted-foreground">Memuat…</p> : <StatusBreakdown rows={ppbRows} unit="baris PPB" />}
+          {inv.isLoading ? <p className="text-sm text-muted-foreground">Loading…</p> : <StatusBreakdown rows={ppbRows} unit="Purchase Request rows" />}
         </ChartCard>
-        <ChartCard title="Status Purchase Order" subtitle="Dokumen PO dari Accurate, urut sesuai alur pengadaan"
+        <ChartCard title="Status Purchase Order" subtitle="PO documents from Accurate, in procurement order"
           empty={poRows.every((r) => r.value === 0)}>
           <StatusBreakdown rows={poRows} unit="dokumen PO" />
         </ChartCard>
       </div>
 
-      {ops.isLoading && <p className="text-sm text-muted-foreground">Memuat alur pembelian…</p>}
+      {ops.isLoading && <p className="text-sm text-muted-foreground">Loading purchasing flow…</p>}
       {ops.error && <p className="text-sm text-red-600">{apiErrorMessage(ops.error)}</p>}
       {ops.data && (
         <>

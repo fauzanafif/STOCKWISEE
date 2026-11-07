@@ -289,9 +289,9 @@ class ItemRequestFulfillmentService
      *                           quantity drops by it (else it stays owed and is given again when stock is there)
      * @param  array<int, string>  $reasons  why less than the approved NPBG is handed over (required then: the stock was there)
      */
-    public function handover(ItemRequest $request, ItemRequestFulfillment $f, User $user, string $photo, string $signature, string $receivedBy, ?string $note, array $handed = [], array $drop = [], array $reasons = []): ItemRequest
+    public function handover(ItemRequest $request, ItemRequestFulfillment $f, User $user, string $photo, string $signature, string $receivedBy, ?string $note, array $handed = [], array $drop = [], array $reasons = [], ?string $proxyCode = null): ItemRequest
     {
-        DB::transaction(function () use (&$request, $f, $user, $photo, $signature, $receivedBy, $note, $handed, $drop, $reasons) {
+        DB::transaction(function () use (&$request, $f, $user, $photo, $signature, $receivedBy, $note, $handed, $drop, $reasons, $proxyCode) {
             $request = ItemRequest::lockForUpdate()->findOrFail($request->id);
             $f = ItemRequestFulfillment::lockForUpdate()->with('lines')->findOrFail($f->id);
             if ($f->item_request_id !== $request->id || ! in_array($f->status, self::OPEN, true)) {
@@ -302,13 +302,18 @@ class ItemRequestFulfillmentService
             if ($total <= 0) {
                 throw ValidationException::withMessages(['handed' => 'Isi jumlah barang yang diserahkan.']);
             }
-            // the NPBG was made from stock that is there: handing over less needs a reason
+            // Gudang hands over the whole NPBG it prepared, never part of it
             foreach ($f->lines as $fl) {
                 $got = array_key_exists($fl->id, $handed) ? (float) $handed[$fl->id] : (float) $fl->qty;
-                if ($got + 0.0001 < (float) $fl->qty && trim((string) ($reasons[$fl->id] ?? '')) === '') {
+                if ($got + 0.0001 < (float) $fl->qty) {
                     $name = ItemRequestLine::whereKey($fl->item_request_line_id)->value('deskripsi_barang') ?? 'barang';
-                    throw ValidationException::withMessages(["reasons.{$fl->id}" => "Isi alasan jumlah {$name} dikurangi dari NPBG yang disetujui."]);
+                    throw ValidationException::withMessages(["handed.{$fl->id}" => "{$name} diserahkan utuh sesuai NPBG yang disiapkan, tidak bisa sebagian."]);
                 }
+            }
+            // picked up by a representative: the code the requester gave them, scanned here (one use)
+            $proxy = filled($proxyCode) ? app(ItemRequestProxyService::class)->verify($request, (string) $proxyCode) : null;
+            if ($proxy) {
+                $receivedBy = "{$proxy->name} (wakil {$request->requester_name})";
             }
             $this->photos->putDataUrl(self::PHOTO_ENTITY, $f->id, 'handover', $photo, 'bukti-serah-terima', $user->id);
             $this->photos->putDataUrl(self::PHOTO_ENTITY, $f->id, 'signature', $signature, 'tanda-tangan', $user->id);
@@ -347,7 +352,8 @@ class ItemRequestFulfillmentService
                 'received_by_name' => mb_substr(trim($receivedBy), 0, 150), 'note' => filled($note) ? mb_substr(trim($note), 0, 255) : null]);
             // the request keeps its latest serah terima too (older screens, Cek Permintaan)
             $request->update(['handed_over_at' => now(), 'handed_over_by' => $user->id, 'received_by_name' => $f->received_by_name, 'handover_note' => $f->note]);
-            $this->approvals->log($request, 'SERAH_TERIMA', 'HANDOVER', $user, "NPBG {$f->no_npbg} (#{$f->seq}) diserahkan ke {$f->received_by_name}: ".implode('; ', $parts).($f->note ? ". Catatan: {$f->note}" : ''));
+            $proxy?->update(['used_at' => now(), 'used_by' => $user->id, 'item_request_fulfillment_id' => $f->id]);
+            $this->approvals->log($request, 'SERAH_TERIMA', 'HANDOVER', $user, "NPBG {$f->no_npbg} (#{$f->seq}) diserahkan ke {$f->received_by_name}".($proxy ? ' · kode wakil terverifikasi' : '').': '.implode('; ', $parts).($f->note ? ". Catatan: {$f->note}" : ''));
             $this->recompute($request);
         });
         NotificationDispatcher::toUser($request->requester_id, 'request', 'success',

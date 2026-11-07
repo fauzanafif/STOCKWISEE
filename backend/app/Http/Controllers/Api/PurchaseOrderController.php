@@ -126,7 +126,7 @@ class PurchaseOrderController extends Controller
     {
         $purchaseOrder->load(
             'vendor', 'items.vendor:id,name', 'items.item:id,code', 'items.unit:id,code',
-            'items.accuratePpb:id,no_ppb', 'items.approvedPpb:id,no_ppb', 'items.riLines:id,accurate_po_item_id,no_ri,kuantitas,tgl_ri',
+            'items.accuratePpb:id,no_ppb', 'items.approvedPpb:id,no_ppb', 'items.riLines:id,accurate_po_item_id,no_ri,kuantitas,tgl_ri', 'items.quotes.vendor:id,name',
         );
 
         $user = request()->user();
@@ -153,7 +153,11 @@ class PurchaseOrderController extends Controller
                 'id' => $l->id, 'item_id' => $l->item_id, 'item_code' => $l->item?->code, 'description' => $l->description_raw,
                 'vendor_id' => $l->vendor_id ?? $purchaseOrder->vendor_id, 'vendor_name' => $l->vendor?->name ?? $purchaseOrder->vendor?->name,
                 'qty' => $l->qty, 'unit' => $l->unit?->code, 'unit_price' => $l->unit_price,
+                'unit_ratio' => $l->unit_ratio === null ? null : (float) $l->unit_ratio, 'base_unit' => $l->base_unit,
                 'line_total' => $l->line_total, 'qty_received' => $l->qty_received, 'line_status' => $l->line_status,
+                // STOCKWISE PO only (Accurate's has no pick); a "Menunggu PO" entry has no vendor yet
+                'director_pick' => $purchaseOrder->accurate_po_id === null && $purchaseOrder->status !== \App\Services\PpbApprovalService::WAITING
+                    ? \App\Services\PoDraftService::directorPick($l, $purchaseOrder->vendor_id) : null,
                 // Accurate's own PODET.REQID/REQSEQ chain — which PPB (REQUISITIONDET) this line was raised from, and which RI lines received against it.
                 'source_ppb' => ($src = $l->accuratePpb ?? $l->approvedPpb) ? ['id' => $src->id, 'no_ppb' => $src->no_ppb] : null,
                 'received_via' => $l->riLines->map(fn ($r) => ['id' => $r->id, 'no_ri' => $r->no_ri, 'kuantitas' => $r->kuantitas, 'tgl_ri' => $r->tgl_ri?->toDateString()]),
@@ -204,12 +208,14 @@ class PurchaseOrderController extends Controller
             'pageHeightMm' => 297,
             'offsetXMm' => (float) $request->input('offset_x', 0),
             'offsetYMm' => (float) $request->input('offset_y', 0),
-            'autoPageSize' => $request->string('page_size', 'exact')->value() === 'auto',
+            'autoPageSize' => $request->string('page_size', 'a4')->value() === 'auto',
+            'fitA4' => $request->string('page_size', 'a4')->value() === 'a4',
+            'full' => $request->string('mode', 'full')->value() !== 'data',
             'logoBox' => ['x' => 6.6, 'y' => 2.4, 'w' => 16.9, 'h' => 17.2],
             'texts' => [
                 ['x' => 25.9, 'y' => 2.9, 'w' => 90.5, 'text' => 'PT SURYA INTI GAS', 'size' => 9, 'bold' => true, 'static' => true],
                 ['x' => 120.7, 'y' => 2.6, 'w' => 73.6, 'h' => 6.3, 'text' => 'PURCHASE ORDER', 'size' => 10, 'bold' => true, 'align' => 'center', 'static' => true],
-                ['x' => 6.3, 'y' => 19.3, 'w' => 10.6, 'text' => 'Supplier', 'bold' => true, 'static' => true],
+                ['x' => 6.3, 'y' => 19.3, 'w' => 19, 'text' => 'Supplier', 'bold' => true, 'static' => true],
                 ['x' => 25.9, 'y' => 19.3, 'w' => 91.0, 'text' => $vendors->count() > 1 ? $vendors->pluck('name')->implode(', ') : $purchaseOrder->vendor?->name],
                 ['x' => 25.9, 'y' => 23.3, 'w' => 91.0, 'h' => 8.2, 'text' => $vendors->count() > 1 ? null : $purchaseOrder->vendor?->address],
                 ['x' => 124.4, 'y' => 10.8, 'w' => 26.5, 'text' => 'PO Date', 'bold' => true, 'static' => true],

@@ -30,10 +30,10 @@ describe('LoginPage', () => {
     const field = screen.getByLabelText('Password')
     await userEvent.type(field, 'rahasia')
     expect(field).toHaveAttribute('type', 'password')
-    await userEvent.click(screen.getByRole('button', { name: 'Tampilkan password' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Show password' }))
     expect(field).toHaveAttribute('type', 'text')
     expect(field).toHaveValue('rahasia')
-    await userEvent.click(screen.getByRole('button', { name: 'Sembunyikan password' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Hide password' }))
     expect(field).toHaveAttribute('type', 'password')
   })
 
@@ -46,7 +46,7 @@ describe('LoginPage', () => {
 
     await userEvent.type(screen.getByLabelText(/username/i), 'admingudang')
     await userEvent.type(screen.getByLabelText('Password'), 'password')
-    await userEvent.click(screen.getByRole('button', { name: 'Masuk' }))
+    await userEvent.click(screen.getByRole('button', { name: 'In' }))
 
     await waitFor(() => expect(post).toHaveBeenCalledWith('/api/login', {
       username: 'admingudang',
@@ -66,7 +66,7 @@ describe('LoginPage', () => {
 
     await userEvent.type(screen.getByLabelText(/username/i), 'x')
     await userEvent.type(screen.getByLabelText('Password'), 'y')
-    await userEvent.click(screen.getByRole('button', { name: 'Masuk' }))
+    await userEvent.click(screen.getByRole('button', { name: 'In' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Username atau password salah.')
     expect(localStorage.getItem('stockwise_token')).toBeNull()

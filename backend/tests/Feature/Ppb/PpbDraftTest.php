@@ -53,6 +53,12 @@ class PpbDraftTest extends TestCase
             $rows->map(fn ($p) => [$p->kode_barang, (float) $p->kuantitas, $p->divisi, $p->peminta])->all());
         $this->assertSame('Restock dari '.$draft['number'], $rows[0]->keterangan);
 
+        // the PPB shows where each line came from: a restock draft = Safety stock, linked to its draft
+        $items = $this->getJson("/api/ppb/{$rows[0]->id}")->assertOk()->json('data.document_items');
+        $this->assertSame(['SAFETY_STOCK', 'SAFETY_STOCK'], array_column(array_column($items, 'reference'), 'type'));
+        $this->assertSame("/ppb/drafts/{$draft['id']}", $items[0]['reference']['to']);
+        $this->assertStringStartsWith($draft['number'], $items[0]['reference']['hint']);
+
         // closed for edits
         $this->putJson("/api/ppb-drafts/{$draft['id']}", ['divisi' => 'X'])->assertStatus(422);
         $this->getJson('/api/ppb-drafts')->assertOk()->assertJsonPath('meta.open', 0);

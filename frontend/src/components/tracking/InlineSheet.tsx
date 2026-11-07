@@ -12,7 +12,7 @@ import { useInlineRowEditor } from './useInlineRowEditor'
 import { FilterBar } from '@/components/FilterBar'
 
 /** Header cell of every tracking sheet — the same look as DataTable's. */
-const TH = 'whitespace-nowrap border border-border/70 px-2 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground'
+const TH = 'whitespace-nowrap border border-border/70 px-2 py-2 text-xs font-semibold text-muted-foreground'
 
 /**
  * The STPP way of working (pages/tracking/StppPage.tsx), shared by every tracking
@@ -93,7 +93,7 @@ export function Td({ children, className, title }: { children?: ReactNode; class
 }
 
 /** Small icon buttons of the "Aksi" column. */
-export function RowActions({ onAdd, addTitle, onDelete, deleteTitle = 'Hapus baris', children }: {
+export function RowActions({ onAdd, addTitle, onDelete, deleteTitle = 'Delete row', children }: {
   onAdd?: () => void; addTitle?: string; onDelete?: () => void; deleteTitle?: string; children?: ReactNode
 }) {
   return (
@@ -133,8 +133,8 @@ export function SheetTabs<K extends string>({ tabs, value, onChange }: { tabs: r
  * sticky header, rows appended while scrolling, and the new-entry row last.
  */
 export function InlineSheet<T>({
-  base, params, headers, canEdit, rowKey, renderRow, newRow, statuses, statusLabels, searchPlaceholder = 'Cari…',
-  exportDataset, exportPermission, hint, notesEntity, extraFilter, toolbarExtra,
+  base, params, headers, canEdit, rowKey, renderRow, newRow, statuses, statusLabels, searchPlaceholder = 'Search…',
+  exportDataset, exportPermission, notesEntity, extraFilter, toolbarExtra,
 }: {
   /** API list endpoint (/api/{base}) — also the react-query key. */
   base: string
@@ -176,7 +176,7 @@ export function InlineSheet<T>({
         <Input placeholder={searchPlaceholder} className="max-w-xs" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1) }} />
         {statuses && statuses.length > 0 && (
           <Select className="max-w-[12rem]" value={status} onChange={(e) => { setStatus(e.target.value); setPage(1) }}>
-            <option value="">Semua status</option>
+            <option value="">All statuses</option>
             {statuses.map((s) => <option key={s} value={s}>{statusLabels?.[s] ?? s}</option>)}
           </Select>
         )}
@@ -184,26 +184,21 @@ export function InlineSheet<T>({
         {exportDataset && <ExportBar dataset={exportDataset} filters={filters} filenameBase={exportDataset} viewPermission={exportPermission ?? `${base}.view`} />}
         {toolbarExtra}
       </FilterBar>
-      {canEdit && (
-        <p className="text-xs text-muted-foreground">
- Ketik langsung di tabel tersimpan otomatis. Baris biru = data baru.{hint ? <> {hint}</> : null}
-        </p>
-      )}
       <div className="max-h-[70vh] overflow-auto rounded-lg border bg-card">
         <table className="w-full table-auto border-collapse text-sm">
           <thead className="sticky top-0 z-10 bg-muted">
             <tr className="text-left">
               {headers.map((h, i) => <th key={i} className={TH}>{h}</th>)}
-              {notesEntity && <th className={TH}>Catatan</th>}
-              {canEdit && <th className={TH}>Aksi</th>}
+              {notesEntity && <th className={TH}>Notes</th>}
+              {canEdit && <th className={TH}>Actions</th>}
             </tr>
           </thead>
           <tbody>
             {isLoading && rows.length === 0 && (
-              <tr><td colSpan={cols} className="border border-border/70 px-2 py-10 text-center text-muted-foreground">Memuat…</td></tr>
+              <tr><td colSpan={cols} className="border border-border/70 px-2 py-10 text-center text-muted-foreground">Loading…</td></tr>
             )}
             {!isLoading && rows.length === 0 && !newRow && (
-              <tr><td colSpan={cols} className="border border-border/70 px-2 py-10 text-center text-muted-foreground">Tidak ada data.</td></tr>
+              <tr><td colSpan={cols} className="border border-border/70 px-2 py-10 text-center text-muted-foreground">No data.</td></tr>
             )}
             {rows.map((r) => <RowFragment key={rowKey(r)}>{renderRow(r, noteMap?.[rowKey(r)])}</RowFragment>)}
             {newRow}

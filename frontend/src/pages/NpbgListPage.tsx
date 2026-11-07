@@ -1,11 +1,11 @@
 import { useEffect, useRef } from 'react'
+import { DateRangeFilter } from '@/components/DateRangeFilter'
 import { Link, useSearchParams } from 'react-router-dom'
 import { FileStack } from 'lucide-react'
 import { lokasiText, useNpbgKlasifikasi, useNpbgList } from '@/features/npbg/api'
 import { Select } from '@/components/ui/select'
 import { ExportBar } from '@/components/export/ExportBar'
 import { PageHeader } from '@/components/PageHeader'
-import { AccurateDataNote } from '@/components/AccurateDataNote'
 import { DataTable, type Column } from '@/components/DataTable'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
@@ -17,40 +17,40 @@ import { FilterBar } from '@/components/FilterBar'
 import { ColumnMenu, useHiddenColumns, visibleColumns } from '@/components/ColumnVisibility'
 
 const VERIFICATION_LABEL: Record<string, string> = {
-  DIAJUKAN: 'Diajukan', DIPROSES: 'Diproses', ALTERNATIF_DITAWARKAN: 'Alternatif Ditawarkan',
-  MENUNGGU_RESPON: 'Menunggu Respon', PERLU_VERIFIKASI_BOS: 'Perlu Verifikasi BOS',
-  DISETUJUI: 'Disetujui', DITOLAK: 'Ditolak', SELESAI: 'Selesai',
+  DIAJUKAN: 'Submitted', DIPROSES: 'In process', ALTERNATIF_DITAWARKAN: 'Alternative Offered',
+  MENUNGGU_RESPON: 'Waiting for Response', PERLU_VERIFIKASI_BOS: 'Needs BOSS Verification',
+  DISETUJUI: 'Approved', DITOLAK: 'Rejected', SELESAI: 'Done',
 }
 
 function fmtDate(v: string | null) {
-  return v ? new Date(v).toLocaleDateString('id-ID') : '—'
+  return v ? new Date(v).toLocaleDateString('en-GB') : '—'
 }
 
 const columns: Column<Npbg>[] = [
   {
     key: 'no_npbg',
-    header: 'No NPBG',
+    header: 'Delivery Order No',
     cell: (r) => (
       <span className="inline-flex items-center gap-1.5">
-        <Link to={`/npbg/${r.id}`} className="font-mono text-xs text-primary hover:underline">
+        <Link to={`/npbg/${r.id}`} className="text-[13px] text-primary hover:underline">
           {r.no_npbg ?? '—'}
         </Link>
         {r.is_manual && <Badge variant="neutral">Manual</Badge>}
       </span>
     ),
   },
-  { key: 'tgl', header: 'Tgl NPBG', cell: (r) => <span className="whitespace-nowrap">{fmtDate(r.tgl_npbg)}</span> },
+  { key: 'tgl', header: 'Delivery Order Date', cell: (r) => <span className="whitespace-nowrap">{fmtDate(r.tgl_npbg)}</span> },
   {
     key: 'tipe',
-    header: 'Tipe NPBG',
+    header: 'Delivery Order Type',
     cell: (r) => r.tipe_npbg
       ? <Badge variant={r.tipe_npbg === 'Penjualan' ? 'default' : 'neutral'} className="whitespace-nowrap">{r.tipe_npbg}</Badge>
       : <span className="text-muted-foreground">—</span>,
   },
-  { key: 'kode', header: 'Kode Barang', cell: (r) => <span className="whitespace-nowrap font-mono text-xs">{r.kode_barang ?? '—'}</span> },
+  { key: 'kode', header: 'Item Code', cell: (r) => <span className="whitespace-nowrap text-[13px]">{r.kode_barang ?? '—'}</span> },
   {
     key: 'barang',
-    header: 'Deskripsi Barang',
+    header: 'Item Description',
     className: 'max-w-[260px]',
     cell: (r) => (
       <span className="block truncate" title={r.deskripsi_barang ?? undefined}>
@@ -60,17 +60,17 @@ const columns: Column<Npbg>[] = [
   },
   {
     key: 'qty',
-    header: 'Kuantitas',
+    header: 'Quantity',
     cell: (r) => <span className="whitespace-nowrap">{r.kuantitas != null ? `${r.kuantitas} ${r.satuan ?? ''}` : '—'}</span>,
   },
   {
     key: 'kembali_bekas',
-    header: 'Kembali Bekas',
+    header: 'Return Used',
     cell: (r) => <span className="whitespace-nowrap"><KembaliBekasLabel npbg={r} /></span>,
   },
   {
     key: 'keterangan',
-    header: 'Keterangan',
+    header: 'Remarks',
     className: 'max-w-[220px]',
     cell: (r) => (
       <span className="block truncate" title={r.keterangan ?? undefined}>
@@ -78,12 +78,12 @@ const columns: Column<Npbg>[] = [
       </span>
     ),
   },
-    { key: 'peminta', header: 'Peminta', cell: (r) => <span className="whitespace-nowrap">{r.peminta ?? '—'}</span> },
-    { key: 'divisi', header: 'Divisi', cell: (r) => <span className="whitespace-nowrap">{r.divisi ?? '—'}</span> },
-    { key: 'lokasi', header: 'Lokasi', cell: (r) => <span className="whitespace-nowrap">{lokasiText(r) ?? '—'}</span> },
+    { key: 'peminta', header: 'Requester', cell: (r) => <span className="whitespace-nowrap">{r.peminta ?? '—'}</span> },
+    { key: 'divisi', header: 'Division', cell: (r) => <span className="whitespace-nowrap">{r.divisi ?? '—'}</span> },
+    { key: 'lokasi', header: 'Location', cell: (r) => <span className="whitespace-nowrap">{lokasiText(r) ?? '—'}</span> },
   {
     key: 'pelanggan',
-    header: 'Pelanggan',
+    header: 'Customer',
     className: 'max-w-[200px]',
     cell: (r) => (
       <span className="block truncate" title={r.pelanggan ?? undefined}>
@@ -91,10 +91,10 @@ const columns: Column<Npbg>[] = [
       </span>
     ),
   },
-  { key: 'klasifikasi', header: 'Klasifikasi', cell: (r) => <span className="whitespace-nowrap">{r.klasifikasi ?? '—'}</span> },
+  { key: 'klasifikasi', header: 'Classification', cell: (r) => <span className="whitespace-nowrap">{r.klasifikasi ?? '—'}</span> },
   {
     key: 'klarifikasi',
-    header: 'Klarifikasi',
+    header: 'Clarification',
     cell: (r) =>
       r.latest_verification_status ? (
         <Badge variant={r.latest_verification_status === 'SELESAI' ? 'success' : 'warning'}>
@@ -151,8 +151,8 @@ export function NpbgListPage() {
   return (
     <div className="space-y-4">
       <PageHeader
-        title="NPBG"
-        subtitle="Nota pengeluaran barang dari gudang (barang keluar)"
+        title="Delivery Order"
+        subtitle="Warehouse goods issue note (items out)"
         icon={<FileStack className="size-5" />}
         actions={
           <div className="flex flex-wrap items-center gap-2">
@@ -160,52 +160,41 @@ export function NpbgListPage() {
           </div>
         }
       />
-      <AccurateDataNote className="-mt-2" />
 
 
-      <FilterBar end={<ColumnMenu columns={columns} hiddenCols={hiddenCols} onToggle={toggleCol} alwaysVisible={['no_npbg']} hint="Pilih kolom yang tampil di tabel." />}>
+      <FilterBar end={<ColumnMenu columns={columns} hiddenCols={hiddenCols} onToggle={toggleCol} alwaysVisible={['no_npbg']} hint="Select the columns shown in the table." />}>
         <Input
-          placeholder="Cari no NPBG, kode barang, deskripsi, keterangan, peminta, divisi, pelanggan, rak, no seri…"
+          placeholder="Search Delivery Order no., item code, description, remarks, requester, division, customer, rack, serial no…"
           className="max-w-sm"
           value={search}
           onChange={(e) => { setSearch(e.target.value); setPage(1) }}
         />
-        <div className="space-y-1">
-          <label className="text-xs text-muted-foreground">Dari tanggal</label>
-          <Input type="date" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPage(1) }} />
-        </div>
-        <div className="space-y-1">
-          <label className="text-xs text-muted-foreground">Sampai tanggal</label>
-          <Input type="date" value={dateTo} onChange={(e) => { setDateTo(e.target.value); setPage(1) }} />
-        </div>
-        <div className="space-y-1">
-          <label className="text-xs text-muted-foreground">Tipe NPBG</label>
-          <Select value={tipe} onChange={(e) => { setTipe(e.target.value); setPage(1) }} className="w-44">
-            <option value="">Semua tipe</option>
+        <DateRangeFilter className="lg:w-72" from={dateFrom} to={dateTo} onFrom={(v) => { setDateFrom(v); setPage(1) }} onTo={(v) => { setDateTo(v); setPage(1) }} />
+        <div>
+          <Select aria-label="Delivery Order Type" title="Delivery Order Type" value={tipe} onChange={(e) => { setTipe(e.target.value); setPage(1) }} className="w-44">
+            <option value="">All types</option>
             <option value="Penjualan">Penjualan</option>
             <option value="Non Penjualan">Non Penjualan</option>
           </Select>
         </div>
-        <div className="space-y-1">
-          <label className="text-xs text-muted-foreground">Klasifikasi</label>
-          <Select value={klasifikasi} onChange={(e) => { setKlasifikasi(e.target.value); setPage(1) }} className="w-56">
-            <option value="">Semua klasifikasi</option>
+        <div>
+          <Select aria-label="Classification" title="Classification" value={klasifikasi} onChange={(e) => { setKlasifikasi(e.target.value); setPage(1) }} className="w-56">
+            <option value="">All classifications</option>
             {(klasifikasiOptions.data ?? []).map((j) => <option key={j} value={j}>{j}</option>)}
           </Select>
         </div>
-        <div className="space-y-1">
-          <label className="text-xs text-muted-foreground">Kembali bekas</label>
-          <Select value={kembaliBekas} onChange={(e) => { setKembaliBekas(e.target.value); setPage(1) }} className="w-44">
-            <option value="">Semua</option>
-            <option value="1">Dicentang</option>
-            <option value="0">Tidak dicentang</option>
+        <div>
+          <Select aria-label="Used item returned" title="Used item returned" value={kembaliBekas} onChange={(e) => { setKembaliBekas(e.target.value); setPage(1) }} className="w-52">
+            <option value="">Return used: all</option>
+            <option value="1">Ticked</option>
+            <option value="0">Unticked</option>
           </Select>
         </div>
       </FilterBar>
 
       <DataTable columns={shownColumns} rows={scrollRows} scrollMemoryKey="npbg"
         footer={scrollFooter} notes={{ entity: 'npbg' }} rowKey={(r) => r.id} isLoading={isLoading}
- emptyText="Belum ada data NPBG jalankan Sync Accurate." />
+ emptyText="No Delivery Order data yet; run Accurate Sync." />
 
     </div>
   )

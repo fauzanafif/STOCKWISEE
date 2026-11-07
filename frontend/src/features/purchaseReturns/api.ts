@@ -7,19 +7,19 @@ export type ReturnStatus = 'DIBUAT' | 'DIKIRIM' | 'SELESAI' | 'DIBATALKAN'
 export type ReturnResolution = 'GANTI_BARANG' | 'POTONG_TAGIHAN'
 
 export const RETURN_STATUS: Record<ReturnStatus, { label: string; variant: 'warning' | 'default' | 'success' | 'neutral' }> = {
-  DIBUAT: { label: 'Belum dikirim', variant: 'warning' },
-  DIKIRIM: { label: 'Dikirim ke vendor', variant: 'default' },
-  SELESAI: { label: 'Selesai', variant: 'success' },
-  DIBATALKAN: { label: 'Dibatalkan', variant: 'neutral' },
+  DIBUAT: { label: 'Not sent', variant: 'warning' },
+  DIKIRIM: { label: 'Sent to vendor', variant: 'default' },
+  SELESAI: { label: 'Done', variant: 'success' },
+  DIBATALKAN: { label: 'Cancelled', variant: 'neutral' },
 }
 
 export const RESOLUTION: Record<ReturnResolution, { label: string; hint: string; refLabel: string }> = {
-  GANTI_BARANG: { label: 'Ganti barang', hint: 'Vendor mengirim barang pengganti', refLabel: 'No RI barang pengganti' },
-  POTONG_TAGIHAN: { label: 'Potong tagihan', hint: 'Dipotong dari tagihan / dikembalikan uangnya', refLabel: 'No nota kredit / bukti' },
+  GANTI_BARANG: { label: 'Item replacement', hint: 'The vendor sends a replacement item', refLabel: 'Replacement item Receipt No' },
+  POTONG_TAGIHAN: { label: 'Bill deduction', hint: 'Deducted from the bill / refunded', refLabel: 'No nota kredit / bukti' },
 }
 
 /** Common reasons, one tap; anything else is typed. */
-export const RETURN_REASONS = ['Rusak / cacat', 'Tidak sesuai spesifikasi', 'Salah barang', 'Kelebihan kirim']
+export const RETURN_REASONS = ['Rusak / cacat', 'Not as specified', 'Wrong item', 'Over-delivered']
 
 export interface PurchaseReturn {
   id: number
@@ -129,7 +129,7 @@ export function useCreatePurchaseReturn() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async (body: CreateReturnPayload) => (await api.post<{ data: PurchaseReturnDetail }>('/api/purchase-returns', body)).data.data,
-    meta: { successMessage: 'Retur dibuat.' },
+    meta: { successMessage: 'Return created.' },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['purchase-returns'] }),
   })
 }
@@ -141,17 +141,17 @@ export function useReturnStep(id: number) {
   return {
     send: useMutation({
       mutationFn: async (body: { note?: string | null; photo?: string | null }) => (await api.post<{ data: PurchaseReturnDetail }>(`/api/purchase-returns/${id}/send`, body)).data.data,
-      meta: { successMessage: 'Ditandai dikirim ke vendor.' },
+      meta: { successMessage: 'Marked as sent to vendor.' },
       onSuccess: done,
     }),
     resolve: useMutation({
       mutationFn: async (body: { ref?: string | null; note?: string | null }) => (await api.post<{ data: PurchaseReturnDetail }>(`/api/purchase-returns/${id}/resolve`, body)).data.data,
-      meta: { successMessage: 'Retur selesai.' },
+      meta: { successMessage: 'Return finished.' },
       onSuccess: done,
     }),
     cancel: useMutation({
       mutationFn: async () => (await api.post<{ data: PurchaseReturnDetail }>(`/api/purchase-returns/${id}/cancel`)).data.data,
-      meta: { successMessage: 'Retur dibatalkan.' },
+      meta: { successMessage: 'Return cancelled.' },
       onSuccess: done,
     }),
   }

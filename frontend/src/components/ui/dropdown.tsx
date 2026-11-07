@@ -16,7 +16,7 @@ export interface DropdownItem {
  * A button that opens a short list of actions (Export, row actions…). Closes on
  * choosing, clicking outside or Escape; arrow keys move through the items.
  */
-export function DropdownMenu({ label, icon: Icon, items, align = 'end', size = 'sm', variant = 'outline', className, busy }: {
+export function DropdownMenu({ label, icon: Icon, items, align = 'end', size = 'sm', variant = 'outline', className, busy, chevron = true, ariaLabel }: {
   label: ReactNode
   icon?: LucideIcon
   items: DropdownItem[]
@@ -25,8 +25,13 @@ export function DropdownMenu({ label, icon: Icon, items, align = 'end', size = '
   variant?: 'outline' | 'ghost' | 'default'
   className?: string
   busy?: boolean
+  /** false: an icon-only trigger (e.g. ⋯ row actions) */
+  chevron?: boolean
+  ariaLabel?: string
 }) {
   const [open, setOpen] = useState(false)
+  // the list is placed on the screen (fixed), so a scrolling table never clips it
+  const [at, setAt] = useState<{ top: number; left?: number; right?: number; up: boolean } | null>(null)
   const ref = useRef<HTMLDivElement>(null)
   const shown = items.filter((i) => !i.hidden)
 
@@ -42,19 +47,36 @@ export function DropdownMenu({ label, icon: Icon, items, align = 'end', size = '
         btns[(at + (e.key === 'ArrowDown' ? 1 : -1) + btns.length) % btns.length]?.focus()
       }
     }
+    const onScroll = (e: Event) => { if (!ref.current?.contains(e.target as Node)) setOpen(false) }
     document.addEventListener('mousedown', onDown)
     document.addEventListener('keydown', onKey)
-    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey) }
+    window.addEventListener('scroll', onScroll, true)
+    window.addEventListener('resize', onScroll)
+    return () => {
+      document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey)
+      window.removeEventListener('scroll', onScroll, true); window.removeEventListener('resize', onScroll)
+    }
   }, [open])
+
+  const toggle = () => {
+    if (!open && ref.current) {
+      const r = ref.current.getBoundingClientRect()
+      const up = window.innerHeight - r.bottom < 40 + shown.length * 38 && r.top > window.innerHeight / 2
+      setAt({ top: up ? r.top - 4 : r.bottom + 4, up, ...(align === 'end' ? { right: window.innerWidth - r.right } : { left: r.left }) })
+    }
+    setOpen((v) => !v)
+  }
 
   if (shown.length === 0) return null
   return (
     <div ref={ref} className={cn('relative inline-block', className)}>
-      <Button type="button" size={size} variant={variant} aria-haspopup="menu" aria-expanded={open} disabled={busy} onClick={() => setOpen((v) => !v)}>
-        {Icon && <Icon className="size-4" />}{label}<ChevronDown className="size-3.5 opacity-60" />
+      <Button type="button" size={size} variant={variant} aria-haspopup="menu" aria-expanded={open} disabled={busy} onClick={toggle} aria-label={ariaLabel} title={ariaLabel}
+        className={cn(!chevron && 'px-2')}>
+        {Icon && <Icon className="size-4" />}{label}{chevron && <ChevronDown className="size-3.5 opacity-60" />}
       </Button>
-      {open && (
-        <div role="menu" className={cn('absolute z-40 mt-1 min-w-44 rounded-lg border bg-card p-1 shadow-lg', align === 'end' ? 'right-0' : 'left-0')}>
+      {open && at && (
+        <div role="menu" className="fixed z-50 min-w-44 rounded-lg border bg-card p-1 shadow-lg"
+          style={{ top: at.up ? undefined : at.top, bottom: at.up ? window.innerHeight - at.top : undefined, left: at.left, right: at.right }}>
           {shown.map((i) => {
             const I = i.icon
             return (

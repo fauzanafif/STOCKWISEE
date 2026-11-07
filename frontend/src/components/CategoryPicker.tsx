@@ -13,7 +13,7 @@ function findPath(nodes: CategoryNode[], id: number): CategoryNode[] | null {
   return null
 }
 
-const LABELS = ['Kategori Induk', 'Kategori Anak 1', 'Kategori Anak 2', 'Kategori Anak 3']
+const LABELS = ['Main Category', 'Sub Category 1', 'Sub Category 2', 'Sub Category 3']
 
 /** 4 select bertingkat — sama seperti kolom Kategori Induk/Anak 1/2/3 di DATA.xlsx. */
 export function CategoryPicker({
@@ -57,7 +57,7 @@ export function CategoryPicker({
     onChange(deepest ?? null)
   }
 
-  if (isLoading) return <p className="text-sm text-muted-foreground">Memuat kategori…</p>
+  if (isLoading) return <p className="text-sm text-muted-foreground">Loading categories…</p>
 
   return (
     <div className="grid grid-cols-2 gap-3">
@@ -69,7 +69,7 @@ export function CategoryPicker({
           <div key={i} className="space-y-1.5">
             <Label>{LABELS[i]}</Label>
             <Select value={path[i] ?? ''} onChange={(e) => pick(i, e.target.value ? Number(e.target.value) : null)}>
-              <option value="">— pilih —</option>
+              <option value="">— select —</option>
               {options.map((o) => (
                 <option key={o.id} value={o.id}>
                   {o.name}

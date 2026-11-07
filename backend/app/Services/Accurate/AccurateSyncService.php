@@ -82,20 +82,11 @@ class AccurateSyncService
      * Instead, per explicit user instruction, derived from the item code's
      * own 3-letter prefix through this fixed translation table.
      */
-    protected const KATEGORI_INDUK_MAP = [
-        'SSP' => 'Small Spare Parts',
-        'PUI' => 'Post-Use Items',
-        'OFN' => 'Office Needs',
-        'OAA' => 'Office Apparel & Accessories',
-        'MAA' => 'Manufacture & Assembly',
-        'MAI' => 'Maintenance & Industry',
-        'HHN' => 'Household Needs',
-        'ETA' => 'Etalase',
-        'EAE' => 'Electronics & Electricals',
-        'BSP' => 'Big Spare Parts',
-        'AUT' => 'Automotive',
-        'AST' => 'Assets',
-    ];
+    /** The table now lives in ItemOptions (INDUK_PREFIX + the prefixes set in the master Kategori Barang). */
+    protected const KATEGORI_INDUK_MAP = \App\Support\ItemOptions::INDUK_PREFIX;
+
+    /** prefix => Kategori Induk, read once per sync (ItemOptions::indukByPrefix) */
+    private ?array $indukMap = null;
 
     public function __construct(
         private readonly DocumentNumberService $numbers,
@@ -782,7 +773,9 @@ class AccurateSyncService
     {
         $prefix = mb_strtoupper(substr($itemno, 0, 3));
 
-        return self::KATEGORI_INDUK_MAP[$prefix] ?? null;
+        $this->indukMap ??= \App\Support\ItemOptions::indukByPrefix();
+
+        return $this->indukMap[$prefix] ?? null;
     }
 
     /**

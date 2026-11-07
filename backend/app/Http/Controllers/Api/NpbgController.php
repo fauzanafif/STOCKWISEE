@@ -112,9 +112,11 @@ class NpbgController extends Controller
         // never the same NPBG twice (two admins, one request): checked and saved under one lock per item
         $npbg = \App\Support\DuplicateGuard::locked('npbg', $data['kode_barang'] ?? $data['deskripsi_barang'], fn () => \Illuminate\Support\Facades\DB::transaction(function () use ($data, $request, $kembaliBekas, $allowDuplicate) {
             \App\Support\DuplicateGuard::refuse(\App\Support\DuplicateGuard::npbg($data), $allowDuplicate);
+            $item = filled($data['kode_barang'] ?? null) ? \App\Models\Item::where('code', $data['kode_barang'])->first() : null;
+            $uom = app(\App\Services\UomConverter::class)->snapshot($item, $data['satuan'] ?? null, $data['deskripsi_barang'], 'satuan');
             $npbg = Npbg::create($data + [
                 'no_npbg' => $this->numbers->next('NPBG', 'MANUAL'),
-                'unit_ratio' => 1,
+                'unit_ratio' => $uom['unit_ratio'], 'base_satuan' => $uom['base_satuan'],
                 'created_by' => $request->user()->id,
             ]);
             if ($kembaliBekas) {
@@ -168,7 +170,9 @@ class NpbgController extends Controller
             'pageHeightMm' => 147,
             'offsetXMm' => (float) $request->input('offset_x', 0),
             'offsetYMm' => (float) $request->input('offset_y', 0),
-            'autoPageSize' => $request->string('page_size', 'exact')->value() === 'auto',
+            'autoPageSize' => $request->string('page_size', 'a4')->value() === 'auto',
+            'fitA4' => $request->string('page_size', 'a4')->value() === 'a4',
+            'full' => $request->string('mode', 'full')->value() !== 'data',
             'texts' => [
                 ['x' => 27.5, 'y' => 5.8, 'w' => 78.3, 'text' => 'PT SURYA INTI GAS', 'size' => 9, 'bold' => true, 'static' => true],
                 ['x' => 122.8, 'y' => 5.3, 'w' => 72, 'h' => 16.9, 'text' => "NOTA PENGELUARAN\nBARANG GUDANG (NPBG)", 'size' => 9, 'bold' => true, 'align' => 'center', 'static' => true],

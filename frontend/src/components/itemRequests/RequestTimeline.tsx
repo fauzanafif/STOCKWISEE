@@ -3,7 +3,7 @@ import type { TimelineStep } from '@/features/itemRequests/api'
 import { cn } from '@/lib/utils'
 
 const fmtWhen = (v: string | null) =>
-  v ? new Date(v).toLocaleString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : null
+  v ? new Date(v).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : null
 
 function Dot({ step, n }: { step: TimelineStep; n: number }) {
   const base = 'relative z-10 flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-bold'
@@ -19,8 +19,8 @@ function Dot({ step, n }: { step: TimelineStep; n: number }) {
 }
 
 const STATE_TEXT: Partial<Record<TimelineStep['state'], string>> = {
-  rejected: 'Ditolak',
-  cancelled: 'Dibatalkan',
+  rejected: 'Rejected',
+  cancelled: 'Cancelled',
 }
 
 /**
@@ -45,7 +45,7 @@ export function RequestTimeline({ steps, className }: { steps: TimelineStep[]; c
               {(when || s.by) && (
                 <div className="mt-0.5 text-xs text-muted-foreground">{[when, s.by].filter(Boolean).join(' · ')}</div>
               )}
-              {s.note && s.state === 'rejected' && <div className="mt-1 text-xs text-red-700">Alasan: {s.note}</div>}
+              {s.note && s.state === 'rejected' && <div className="mt-1 text-xs text-red-700">Reason: {s.note}</div>}
             </div>
           </li>
         )
@@ -58,7 +58,7 @@ export function RequestTimeline({ steps, className }: { steps: TimelineStep[]; c
 export function TimelineBar({ steps }: { steps: TimelineStep[] }) {
   const done = steps.filter((s) => s.state === 'done').length
   return (
-    <div className="flex items-center gap-2" aria-label={`Langkah ${Math.min(done + 1, steps.length)} dari ${steps.length}`}>
+    <div className="flex items-center gap-2" aria-label={`Steps ${Math.min(done + 1, steps.length)} from ${steps.length}`}>
       <div className="flex flex-1 gap-1">
         {steps.map((s) => (
           <span key={s.key} title={s.label} className={cn('h-1.5 flex-1 rounded-full',

@@ -65,7 +65,7 @@ export interface InventoryDashboardData {
   generated_at: string
   run: { lead_time_threshold: number; median_deficit: number; item_count: number; computed_at: string | null } | null
   kpis: InventoryDashboardKpis
-  health_score: { value: number; category: 'Sehat' | 'Perlu Perhatian' | 'Kritis' }
+  health_score: { value: number; category: 'Sehat' | 'Needs Attention' | 'Kritis' }
   charts: {
     status_distribution: { name: string; value: number }[]
     top_deficit: { code: string; description: string; deficit: number }[]

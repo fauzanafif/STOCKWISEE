@@ -5,9 +5,9 @@ import { StockCardScopeProvider, routePaths, type ShareAccess, type StockCardSco
 import { ProjectView } from '@/pages/StockCardProjectPage'
 
 const BADGE: Record<ShareAccess, { label: string; icon: React.ReactNode; cls: string }> = {
-  VIEW: { label: 'Hanya lihat', icon: <Eye className="size-3.5" />, cls: 'bg-muted text-muted-foreground' },
-  EDIT: { label: 'Bisa mengisi', icon: <Pencil className="size-3.5" />, cls: 'bg-primary/10 text-primary' },
-  FULL: { label: 'Akses penuh', icon: <ShieldCheck className="size-3.5" />, cls: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300' },
+  VIEW: { label: 'View only', icon: <Eye className="size-3.5" />, cls: 'bg-muted text-muted-foreground' },
+  EDIT: { label: 'Can fill in', icon: <Pencil className="size-3.5" />, cls: 'bg-primary/10 text-primary' },
+  FULL: { label: 'Full access', icon: <ShieldCheck className="size-3.5" />, cls: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300' },
 }
 
 function ShareHeader({ scope }: { scope: StockCardScope }) {
@@ -15,11 +15,11 @@ function ShareHeader({ scope }: { scope: StockCardScope }) {
   const badge = data?.share ? BADGE[data.share.access] : null
   return (
     <header className="sticky top-0 z-30 border-b bg-card/95 backdrop-blur">
-      <div className="mx-auto flex h-14 max-w-6xl items-center gap-3 px-4">
+      <div className="flex h-14 items-center gap-3 px-3 sm:px-4">
         <Link to={routePaths(scope).home} className="flex min-w-0 items-center gap-2">
           <img src="/logo.png" alt="" className="size-8 shrink-0" />
           <span className="min-w-0">
-            <span className="block text-sm font-semibold leading-tight">Kartu Stock</span>
+            <span className="block text-sm font-semibold leading-tight">Stock Card</span>
             <span className="block truncate text-xs text-muted-foreground">{data?.name ?? 'STOCKWISE'}</span>
           </span>
         </Link>
@@ -40,7 +40,7 @@ export function SharedStockCardLayout() {
     <StockCardScopeProvider value={scope}>
       <div className="min-h-dvh bg-background">
         <ShareHeader scope={scope} />
-        <main className="mx-auto max-w-6xl p-4">
+        <main className="p-3 sm:p-4">
           <Outlet />
         </main>
       </div>

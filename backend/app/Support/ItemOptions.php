@@ -450,17 +450,74 @@ TXT;
 
     public const UOM = ['PCS', 'SET', 'MTR', 'PCK', 'BK', 'LTR', 'RIM', 'KG', 'M2', 'BOX', 'GLN', 'M3', 'CMS', 'JRG', 'ROL'];
 
-    /** field => its choices (in the given order, duplicates dropped) */
-    public static function categories(): array
+    /**
+     * Kategori Induk from the item code's 3-letter prefix (the starting table; the master Kategori Barang
+     * can add more prefixes, see indukByPrefix()).
+     */
+    public const INDUK_PREFIX = [
+        'SSP' => 'Small Spare Parts',
+        'PUI' => 'Post-Use Items',
+        'OFN' => 'Office Needs',
+        'OAA' => 'Office Apparel & Accessories',
+        'MAA' => 'Manufacture & Assembly',
+        'MNA' => 'Manufacture & Assembly',
+        'MAI' => 'Maintenance & Industry',
+        'HHN' => 'Household Needs',
+        'ETA' => 'Etalase',
+        'EAE' => 'Electronics & Electricals',
+        'BSP' => 'Big Spare Parts',
+        'AUT' => 'Automotive',
+        'AST' => 'Assets',
+    ];
+
+    public const LEVELS = ['induk', 'anak_1', 'anak_2', 'anak_3'];
+
+    /** level => the fixed starting list (what the master Kategori Barang was first filled with) */
+    public static function defaults(): array
     {
         $list = fn (string $txt) => array_values(array_unique(array_filter(array_map('trim', explode("\n", $txt)), fn ($v) => $v !== '')));
 
-        return [
-            'accurate_category_induk' => $list(self::INDUK),
-            'accurate_category_anak_1' => $list(self::ANAK_1),
-            'accurate_category_anak_2' => $list(self::ANAK_2),
-            'accurate_category_anak_3' => $list(self::ANAK_3),
-        ];
+        return ['induk' => $list(self::INDUK), 'anak_1' => $list(self::ANAK_1), 'anak_2' => $list(self::ANAK_2), 'anak_3' => $list(self::ANAK_3)];
+    }
+
+    private static function masterReady(): bool
+    {
+        return \Illuminate\Support\Facades\Schema::hasTable('item_category_options');
+    }
+
+    /** field => its choices: the active entries of the master Kategori Barang (the fixed lists before it exists) */
+    public static function categories(): array
+    {
+        $byLevel = self::defaults();
+        if (self::masterReady()) {
+            $rows = \Illuminate\Support\Facades\DB::table('item_category_options')->where('is_active', true)->orderBy('sort')->orderBy('name')->get(['level', 'name'])->groupBy('level');
+            foreach (self::LEVELS as $level) {
+                $byLevel[$level] = $rows->get($level)?->pluck('name')->all() ?? [];
+            }
+        }
+        $out = [];
+        foreach (self::LEVELS as $level) {
+            $out['accurate_category_'.$level] = $byLevel[$level];
+        }
+
+        return $out;
+    }
+
+    /** prefix => Kategori Induk: the fixed table, plus / overridden by the prefixes set in the master */
+    public static function indukByPrefix(): array
+    {
+        $map = self::INDUK_PREFIX;
+        if (self::masterReady()) {
+            foreach (\Illuminate\Support\Facades\DB::table('item_category_options')->where('level', 'induk')->whereNotNull('code_prefix')->get(['name', 'code_prefix']) as $row) {
+                foreach (explode(',', (string) $row->code_prefix) as $prefix) {
+                    if (($prefix = mb_strtoupper(trim($prefix))) !== '') {
+                        $map[$prefix] = $row->name;
+                    }
+                }
+            }
+        }
+
+        return $map;
     }
 
     /**

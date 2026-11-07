@@ -8,8 +8,8 @@ export type DraftStatus = 'DRAFT' | 'DIAJUKAN' | 'DIBATALKAN'
 
 export const DRAFT_STATUS: Record<DraftStatus, { label: string; variant: 'warning' | 'success' | 'neutral' }> = {
   DRAFT: { label: 'Draft', variant: 'warning' },
-  DIAJUKAN: { label: 'Sudah jadi PPB', variant: 'success' },
-  DIBATALKAN: { label: 'Dibatalkan', variant: 'neutral' },
+  DIAJUKAN: { label: 'Already a Purchase Request', variant: 'success' },
+  DIBATALKAN: { label: 'Cancelled', variant: 'neutral' },
 }
 
 export interface PpbDraftRow {
@@ -81,8 +81,8 @@ export function useRestock() {
       (await api.post<{ data: PpbDraftDetail; skipped?: { item_id: number; code: string; reason: string }[] }>('/api/ppb-drafts', { items })).data,
     meta: { successMessage: false },
     onSuccess: (res) => {
-      toast.success(`${res.data.lines.length} barang masuk Draft PPB — tinjau dulu sebelum diajukan jadi PPB.`)
-      if (res.skipped?.length) toast.info(`Dilewati: ${res.skipped.map((x) => `${x.code} ${x.reason}`).join('; ')}`)
+      toast.success(`${res.data.lines.length} items in Draft Purchase Request — review before submitting as Purchase Request.`)
+      if (res.skipped?.length) toast.info(`Skipped: ${res.skipped.map((x) => `${x.code} ${x.reason}`).join('; ')}`)
       // the analysis shows them "on order" at once (its Restock button locks until the goods arrive)
       return Promise.all([qc.invalidateQueries({ queryKey: ['ppb-drafts'] }), qc.invalidateQueries({ queryKey: ['inventory-analysis'] })])
     },
@@ -103,18 +103,18 @@ export function useDraftActions(id: number) {
   return {
     save: useMutation({
       mutationFn: async (body: DraftSavePayload) => (await api.put<{ data: PpbDraftDetail }>(`/api/ppb-drafts/${id}`, body)).data.data,
-      meta: { successMessage: 'Draft disimpan.' },
+      meta: { successMessage: 'Draft saved.' },
       onSuccess: done,
     }),
     submit: useMutation({
       mutationFn: async (body: { no_ppb: string; tgl_ppb: string } & DraftSavePayload) =>
         (await api.post<{ data: PpbDraftDetail }>(`/api/ppb-drafts/${id}/submit`, body)).data.data,
       meta: { successMessage: false },
-      onSuccess: (d) => { toast.success(`Diajukan jadi PPB ${d.no_ppb}. Menunggu approval PPB.`); return done() },
+      onSuccess: (d) => { toast.success(`Submitted as Purchase Request ${d.no_ppb}. Waiting for Purchase Request approval.`); return done() },
     }),
     cancel: useMutation({
       mutationFn: async () => (await api.delete<{ data: PpbDraftDetail }>(`/api/ppb-drafts/${id}`)).data.data,
-      meta: { successMessage: 'Draft dibatalkan.' },
+      meta: { successMessage: 'Draft cancelled.' },
       onSuccess: done,
     }),
   }
@@ -158,6 +158,62 @@ export function useDraftLines(params: { source?: string; search?: string }) {
   })
 }
 
+/** Items picked for a Purchase Request, kept before asking for approval. */
+export interface SavedDraft {
+  id: number
+  name: string | null
+  no_ppb: string | null
+  tgl_ppb: string | null
+  tgl_diperlukan: string | null
+  divisi: string | null
+  keterangan: string | null
+  created_by: string | null
+  updated_at: string | null
+  lines: { id: number; kode_barang: string | null; deskripsi_barang: string; qty: number; satuan: string | null; available: number | null }[]
+}
+
+export function useSavedDrafts() {
+  return useQuery({
+    queryKey: ['ppb-drafts', 'saved'],
+    queryFn: async () => (await api.get<{ data: SavedDraft[] }>('/api/ppb-saved-drafts')).data.data,
+  })
+}
+
+type SavedHeader = { name?: string | null; no_ppb?: string | null; tgl_ppb?: string | null; tgl_diperlukan?: string | null; divisi?: string | null; keterangan?: string | null }
+
+export function useSavedDraftActions() {
+  const qc = useQueryClient()
+  const done = () => Promise.all([qc.invalidateQueries({ queryKey: ['ppb-drafts'] }), qc.invalidateQueries({ queryKey: ['ppb'] }), qc.invalidateQueries({ queryKey: ['reminders'] })])
+  return {
+    save: useMutation({
+      mutationFn: async (body: SavedHeader & { line_ids: number[] }) => (await api.post('/api/ppb-saved-drafts', body)).data,
+      meta: { successMessage: 'Saved as draft.' },
+      onSuccess: done,
+    }),
+    update: useMutation({
+      mutationFn: async ({ id, ...body }: SavedHeader & { id: number }) => (await api.put(`/api/ppb-saved-drafts/${id}`, body)).data,
+      meta: { successMessage: 'Draft saved.' },
+      onSuccess: done,
+    }),
+    submit: useMutation({
+      mutationFn: async ({ id, ...body }: { id: number; no_ppb: string; tgl_ppb: string; divisi?: string | null; tgl_diperlukan?: string | null; keterangan?: string | null }) =>
+        (await api.post<{ data: { no_ppb: string; lines: number } }>(`/api/ppb-saved-drafts/${id}/submit`, body)).data.data,
+      meta: { successMessage: false },
+      onSuccess: (d) => { toast.success(`${d.lines} items submitted as Purchase Request ${d.no_ppb} — waiting for Manager approval.`); return done() },
+    }),
+    release: useMutation({
+      mutationFn: async ({ id, line }: { id: number; line: number }) => (await api.delete(`/api/ppb-saved-drafts/${id}/lines/${line}`)).data,
+      meta: { successMessage: 'Item returned to To do.' },
+      onSuccess: done,
+    }),
+    discard: useMutation({
+      mutationFn: async (id: number) => (await api.delete(`/api/ppb-saved-drafts/${id}`)).data,
+      meta: { successMessage: 'Draft removed; its items returned to To do.' },
+      onSuccess: done,
+    }),
+  }
+}
+
 export function useDraftLineActions() {
   const qc = useQueryClient()
   const done = () => Promise.all([qc.invalidateQueries({ queryKey: ['ppb-drafts'] }), qc.invalidateQueries({ queryKey: ['ppb'] }), qc.invalidateQueries({ queryKey: ['item-requests'] })])
@@ -169,14 +225,14 @@ export function useDraftLineActions() {
     }),
     remove: useMutation({
       mutationFn: async (id: number) => (await api.delete(`/api/ppb-draft-lines/${id}`)).data,
-      meta: { successMessage: 'Barang dihapus dari Draft PPB.' },
+      meta: { successMessage: 'Item removed from Draft Purchase Request.' },
       onSuccess: done,
     }),
     submit: useMutation({
       mutationFn: async (body: { line_ids: number[]; no_ppb: string; tgl_ppb: string; divisi?: string | null; tgl_diperlukan?: string | null; keterangan?: string | null }) =>
         (await api.post<{ data: { no_ppb: string; ppb_id: number | null; lines: number } }>('/api/ppb-draft-lines/submit', body)).data.data,
       meta: { successMessage: false },
-      onSuccess: (d) => { toast.success(`${d.lines} barang diajukan jadi PPB ${d.no_ppb} — menunggu approval Manager.`); return done() },
+      onSuccess: (d) => { toast.success(`${d.lines} items submitted as Purchase Request ${d.no_ppb} — waiting for Manager approval.`); return done() },
     }),
   }
 }

@@ -353,6 +353,7 @@ class PpbApprovalService
                 'approved_ppb_id' => $l->id, 'item_id' => $items[$l->kode_barang] ?? null,
                 'description_raw' => mb_substr((string) ($l->deskripsi_barang ?: $l->kode_barang ?: '-'), 0, 400),
                 'qty' => $l->kuantitas ?? 0, 'unit_id' => $l->satuan ? ($units[mb_strtoupper($l->satuan)] ?? null) : null,
+                'unit_ratio' => $l->unit_ratio, 'base_unit' => $l->base_satuan,
                 'unit_price' => 0, 'line_total' => 0, 'qty_received' => 0, 'line_status' => self::WAITING,
             ]);
         }

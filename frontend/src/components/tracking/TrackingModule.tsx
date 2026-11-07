@@ -61,12 +61,12 @@ export function TrackingModule<T extends { id: number }>({
   extraFilter,
   extraFilterParams,
   canCreate,
-  createLabel = 'Buat Baru',
+  createLabel = 'Create New',
   renderCreate,
   renderDetail,
   detailTitle,
   rowKey = (r) => r.id,
-  searchPlaceholder = 'Cari…',
+  searchPlaceholder = 'Search…',
   headerExtra,
   statusLabels,
   notesEntity,
@@ -137,7 +137,7 @@ export function TrackingModule<T extends { id: number }>({
               setPage(1)
             }}
           >
-            <option value="">Semua status</option>
+            <option value="">All statuses</option>
             {statuses.map((s) => (
               <option key={s} value={s}>
                 {statusLabels?.[s] ?? statusLabel(s)}
@@ -159,7 +159,7 @@ export function TrackingModule<T extends { id: number }>({
       />
 
       {renderCreate && (
-        <Modal open={creating} onClose={() => setCreating(false)} title={createLabel} className="max-w-xl">
+        <Modal form open={creating} onClose={() => setCreating(false)} title={createLabel} className="max-w-xl">
           {renderCreate(() => setCreating(false))}
         </Modal>
       )}

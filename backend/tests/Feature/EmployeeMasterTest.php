@@ -44,4 +44,20 @@ class EmployeeMasterTest extends TestCase
         $this->actingAsRole('karyawan');
         $this->getJson('/api/employees')->assertForbidden();
     }
+
+    public function test_a_new_divisi_is_added_from_the_worker_form(): void
+    {
+        Department::create(['name' => 'Gudang']);
+        $this->actingAsRole('super_admin');
+        $dir = $this->postJson('/api/employees/departments', ['name' => '  DIREKTUR '])->assertCreated()->assertJsonPath('data.name', 'DIREKTUR')->json('data');
+        // the same name again (any case) gives back the one already there
+        $this->postJson('/api/employees/departments', ['name' => 'direktur'])->assertOk()->assertJsonPath('data.id', $dir['id']);
+        $this->postJson('/api/employees/departments', ['name' => 'gudang'])->assertOk()->assertJsonPath('data.name', 'Gudang');
+        $this->postJson('/api/employees/departments', ['name' => ''])->assertStatus(422);
+        $this->postJson('/api/employees', ['name' => 'Hanes', 'position' => 'Direktur', 'department_id' => $dir['id']])->assertCreated()->assertJsonPath('data.department', 'DIREKTUR');
+        $this->assertSame(2, Department::count());
+
+        $this->actingAsRole('karyawan');
+        $this->postJson('/api/employees/departments', ['name' => 'X'])->assertForbidden();
+    }
 }

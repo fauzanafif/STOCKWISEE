@@ -58,6 +58,18 @@ class PurchaseOrderItem extends Model
         return $this->hasMany(PurchaseOrderQuote::class);
     }
 
+    /** The vendors purchasing chose for this item: its columns in the Draft PO table, priced or not */
+    public function draftVendors()
+    {
+        return $this->belongsToMany(Vendor::class, 'purchase_order_item_vendors');
+    }
+
+    /** Every Director pick, change and return of this line, newest first */
+    public function pickLogs()
+    {
+        return $this->hasMany(PurchaseOrderPickLog::class)->orderByDesc('id');
+    }
+
     /** RI (APITMDET) lines that fulfilled this PO line — Accurate's own APITMDET.POID/POSEQ chain. */
     public function riLines()
     {

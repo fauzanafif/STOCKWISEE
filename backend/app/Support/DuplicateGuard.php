@@ -105,6 +105,25 @@ final class DuplicateGuard
         return null;
     }
 
+    /** A serial of this item already on an RI (Accurate's too), compared whole: a look-alike to confirm, e.g. goods sent back and bought again. */
+    public static function riSerials(array $d, array $serials): ?string
+    {
+        if ($serials === []) {
+            return null;
+        }
+        $wanted = array_flip(array_map('mb_strtolower', $serials));
+        $rows = self::sameItem(Ri::query(), $d['kode_barang'] ?? null, $d['deskripsi_barang'] ?? null)->whereNotNull('no_seri')->where('no_seri', '!=', '')->get(['no_ri', 'no_seri']);
+        foreach ($rows as $r) {
+            foreach (RiSerials::split($r->no_seri) as $s) {
+                if (isset($wanted[mb_strtolower($s)])) {
+                    return "Nomor seri {$s} sudah tercatat di RI {$r->no_ri}.";
+                }
+            }
+        }
+
+        return null;
+    }
+
     /** Manual RI: the same item on the same delivery note (hard), or the same item, qty and vendor the same day. */
     public static function ri(array $d): array
     {

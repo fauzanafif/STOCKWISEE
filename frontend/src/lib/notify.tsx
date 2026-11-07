@@ -11,10 +11,10 @@ import { cn } from '@/lib/utils'
 type Kind = 'success' | 'invalid' | 'fail' | 'info'
 
 const LOOK: Record<Kind, { emoji: string; sub?: string; title: string; card: string; badge: string; bar: string; anim: string }> = {
-  success: { emoji: '😊', sub: '👍', title: 'Berhasil!', card: 'border-emerald-200 from-emerald-50', badge: 'bg-emerald-100 ring-emerald-200', bar: 'bg-emerald-500', anim: 'sw-pop' },
-  invalid: { emoji: '😆', title: 'Ups, belum sesuai', card: 'border-amber-200 from-amber-50', badge: 'bg-amber-100 ring-amber-200', bar: 'bg-amber-500', anim: 'sw-wobble' },
-  fail: { emoji: '😢', title: 'Gagal', card: 'border-rose-200 from-rose-50', badge: 'bg-rose-100 ring-rose-200', bar: 'bg-rose-500', anim: 'sw-sink' },
-  info: { emoji: '💡', title: 'Info', card: 'border-sky-200 from-sky-50', badge: 'bg-sky-100 ring-sky-200', bar: 'bg-sky-500', anim: 'sw-pop' },
+  success: { emoji: '😊', sub: '👍', title: 'Success!', card: 'before:bg-emerald-500', badge: 'bg-emerald-50', bar: 'bg-emerald-500/60', anim: 'sw-pop' },
+  invalid: { emoji: '😆', title: 'Oops, not right yet', card: 'before:bg-amber-500', badge: 'bg-amber-50', bar: 'bg-amber-500/60', anim: 'sw-wobble' },
+  fail: { emoji: '😢', title: 'Failed', card: 'before:bg-rose-500', badge: 'bg-rose-50', bar: 'bg-rose-500/60', anim: 'sw-sink' },
+  info: { emoji: '💡', title: 'Info', card: 'before:bg-sky-500', badge: 'bg-sky-50', bar: 'bg-sky-500/60', anim: 'sw-pop' },
 }
 
 const DURATION: Record<Kind, number> = { success: 3500, invalid: 6500, fail: 7000, info: 5000 }
@@ -25,11 +25,11 @@ function Card({ id, kind, message, title, duration }: { id: string | number; kin
   const lines = typeof message === 'string' ? message.split('\n').map((l) => l.replace(/^•\s*/, '').trim()).filter(Boolean) : null
   return (
     <div role={kind === 'fail' || kind === 'invalid' ? 'alert' : 'status'}
-      className={cn('sw-card relative w-[min(92vw,24rem)] overflow-hidden rounded-2xl border bg-gradient-to-br to-white p-4 pr-10 shadow-xl dark:to-card', look.card)}>
+      className={cn('sw-card relative w-[min(92vw,22rem)] overflow-hidden rounded-xl border bg-card py-3 pl-4 pr-9 shadow-lg before:absolute before:inset-y-0 before:left-0 before:w-1', look.card)}>
       <div className="flex items-start gap-3">
-        <span className={cn('relative flex size-12 shrink-0 select-none items-center justify-center rounded-2xl text-2xl leading-none ring-1', look.badge, look.anim)} aria-hidden="true">
+        <span className={cn('relative flex size-9 shrink-0 select-none items-center justify-center rounded-lg text-lg leading-none', look.badge, look.anim)} aria-hidden="true">
           {look.emoji}
-          {look.sub && <span className="sw-thumb absolute -bottom-1.5 -right-1.5 flex size-6 items-center justify-center rounded-full bg-white text-sm shadow ring-1 ring-black/5">{look.sub}</span>}
+          {look.sub && <span className="sw-thumb absolute -bottom-1 -right-1 flex size-4 items-center justify-center rounded-full bg-white text-[10px] shadow ring-1 ring-black/5">{look.sub}</span>}
         </span>
         <div className="min-w-0 pt-0.5">
           <div className="text-sm font-semibold text-foreground">{title ?? look.title}</div>
@@ -40,10 +40,10 @@ function Card({ id, kind, message, title, duration }: { id: string | number; kin
           ) : <div className="mt-0.5 text-sm text-muted-foreground">{message}</div>}
         </div>
       </div>
-      <button type="button" aria-label="Tutup" onClick={() => sonner.dismiss(id)}
+      <button type="button" aria-label="Close" onClick={() => sonner.dismiss(id)}
         className="absolute right-2 top-2 rounded-full p-1 text-muted-foreground hover:bg-black/5 hover:text-foreground"><X className="size-4" /></button>
       {/* how long it stays */}
-      <span className={cn('sw-timer absolute bottom-0 left-0 h-1 w-full origin-left', look.bar)} style={{ animationDuration: `${duration}ms` }} />
+      <span className={cn('sw-timer absolute bottom-0 left-0 h-0.5 w-full origin-left', look.bar)} style={{ animationDuration: `${duration}ms` }} />
     </div>
   )
 }

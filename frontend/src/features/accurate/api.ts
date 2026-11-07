@@ -57,7 +57,7 @@ export function useTerminateAccurateSession() {
     mutationFn: async (body: { remote_address: string; remote_port?: number; reason?: string }) =>
       (await api.post<{ message: string; data: { terminated: number } }>('/api/accurate/sessions/terminate', body)).data,
     onSuccess: () => qc.invalidateQueries({ queryKey: ['accurate', 'sessions'] }),
-    meta: { successMessage: 'Koneksi diputus.' },
+    meta: { successMessage: 'Connection ended.' },
   })
 }
 
@@ -74,7 +74,7 @@ export function useSaveAccurateIpLabel() {
   return useMutation({
     mutationFn: async (body: AccurateIpLabelInput) => (await api.put<{ message: string }>('/api/accurate/ip-labels', body)).data,
     onSuccess: () => qc.invalidateQueries({ queryKey: ['accurate', 'sessions'] }),
-    meta: { successMessage: 'Data PC disimpan.' },
+    meta: { successMessage: 'PC data saved.' },
   })
 }
 
@@ -106,6 +106,6 @@ export function useStartAgentRun() {
       qc.invalidateQueries({ queryKey: ['agent-run'] })
       qc.invalidateQueries({ queryKey: ['sync'] })
     },
-    meta: { successMessage: 'Sync Agent dimulai. Pantau progresnya di halaman ini.' },
+    meta: { successMessage: 'Sync Agent started. Follow its progress on this page.' },
   })
 }

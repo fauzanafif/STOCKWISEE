@@ -92,7 +92,7 @@ export async function exportElementToPdf(
   doc.setFontSize(8.5)
   doc.setTextColor(120, 120, 120)
   doc.text(
-    `Dicetak ${new Date().toLocaleString('id-ID', { dateStyle: 'long', timeStyle: 'short' })}`,
+    `Dicetak ${new Date().toLocaleString('en-GB', { dateStyle: 'long', timeStyle: 'short' })}`,
     pageW / 2,
     y + 18,
     { align: 'center' },

@@ -20,9 +20,9 @@ import { confirmDialog } from '@/components/ui/confirm'
  */
 
 const STATUS: Record<string, { label: string; variant: 'default' | 'success' | 'warning'; hint: string }> = {
-  PENDING_RI: { label: 'PENDING RI', variant: 'warning', hint: 'Ban baru sudah keluar (NPBG + no. seri baru), ban lama belum kembali' },
-  CLEAR: { label: 'CLEAR', variant: 'success', hint: 'Ban lama sudah kembali (RI + no. seri lama)' },
-  INCOMPLETE: { label: 'Belum lengkap', variant: 'default', hint: 'No. NPBG / no. seri baru belum diisi' },
+  PENDING_RI: { label: 'PENDING RI', variant: 'warning', hint: 'New tyre is out (NPBG + new serial no.), old tyre not back yet' },
+  CLEAR: { label: 'CLEAR', variant: 'success', hint: 'Old tyre is back (RI + old serial no.)' },
+  INCOMPLETE: { label: 'Incomplete', variant: 'default', hint: 'NPBG No. / new serial no. not filled' },
 }
 const STATUS_LABELS = Object.fromEntries(Object.entries(STATUS).map(([k, v]) => [k, v.label]))
 
@@ -60,7 +60,7 @@ const fromRow = (r: TyreRow): Form => ({
   out_note: r.out_note ?? '', in_date: d10(r.in_date), ri_no: r.in_ri ?? '', old_tyre_desc: r.old_tyre_desc ?? '', old_serial_raw: r.old_serial_raw ?? '',
   in_note: r.in_note ?? '',
 })
-const invalid = (f: Form) => (f.nopol_raw.trim() ? null : 'Isi Nopol')
+const invalid = (f: Form) => (f.nopol_raw.trim() ? null : 'Fill in Plate No')
 function toBody(f: Form, isNew: boolean) {
   const body: Record<string, unknown> = Object.fromEntries(Object.entries(f).map(([k, v]) => [k, t(v)]))
   body.change_date = f.change_date || null
@@ -90,7 +90,7 @@ function TyreTableRow({ row, canEdit, canDelete, note, opts }: { row: TyreRow | 
   const refresh = () => qc.invalidateQueries({ queryKey: ['tyre-changes'] })
 
   async function remove() {
-    if (!row || !(await confirmDialog(`Hapus data ban ${row.nopol ?? ''} ${row.new_serial_raw ?? ''}?`))) return
+    if (!row || !(await confirmDialog(`Delete tyre data ${row.nopol ?? ''} ${row.new_serial_raw ?? ''}?`))) return
     try {
       await api.delete(`/api/tyre-changes/${row.id}`)
       refresh()
@@ -100,13 +100,13 @@ function TyreTableRow({ row, canEdit, canDelete, note, opts }: { row: TyreRow | 
   }
 
   return (
- <tr {...ed.rowProps} className={rowClass(isNew)} title={fromAccurate ? 'Dari Accurate yang bisa dilengkapi: ban, pergantian, deskripsi & no. seri' : undefined}>
+ <tr {...ed.rowProps} className={rowClass(isNew)} title={fromAccurate ? 'From Accurate, can be completed: tyre, replacement, description & serial no.' : undefined}>
       <Td className="px-2 py-2 text-right tabular-nums text-muted-foreground">{row?.no ?? ''}</Td>
       <Td className="min-w-[12rem]">
-        {ed.list('nopol_raw', opts?.nopols ?? [], { placeholder: isNew ? 'DE 1234 AB' : '', className: 'uppercase', locked: lock })}
+        {ed.list('nopol_raw', opts?.nopols ?? [], { placeholder: isNew ? 'DE 1234 AB' : '', className: '', locked: lock })}
         <div className="px-2"><InlineSaveBadge state={ed.state} error={ed.error} hint={ed.hint} /></div>
       </Td>
-      <Td>{ed.input('change_date', { type: 'date', 'aria-label': 'Tgl NPBG', className: 'min-w-[8rem]', locked: lock })}</Td>
+      <Td>{ed.input('change_date', { type: 'date', 'aria-label': 'NPBG Date', className: 'min-w-[8rem]', locked: lock })}</Td>
       <Td className="min-w-[12rem]">
         {canEdit && !lock ? (
           <DocNumberInput compact type="npbg" value={ed.form.npbg_no} onChange={(v) => ed.change('npbg_no', v)}
@@ -114,29 +114,29 @@ function TyreTableRow({ row, canEdit, canDelete, note, opts }: { row: TyreRow | 
               ...s, change_date: d.date ?? s.change_date, nopol_raw: s.nopol_raw || (d.party ?? ''), out_note: s.out_note || (d.note ?? ''),
               new_tyre_desc: s.new_tyre_desc || (d.lines.find((l) => /BAN LUAR/i.test(l.description ?? ''))?.description ?? ''),
             }))} />
- ) : <span className="block whitespace-nowrap px-2 py-1.5 font-mono text-xs">{row?.out_npbg ?? ''}</span>}
+ ) : <span className="block whitespace-nowrap px-2 py-1.5 text-[13px]">{row?.out_npbg ?? ''}</span>}
       </Td>
       <Td className="min-w-[14rem]">{ed.list('new_tyre_desc', opts?.new_descs ?? [])}</Td>
-      <Td className="min-w-[8rem]">{ed.list('new_serial_raw', opts?.serials ?? [], { className: 'font-mono' })}</Td>
-      <Td><div className="flex items-center gap-1">{row && <CompactPhotoSlot entity="tyre" entityId={row.id} slot="out" label="Foto Ban (Out)" photo={row.photos.out} canEdit={canEdit} onChanged={refresh} />}
-        {row?.new_file_name && !row.photos.out && <span className="text-[11px] text-muted-foreground" title={row.new_file_name}>tanpa file</span>}</div></Td>
-      <Td>{ed.input('tyre_no', { type: 'number', min: 1, 'aria-label': 'Ban', className: 'min-w-[3.5rem] text-right' })}</Td>
-      <Td>{ed.input('replacement_no', { type: 'number', min: 1, 'aria-label': 'Pergantian', className: 'min-w-[3.5rem] text-right' })}</Td>
+      <Td className="min-w-[8rem]">{ed.list('new_serial_raw', opts?.serials ?? [], { className: '' })}</Td>
+      <Td><div className="flex items-center gap-1">{row && <CompactPhotoSlot entity="tyre" entityId={row.id} slot="out" label="Tyre Photo (Out)" photo={row.photos.out} canEdit={canEdit} onChanged={refresh} />}
+        {row?.new_file_name && !row.photos.out && <span className="text-[11px] text-muted-foreground" title={row.new_file_name}>no file</span>}</div></Td>
+      <Td>{ed.input('tyre_no', { type: 'number', min: 1, 'aria-label': 'Tyres', className: 'min-w-[3.5rem] text-right' })}</Td>
+      <Td>{ed.input('replacement_no', { type: 'number', min: 1, 'aria-label': 'Replacement', className: 'min-w-[3.5rem] text-right' })}</Td>
       <Td className="min-w-[12rem]">{ed.area('out_note', { locked: lock })}</Td>
       <Td className="whitespace-nowrap px-2 py-2 text-center">{row && <StatusBadge status={row.status} />}</Td>
-      <Td>{ed.input('in_date', { type: 'date', 'aria-label': 'Tgl RI', className: 'min-w-[8rem]', locked: lock })}</Td>
+      <Td>{ed.input('in_date', { type: 'date', 'aria-label': 'RI Date', className: 'min-w-[8rem]', locked: lock })}</Td>
       <Td className="min-w-[12rem]">
         {canEdit && !lock ? (
           <DocNumberInput compact type="ri" value={ed.form.ri_no} onChange={(v) => ed.change('ri_no', v)}
             onPick={(d) => ed.setForm((s) => ({
               ...s, in_date: d.date ?? s.in_date, in_note: s.in_note || (d.note ?? ''), old_tyre_desc: s.old_tyre_desc || (d.lines[0]?.description ?? ''),
             }))} />
- ) : <span className="block whitespace-nowrap px-2 py-1.5 font-mono text-xs">{row?.in_ri ?? ''}</span>}
+ ) : <span className="block whitespace-nowrap px-2 py-1.5 text-[13px]">{row?.in_ri ?? ''}</span>}
       </Td>
       <Td className="min-w-[14rem]">{ed.list('old_tyre_desc', opts?.old_descs ?? [])}</Td>
-      <Td className="min-w-[8rem]">{ed.list('old_serial_raw', opts?.serials ?? [], { className: 'font-mono' })}</Td>
-      <Td><div className="flex items-center gap-1">{row && <CompactPhotoSlot entity="tyre" entityId={row.id} slot="in" label="Foto Ban (In)" photo={row.photos.in} canEdit={canEdit} onChanged={refresh} />}
-        {row?.old_file_name && !row.photos.in && <span className="text-[11px] text-muted-foreground" title={row.old_file_name}>tanpa file</span>}</div></Td>
+      <Td className="min-w-[8rem]">{ed.list('old_serial_raw', opts?.serials ?? [], { className: '' })}</Td>
+      <Td><div className="flex items-center gap-1">{row && <CompactPhotoSlot entity="tyre" entityId={row.id} slot="in" label="Tyre Photo (In)" photo={row.photos.in} canEdit={canEdit} onChanged={refresh} />}
+        {row?.old_file_name && !row.photos.in && <span className="text-[11px] text-muted-foreground" title={row.old_file_name}>no file</span>}</div></Td>
       <Td className="min-w-[12rem]">{ed.area('in_note', { locked: lock })}</Td>
       <Td className="px-2">{row && <NoteCell entity="tyre-changes" rowKey={row.id} note={note} />}</Td>
       {canEdit && (
@@ -149,8 +149,8 @@ function TyreTableRow({ row, canEdit, canDelete, note, opts }: { row: TyreRow | 
   )
 }
 
-const banHeaders = ['No', 'Nopol (Kendaraan)', 'Tgl NPBG', 'No NPBG', 'Deskripsi Ban Baru', 'No Seri Baru', 'Foto Ban (Out)', 'Ban', 'Pergantian',
-  'Keterangan Keluar', 'Status', 'Tgl RI', 'No. RI', 'Deskripsi Ban Lama', 'No Seri Lama', 'Foto Ban (In)', 'Keterangan Kembali']
+const banHeaders = ['No', 'Plate No. (Vehicle)', 'NPBG Date', 'NPBG No', 'New Tyre Description', 'New Serial No', 'Tyre Photo (Out)', 'Tyres', 'Replacement',
+  'Out Remarks', 'Status', 'RI Date', 'RI No.', 'Old Tyre Description', 'Old Serial No', 'Tyre Photo (In)', 'Return Remarks']
 
 function BanSheet() {
   const { hasPermission } = useAuth()
@@ -166,10 +166,10 @@ function BanSheet() {
       notesEntity="tyre-changes"
       statuses={['PENDING_RI', 'CLEAR', 'INCOMPLETE']}
       statusLabels={STATUS_LABELS}
-      searchPlaceholder="Cari nopol, ban, no seri, NPBG, RI…"
+      searchPlaceholder="Search plate no., tyre, serial no., NPBG, RI…"
       exportDataset="tyre"
       exportPermission="tyre.view"
-      hint={<>No NPBG <b>ORIGIN</b> = pendataan awal. Isi No. RI / Tgl RI → <b>CLEAR</b>.</>}
+      hint={<>NPBG No <b>ORIGIN</b> = initial record. Fill RI No. / RI Date → <b>CLEAR</b>.</>}
       renderRow={(r, note) => <TyreTableRow row={r} canEdit={canEdit} canDelete={canEdit} note={note} opts={opts} />}
       newRow={canCreate ? <TyreTableRow key="new" row={null} canEdit canDelete={false} opts={opts} /> : null}
     />
@@ -207,7 +207,7 @@ function useBpnSave(sheet: 'inventory' | 'transfers', id: number | undefined) {
     return r.data
   }
   const remove = async () => {
-    if (!id || !(await confirmDialog('Hapus baris ini?'))) return
+    if (!id || !(await confirmDialog('Delete this row?'))) return
     try {
       await api.delete(`/api/tyre-bpn/${sheet}/${id}`)
       refresh()
@@ -222,20 +222,20 @@ function BpnRow({ row, canEdit, note, opts }: { row: TyreBpnRow | null; canEdit:
   const s = useBpnSave('inventory', row?.id)
   const ed = useSheetRow<TyreBpnRow, BpnForm>({
     row, fromRow: bpnFrom, emptyForm: bpnEmpty, isSame: same, canEdit, save: s.save,
-    invalid: (f) => (f.nopol_raw.trim() || f.serial_raw.trim() ? null : 'Isi Nopol atau No Seri'),
+    invalid: (f) => (f.nopol_raw.trim() || f.serial_raw.trim() ? null : 'Fill in Plate No or Serial No'),
   })
   const isNew = !row
   return (
     <tr {...ed.rowProps} className={rowClass(isNew)}>
       <Td className="px-2 py-2 text-right tabular-nums text-muted-foreground">{row?.no ?? ''}</Td>
-      <Td>{ed.input('cutoff_date', { type: 'date', 'aria-label': 'Tanggal Cut Off', className: 'min-w-[8rem]' })}</Td>
+      <Td>{ed.input('cutoff_date', { type: 'date', 'aria-label': 'Cut Off Date', className: 'min-w-[8rem]' })}</Td>
       <Td className="min-w-[12rem]">
-        {ed.list('nopol_raw', opts?.nopols ?? [], { placeholder: isNew ? 'Nopol baru…' : '', className: 'uppercase' })}
+        {ed.list('nopol_raw', opts?.nopols ?? [], { placeholder: isNew ? 'New plate no…' : '', className: '' })}
         <div className="px-2"><InlineSaveBadge state={ed.state} error={ed.error} hint={ed.hint} /></div>
       </Td>
       <Td className="min-w-[14rem]">{ed.list('tyre_desc', opts?.new_descs ?? [])}</Td>
-      <Td className="min-w-[8rem]">{ed.list('serial_raw', opts?.serials ?? [], { className: 'font-mono' })}</Td>
-      <Td>{row && <CompactPhotoSlot entity="tyre_bpn" entityId={row.id} slot="photo" label="Foto" photo={row.photos.photo} canEdit={canEdit} onChanged={s.refresh} />}</Td>
+      <Td className="min-w-[8rem]">{ed.list('serial_raw', opts?.serials ?? [], { className: '' })}</Td>
+      <Td>{row && <CompactPhotoSlot entity="tyre_bpn" entityId={row.id} slot="photo" label="Photo" photo={row.photos.photo} canEdit={canEdit} onChanged={s.refresh} />}</Td>
       <Td className="min-w-[14rem]">{ed.area('note')}</Td>
       <Td className="px-2">{row && <NoteCell entity="tyre_bpn" rowKey={row.id} note={note} />}</Td>
       {canEdit && <Td className="text-center">{row && <RowActions onDelete={() => void s.remove()} />}</Td>}
@@ -247,39 +247,39 @@ function TransferRow({ row, canEdit, note, opts }: { row: TyreBpnTransferRow | n
   const s = useBpnSave('transfers', row?.id)
   const ed = useSheetRow<TyreBpnTransferRow, TrfForm>({
     row, fromRow: trfFrom, emptyForm: trfEmpty, isSame: same, canEdit, save: s.save,
-    invalid: (f) => (f.nopol_raw.trim() || f.npbg_no.trim() ? null : 'Isi Nopol atau No NPBG'),
+    invalid: (f) => (f.nopol_raw.trim() || f.npbg_no.trim() ? null : 'Fill in Plate No or NPBG No'),
   })
   const isNew = !row
   return (
     <tr {...ed.rowProps} className={rowClass(isNew)}>
       <Td className="px-2 py-2 text-right tabular-nums text-muted-foreground">{row?.no ?? ''}</Td>
       <Td className="min-w-[12rem]">
-        {ed.list('nopol_raw', opts?.nopols ?? [], { placeholder: isNew ? 'Nopol baru…' : '', className: 'uppercase' })}
+        {ed.list('nopol_raw', opts?.nopols ?? [], { placeholder: isNew ? 'New plate no…' : '', className: '' })}
         <div className="px-2"><InlineSaveBadge state={ed.state} error={ed.error} hint={ed.hint} /></div>
       </Td>
-      <Td>{ed.input('npbg_date', { type: 'date', 'aria-label': 'Tgl NPBG', className: 'min-w-[8rem]' })}</Td>
+      <Td>{ed.input('npbg_date', { type: 'date', 'aria-label': 'NPBG Date', className: 'min-w-[8rem]' })}</Td>
       <Td className="min-w-[12rem]">
         {canEdit ? (
           <DocNumberInput compact type="npbg" value={ed.form.npbg_no} onChange={(v) => ed.change('npbg_no', v)}
             onPick={(d) => ed.setForm((x) => ({ ...x, npbg_date: d.date ?? x.npbg_date, out_note: x.out_note || (d.note ?? ''),
               new_tyre_desc: x.new_tyre_desc || (d.lines[0]?.description ?? '') }))} />
- ) : <span className="block whitespace-nowrap px-2 py-1.5 font-mono text-xs">{row?.npbg_no ?? ''}</span>}
+ ) : <span className="block whitespace-nowrap px-2 py-1.5 text-[13px]">{row?.npbg_no ?? ''}</span>}
       </Td>
       <Td className="min-w-[14rem]">{ed.list('new_tyre_desc', opts?.new_descs ?? [])}</Td>
-      <Td className="min-w-[8rem]">{ed.list('new_serial_raw', opts?.serials ?? [], { className: 'font-mono' })}</Td>
-      <Td>{row && <CompactPhotoSlot entity="tyre_bpn_transfer" entityId={row.id} slot="out" label="Foto Ban (kirim)" photo={row.photos.out} canEdit={canEdit} onChanged={s.refresh} />}</Td>
+      <Td className="min-w-[8rem]">{ed.list('new_serial_raw', opts?.serials ?? [], { className: '' })}</Td>
+      <Td>{row && <CompactPhotoSlot entity="tyre_bpn_transfer" entityId={row.id} slot="out" label="Tyre Photo (ship)" photo={row.photos.out} canEdit={canEdit} onChanged={s.refresh} />}</Td>
       <Td className="min-w-[12rem]">{ed.area('out_note')}</Td>
-      <Td>{ed.input('ri_date', { type: 'date', 'aria-label': 'Tgl RI', className: 'min-w-[8rem]' })}</Td>
+      <Td>{ed.input('ri_date', { type: 'date', 'aria-label': 'RI Date', className: 'min-w-[8rem]' })}</Td>
       <Td className="min-w-[12rem]">
         {canEdit ? (
           <DocNumberInput compact type="ri" value={ed.form.ri_no} onChange={(v) => ed.change('ri_no', v)}
             onPick={(d) => ed.setForm((x) => ({ ...x, ri_date: d.date ?? x.ri_date, in_note: x.in_note || (d.note ?? ''),
               old_tyre_desc: x.old_tyre_desc || (d.lines[0]?.description ?? '') }))} />
- ) : <span className="block whitespace-nowrap px-2 py-1.5 font-mono text-xs">{row?.ri_no ?? ''}</span>}
+ ) : <span className="block whitespace-nowrap px-2 py-1.5 text-[13px]">{row?.ri_no ?? ''}</span>}
       </Td>
       <Td className="min-w-[14rem]">{ed.list('old_tyre_desc', opts?.old_descs ?? [])}</Td>
-      <Td className="min-w-[8rem]">{ed.list('old_serial_raw', opts?.serials ?? [], { className: 'font-mono' })}</Td>
-      <Td>{row && <CompactPhotoSlot entity="tyre_bpn_transfer" entityId={row.id} slot="in" label="Foto Ban (bekas)" photo={row.photos.in} canEdit={canEdit} onChanged={s.refresh} />}</Td>
+      <Td className="min-w-[8rem]">{ed.list('old_serial_raw', opts?.serials ?? [], { className: '' })}</Td>
+      <Td>{row && <CompactPhotoSlot entity="tyre_bpn_transfer" entityId={row.id} slot="in" label="Tyre Photo (used)" photo={row.photos.in} canEdit={canEdit} onChanged={s.refresh} />}</Td>
       <Td className="min-w-[12rem]">{ed.area('in_note')}</Td>
       <Td className="px-2">{row && <NoteCell entity="tyre_bpn_transfer" rowKey={row.id} note={note} />}</Td>
       {canEdit && <Td className="text-center">{row && <RowActions onDelete={() => void s.remove()} />}</Td>}
@@ -290,11 +290,11 @@ function TransferRow({ row, canEdit, note, opts }: { row: TyreBpnTransferRow | n
 // ---------------------------------------------------------------- page
 
 type Sheet = 'ban' | 'bpn' | 'transfer'
-const TABS = [['ban', 'Ban Luar'], ['bpn', 'Ban Luar BPN'], ['transfer', 'Deliver & Receive Ban SIG-BPN']] as const
+const TABS = [['ban', 'Outer Tyres'], ['bpn', 'BPN Outer Tyres'], ['transfer', 'Deliver & Receive Ban SIG-BPN']] as const
 const SUBTITLE: Record<Sheet, string> = {
- ban: 'Sesuai Excel Tracking Ban Luar satu baris per ban; data baru dari Accurate masuk otomatis.',
- bpn: 'Sesuai Excel Tracking Ban Luar sheet Ban Luar BPN (data utama ban armada SIG-BPN).',
- transfer: 'Sesuai Excel Tracking Ban Luar sheet Deliver & Receive Ban SIG-BPN.',
+ ban: 'As in the Outer Tyre Tracking Excel; one row per tyre; new data from Accurate comes in automatically.',
+ bpn: 'As in the Outer Tyre Tracking Excel, BPN Outer Tyre sheet (main SIG-BPN fleet tyre data).',
+ transfer: 'As in the Outer Tyre Tracking Excel, Deliver & Receive Tyre SIG-BPN sheet.',
 }
 
 export function TyrePage() {
@@ -304,22 +304,22 @@ export function TyrePage() {
   const [sheet, setSheet] = useState<Sheet>('ban')
 
   return (
-    <div className="space-y-5">
-      <PageHeader title="Ban Luar" subtitle={`${SUBTITLE[sheet]} Ketik langsung di tabel, tersimpan otomatis.`} icon={<Truck className="size-5" />} />
+    <div className="space-y-4">
+      <PageHeader title="Outer Tyres" subtitle={`${SUBTITLE[sheet]} Type directly in the table; it saves automatically.`} icon={<Truck className="size-5" />} />
       <SheetTabs tabs={TABS} value={sheet} onChange={setSheet} />
       {sheet === 'ban' && <BanSheet />}
       {sheet === 'bpn' && (
         <InlineSheet<TyreBpnRow> key="bpn" base="tyre-bpn/inventory" notesEntity="tyre_bpn" canEdit={canEdit} rowKey={(r) => r.id}
-          headers={['NO', 'TANGGAL CUT OFF', 'NOPOL', 'DESKRIPSI BAN', 'NO SERI', 'Foto', 'KETERANGAN']}
-          searchPlaceholder="Cari nopol, ban, no seri…"
+          headers={['NO', 'TANGGAL CUT OFF', 'NOPOL', 'DESKRIPSI BAN', 'NO SERI', 'Photo', 'KETERANGAN']}
+          searchPlaceholder="Search plate no., tyre, serial no…"
           renderRow={(r, note) => <BpnRow row={r} canEdit={canEdit} note={note} opts={opts} />}
           newRow={canEdit ? <BpnRow key="new" row={null} canEdit opts={opts} /> : null} />
       )}
       {sheet === 'transfer' && (
         <InlineSheet<TyreBpnTransferRow> key="transfer" base="tyre-bpn/transfers" notesEntity="tyre_bpn_transfer" canEdit={canEdit} rowKey={(r) => r.id}
-          headers={['No', 'NOPOL', 'Tgl NPBG', 'NO NPBG', 'Deskripsi Barang', 'No seri Ban Baru', 'Foto Ban', 'Ket', 'Tgl RI', 'NO RI',
-            'Deskripsi Barang', 'No seri Ban Bekas', 'Foto Ban', 'Ket']}
-          searchPlaceholder="Cari nopol, NPBG, RI, no seri…"
+          headers={['No', 'NOPOL', 'Tgl NPBG', 'NO NPBG', 'Item Description', 'New Tyre Serial No', 'Tyre Photo', 'Ket', 'Tgl RI', 'NO RI',
+            'Item Description', 'No seri Ban Bekas', 'Tyre Photo', 'Ket']}
+          searchPlaceholder="Search plate no., NPBG, RI, serial no…"
           renderRow={(r, note) => <TransferRow row={r} canEdit={canEdit} note={note} opts={opts} />}
           newRow={canEdit ? <TransferRow key="new" row={null} canEdit opts={opts} /> : null} />
       )}

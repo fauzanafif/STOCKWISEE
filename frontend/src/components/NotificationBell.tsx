@@ -80,7 +80,7 @@ export function NotificationBell() {
         type="button"
         className="relative rounded-md p-2 hover:bg-muted"
         onClick={() => setOpen((v) => !v)}
-        aria-label="Notifikasi"
+        aria-label="Notifications"
       >
         <Bell className="size-5" />
         {count > 0 && (
@@ -93,25 +93,25 @@ export function NotificationBell() {
       {open && (
         <div className="fixed inset-x-2 top-16 z-50 rounded-lg border bg-card shadow-lg sm:absolute sm:inset-x-auto sm:right-0 sm:top-auto sm:mt-2 sm:w-96">
           <div className="flex items-center justify-between border-b px-3 py-2">
-            <span className="text-sm font-semibold">Notifikasi</span>
+            <span className="text-sm font-semibold">Notifications</span>
             {count > 0 && (
               <button
                 type="button"
                 className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary"
                 onClick={() => markAllRead.mutate()}
               >
-                <CheckCheck className="size-3.5" /> Tandai semua dibaca
+                <CheckCheck className="size-3.5" /> Mark all as read
               </button>
             )}
           </div>
 
           <div className="max-h-[min(28rem,calc(100vh-8rem))] overflow-y-auto overscroll-contain">
-            {isLoading && <p className="p-4 text-center text-sm text-muted-foreground">Memuat…</p>}
+            {isLoading && <p className="p-4 text-center text-sm text-muted-foreground">Loading…</p>}
 
             {!isLoading && rows.length === 0 && (
               <div className="flex flex-col items-center gap-2 p-8 text-center text-sm text-muted-foreground">
                 <Info className="size-5" />
-                Tidak ada notifikasi.
+                No notifications.
               </div>
             )}
 

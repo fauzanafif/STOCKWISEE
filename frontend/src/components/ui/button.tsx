@@ -4,21 +4,21 @@ import * as React from 'react'
 import { cn } from '@/lib/utils'
 
 const buttonVariants = cva(
-  'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 disabled:pointer-events-none disabled:opacity-50 [&_svg]:shrink-0',
+  'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded text-[13px] font-medium transition-colors max-md:min-h-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 disabled:pointer-events-none disabled:opacity-50 [&_svg]:shrink-0',
   {
     variants: {
       variant: {
-        default: 'bg-primary text-primary-foreground shadow-sm hover:bg-primary/90',
-        destructive: 'bg-destructive text-destructive-foreground shadow-sm hover:bg-destructive/90',
+        default: 'bg-primary text-primary-foreground hover:bg-primary/90',
+        destructive: 'bg-destructive text-destructive-foreground hover:bg-destructive/90',
         outline: 'border border-input bg-card text-foreground hover:bg-muted',
         secondary: 'bg-secondary text-secondary-foreground hover:bg-secondary/80',
         ghost: 'text-foreground hover:bg-muted',
         link: 'text-primary underline-offset-4 hover:underline',
       },
       size: {
-        default: 'h-9 px-4',
-        sm: 'h-8 rounded-md px-3 text-[13px]',
-        lg: 'h-10 rounded-md px-6',
+        default: 'h-9 px-3.5',
+        sm: 'h-8 px-3',
+        lg: 'h-10 px-5',
         icon: 'h-9 w-9',
       },
     },
@@ -32,11 +32,24 @@ export interface ButtonProps
   asChild?: boolean
 }
 
+/** A button with words needs no icon beside them; a spinner (busy) and icon-only buttons stay. */
+function textOnly(children: React.ReactNode) {
+  const kids = React.Children.toArray(children)
+  if (!kids.some((k) => typeof k === 'string' || typeof k === 'number')) return children
+  return kids.filter((k) => {
+    if (!React.isValidElement(k)) return true
+    const cls = String((k.props as { className?: string }).className ?? '')
+    return !/\bsize-/.test(cls) || cls.includes('animate-spin')
+  })
+}
+
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, size, asChild = false, ...props }, ref) => {
+  ({ className, variant, size, asChild = false, children, ...props }, ref) => {
     const Comp = asChild ? Slot : 'button'
     return (
-      <Comp className={cn(buttonVariants({ variant, size, className }))} ref={ref} {...props} />
+      <Comp className={cn(buttonVariants({ variant, size, className }))} ref={ref} {...props}>
+        {asChild ? children : textOnly(children)}
+      </Comp>
     )
   },
 )

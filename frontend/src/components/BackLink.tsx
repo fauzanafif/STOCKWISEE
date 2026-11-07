@@ -11,8 +11,10 @@ import { cn } from '@/lib/utils'
  * Came from anywhere else (dashboard, a link, a fresh tab)? It opens the list
  * itself, never the unrelated page before.
  */
-export function BackLink({ to, label, className }: { to: string; label: string; className?: string }) {
+export function BackLink({ to, label, className, keep }: { to: string; label: string; className?: string; keep?: boolean }) {
   const navigate = useNavigate()
+  // the breadcrumb already leads back; `keep` is for what it cannot name (a project, a person's list)
+  if (!keep) return null
 
   function goBack(e: React.MouseEvent<HTMLAnchorElement>) {
     // let ctrl/cmd/middle-click open the list in a new tab as a normal link does
@@ -29,7 +31,7 @@ export function BackLink({ to, label, className }: { to: string; label: string; 
     <a
       href={to}
       onClick={goBack}
-      title={`Kembali ke ${label}`}
+      title={`Back to ${label}`}
       className={cn(
         'group inline-flex max-w-full items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-primary',
         'focus-visible:rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 print:hidden',

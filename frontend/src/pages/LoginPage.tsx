@@ -10,9 +10,9 @@ import { Label } from '@/components/ui/label'
 import { Logo } from '@/components/Logo'
 
 const HIGHLIGHTS = [
-  { icon: Boxes, text: 'Stok aktual, reserved & tersedia real-time' },
-  { icon: BarChart3, text: 'Analisa safety stock & prioritas pembelian' },
-  { icon: ShieldCheck, text: 'Alur request → pickup → PPB → penerimaan terkontrol' },
+  { icon: Boxes, text: 'Actual, reserved & available stock in real time' },
+  { icon: BarChart3, text: 'Safety stock analysis & purchasing priority' },
+  { icon: ShieldCheck, text: 'Request flow → pickup → Purchase Request → controlled receiving' },
 ]
 
 export function LoginPage() {
@@ -36,7 +36,7 @@ export function LoginPage() {
       await login(username.trim(), password)
       navigate(from, { replace: true })
     } catch (err) {
-      setError(apiErrorMessage(err, 'Login gagal.'))
+      setError(apiErrorMessage(err, 'Login failed.'))
     } finally {
       setSubmitting(false)
     }
@@ -77,8 +77,8 @@ export function LoginPage() {
             <Logo className="justify-center [&_img]:h-10 [&_img]:w-10" />
           </div>
           <div>
-            <h2 className="text-xl font-semibold">Masuk ke STOCKWISE</h2>
-            <p className="text-sm text-muted-foreground">Gunakan akun yang diberikan admin gudang.</p>
+            <h2 className="text-xl font-semibold">Sign in to STOCKWISE</h2>
+            <p className="text-sm text-muted-foreground">Use the account given by the warehouse admin.</p>
           </div>
 
           <form onSubmit={onSubmit} className="space-y-4" noValidate>
@@ -111,7 +111,7 @@ export function LoginPage() {
             )}
 
             <Button type="submit" className="w-full" disabled={submitting}>
-              {submitting ? 'Memproses…' : 'Masuk'}
+              {submitting ? 'Processing…' : 'In'}
             </Button>
           </form>
         </div>

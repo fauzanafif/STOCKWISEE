@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
+import { PpbReference } from '@/components/PpbReference'
 import { Link, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, CheckCheck, CheckCircle2, ClipboardCheck, ExternalLink, FileText, Inbox, Loader2, PackageCheck, Search, ShoppingCart, Undo2, XCircle } from 'lucide-react'
+import { ArrowLeft, CheckCheck, CheckCircle2, ChevronDown, ClipboardCheck, ExternalLink, FileText, Inbox, Loader2, PackageCheck, Search, ShoppingCart, Undo2, XCircle } from 'lucide-react'
 import { apiErrorMessage } from '@/lib/api'
 import { useAuth } from '@/auth/AuthContext'
-import { STAGE_INFO, useApprovals, usePurchasingApprovals, type ApprovalRow } from '@/features/itemRequests/api'
+import { useApprovals, usePurchasingApprovals, type ApprovalRow } from '@/features/itemRequests/api'
 import { useDecidePpb, usePpb } from '@/features/ppb/api'
 import { usePo, usePoAction } from '@/features/purchasing/api'
 import { useDecideNpbg, useNpbg } from '@/features/npbg/api'
-import { ApprovalActions, HandoverQty, type HandoverDraft } from '@/components/itemRequests/ApprovalActions'
+import { ApprovalActions, type HandoverDraft } from '@/components/itemRequests/ApprovalActions'
 import { isAutoApproval, stepText } from '@/lib/approval'
 import { RequestStatusBadge } from '@/pages/ItemRequestListPage'
 import { PageHeader } from '@/components/PageHeader'
@@ -15,18 +16,19 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
+import { DirectorPickTag } from '@/components/DirectorPickTag'
 import { toast } from '@/lib/notify'
 import { LineImagesCell, RequestImages } from '@/components/itemRequests/RequestImages'
 
 const fmtQty = (n: number | string | null | undefined) => (n == null ? '' : Number(n).toLocaleString('id-ID', { maximumFractionDigits: 2 }))
 const rupiah = (n: number) => 'Rp ' + Number(n).toLocaleString('id-ID')
-const fmtDate = (v: string | null | undefined) => (v ? new Date(v).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : '')
+const fmtDate = (v: string | null | undefined) => (v ? new Date(v).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '')
 
 /** How long a task has waited — the inbox sorts and colours by it (SAP Fiori "My Inbox" style). */
 function age(v: string | null | undefined): { text: string; late: boolean } {
   if (!v) return { text: '', late: false }
   const days = Math.floor((Date.now() - new Date(v).getTime()) / 86_400_000)
-  return { text: days <= 0 ? 'hari ini' : `${days} hari`, late: days >= 3 }
+  return { text: days <= 0 ? 'today' : `${days} days`, late: days >= 3 }
 }
 
 type Kind = 'REQUEST' | 'GUDANG' | 'NPBG' | 'PPB' | 'PO'
@@ -48,10 +50,10 @@ interface Task {
 }
 
 const KIND: Record<Kind, { label: string; icon: typeof FileText; tone: string }> = {
-  REQUEST: { label: 'Request Barang', icon: ClipboardCheck, tone: 'bg-blue-50 text-blue-700' },
-  GUDANG: { label: 'Gudang', icon: PackageCheck, tone: 'bg-violet-50 text-violet-700' },
-  NPBG: { label: 'NPBG', icon: PackageCheck, tone: 'bg-teal-50 text-teal-700' },
-  PPB: { label: 'PPB', icon: FileText, tone: 'bg-amber-50 text-amber-700' },
+  REQUEST: { label: 'Item Request', icon: ClipboardCheck, tone: 'bg-blue-50 text-blue-700' },
+  GUDANG: { label: 'Warehouse', icon: PackageCheck, tone: 'bg-violet-50 text-violet-700' },
+  NPBG: { label: 'Delivery Order', icon: PackageCheck, tone: 'bg-teal-50 text-teal-700' },
+  PPB: { label: 'Purchase Request', icon: FileText, tone: 'bg-amber-50 text-amber-700' },
   PO: { label: 'Purchase Order', icon: ShoppingCart, tone: 'bg-emerald-50 text-emerald-700' },
 }
 
@@ -80,7 +82,7 @@ export function ApprovalPage() {
       out.push({
         key: `REQUEST-${r.id}`, kind: tab === 'todo' && gudang ? 'GUDANG' : 'REQUEST', id: r.id, number: r.number,
         title: r.requester_name ?? '-', subtitle: [r.form_label, r.divisi].filter(Boolean).join(' · '),
-        stage: tab === 'todo' && r.status === 'APPROVAL_MANAGER' && r.approve_as === 'DIREKTUR' ? 'Persetujuan Direktur (lewati Manajer)' : r.status_label,
+        stage: tab === 'todo' && r.status === 'APPROVAL_MANAGER' && r.approve_as === 'DIREKTUR' ? 'Director Approval (skips Manager)' : r.status_label,
         date: r.processed_at ?? r.created_at, urgent: r.urgency === 'URGENT',
         preview: lines.map((l) => `${l.deskripsi_barang} ${fmtQty(gudang ? l.remaining : l.approved_qty ?? l.qty)}${l.satuan ? ` ${l.satuan}` : ''}`).join(', '),
         request: r,
@@ -88,15 +90,15 @@ export function ApprovalPage() {
     }
     for (const n of buying.data?.npbg ?? []) {
       out.push({ key: `NPBG-${n.id}`, kind: 'NPBG', id: n.id, number: n.no_npbg, title: n.peminta ?? n.pelanggan ?? 'NPBG', subtitle: [n.pelanggan, n.divisi].filter(Boolean).join(' · '),
-        stage: n.step === 'DIREKTUR' ? 'Persetujuan Direktur' : bypassNpbg ? 'Persetujuan Direktur (lewati Manajer)' : 'Persetujuan Manajer', date: n.tgl_npbg, urgent: false, preview: n.items.join(', ') })
+        stage: n.step === 'DIREKTUR' ? 'Director Approval' : bypassNpbg ? 'Director Approval (skips Manager)' : 'Manager Approval', date: n.tgl_npbg, urgent: false, preview: n.items.join(', ') })
     }
     for (const d of buying.data?.ppb ?? []) {
-      out.push({ key: `PPB-${d.id}`, kind: 'PPB', id: d.id, number: d.no_ppb, title: d.peminta ?? 'PPB', subtitle: [`${d.lines} barang`, d.divisi].filter(Boolean).join(' · '),
-        stage: d.step === 'DIREKTUR' ? 'Persetujuan Direktur' : bypassPpb ? 'Persetujuan Direktur (lewati Manajer)' : 'Persetujuan Manajer', date: d.tgl_ppb, urgent: false, preview: d.items.join(', ') })
+      out.push({ key: `PPB-${d.id}`, kind: 'PPB', id: d.id, number: d.no_ppb, title: d.peminta ?? 'PPB', subtitle: [`${d.lines} items`, d.divisi].filter(Boolean).join(' · '),
+        stage: d.step === 'DIREKTUR' ? 'Director Approval' : bypassPpb ? 'Director Approval (skips Manager)' : 'Manager Approval', date: d.tgl_ppb, urgent: false, preview: d.items.join(', ') })
     }
     for (const p of buying.data?.po ?? []) {
-      out.push({ key: `PO-${p.id}`, kind: 'PO', id: p.id, number: p.number, title: p.vendor ?? 'PO', subtitle: `${p.items_count} barang${p.from_ppb ? ` · dari PPB ${p.from_ppb}` : ''}`,
-        stage: 'Persetujuan Direktur', date: p.date, urgent: false, amount: p.total, preview: rupiah(p.total) })
+      out.push({ key: `PO-${p.id}`, kind: 'PO', id: p.id, number: p.number, title: p.vendor ?? 'PO', subtitle: `${p.items_count} items${p.off_pick ? ` · ${p.off_pick} not Director pick` : ''}${p.from_ppb ? ` · from PPB ${p.from_ppb}` : ''}`,
+        stage: 'Director Approval', date: p.date, urgent: false, amount: p.total, preview: `${rupiah(p.total)}${p.off_pick ? ` · ${p.off_pick} not Director pick` : ''}` })
     }
     // urgent first, then the oldest
     return out.sort((a, b) => Number(b.urgent) - Number(a.urgent) || (tab === 'done' ? -1 : 1) * String(a.date ?? '').localeCompare(String(b.date ?? '')))
@@ -121,15 +123,15 @@ export function ApprovalPage() {
   return (
     <div className="space-y-4">
       <PageHeader title="Approval" icon={<ClipboardCheck className="size-5" />}
-        subtitle="Semua yang menunggu tindakan Anda (Request Barang, serah terima, PPB, dan PO) di satu tempat." />
+        subtitle="Everything waiting for your action (Item Requests, handovers, Purchase Request, and PO) in one place." />
 
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex flex-wrap items-center gap-2">
-          <div className="inline-flex rounded-lg border bg-card p-0.5" role="tablist">
-            {([['todo', 'Perlu tindakan'], ['done', 'Riwayat']] as const).map(([k, label]) => (
+          <div className="inline-flex rounded-lg border bg-muted/50 p-0.5" role="tablist">
+            {([['todo', 'Action needed'], ['done', 'History']] as const).map(([k, label]) => (
               <button key={k} type="button" role="tab" aria-selected={tab === k}
                 onClick={() => { setParams(k === 'todo' ? {} : { tab: k }, { replace: true }); setKind('') }}
-                className={cn('rounded-md px-3 py-1.5 text-sm font-medium', tab === k ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted')}>
+                className={cn('rounded-md px-3 py-1.5 text-sm font-medium transition-colors', tab === k ? 'bg-card text-foreground ring-1 ring-border' : 'text-muted-foreground hover:text-foreground')}>
                 {label}{k === 'todo' && tab === 'todo' && tasks.length > 0 ? ` (${tasks.length})` : ''}
               </button>
             ))}
@@ -138,24 +140,33 @@ export function ApprovalPage() {
           {tab === 'todo' && (['', 'REQUEST', 'GUDANG', 'NPBG', 'PPB', 'PO'] as const).filter((k) => !k || counts[k]).map((k) => (
             <button key={k || 'all'} type="button" onClick={() => setKind(k)}
               className={cn('rounded-full border px-3 py-1 text-xs font-medium transition-colors', kind === k ? 'border-primary bg-primary/10 text-primary' : 'bg-card text-muted-foreground hover:bg-muted')}>
-              {k ? KIND[k].label : 'Semua'} <span className="tabular-nums">{k ? counts[k] : tasks.length}</span>
+              {k ? KIND[k].label : 'All'} <span className="tabular-nums">{k ? counts[k] : tasks.length}</span>
             </button>
           ))}
         </div>
         <div className="relative lg:w-72">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Cari nomor, nama, barang…" aria-label="Cari" />
+          <Input className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search number, name, item…" aria-label="Search" />
         </div>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,340px)_minmax(0,1fr)] lg:items-start">
         {/* the inbox */}
         <Card className={cn('overflow-hidden', selected && 'hidden lg:block')}>
-          {loading && <div className="flex justify-center py-16"><Loader2 className="size-6 animate-spin text-muted-foreground" /></div>}
+          {loading && (
+            <ul className="divide-y" aria-busy="true" aria-label="Loading">
+              {[0, 1, 2, 3].map((i) => (
+                <li key={i} className="flex gap-3 px-4 py-3">
+                  <span className="size-8 shrink-0 animate-pulse rounded-md bg-muted" />
+                  <span className="flex-1 space-y-2 pt-0.5"><span className="block h-3.5 w-2/3 animate-pulse rounded bg-muted" /><span className="block h-3 w-1/3 animate-pulse rounded bg-muted" /><span className="block h-3 w-5/6 animate-pulse rounded bg-muted" /></span>
+                </li>
+              ))}
+            </ul>
+          )}
           {!loading && shown.length === 0 && (
             <div className="flex flex-col items-center gap-2 px-4 py-16 text-center">
-              <CheckCheck className="size-10 text-emerald-600" />
-              <p className="font-medium">{tab === 'todo' ? 'Semua beres, tidak ada yang menunggu Anda' : 'Belum ada riwayat'}</p>
+              <span className="flex size-12 items-center justify-center rounded-full bg-emerald-50 text-emerald-600"><CheckCheck className="size-6" /></span>
+              <p className="font-medium">{tab === 'todo' ? 'All clear, nothing is waiting for you' : 'No history yet'}</p>
             </div>
           )}
           <ul className="max-h-[calc(100vh-260px)] divide-y overflow-y-auto">
@@ -172,7 +183,7 @@ export function ApprovalPage() {
                         <span className="truncate font-medium">{t.title}</span>
                         {tab === 'todo' && a.text && <span className={cn('shrink-0 text-xs', a.late ? 'font-semibold text-red-600' : 'text-muted-foreground')}>{a.text}</span>}
                       </span>
-                      <span className="block truncate font-mono text-xs text-muted-foreground">{t.number}</span>
+                      <span className="block truncate text-[13px] text-muted-foreground">{t.number}</span>
                       <span className="mt-1 block truncate text-xs text-muted-foreground">{t.preview}</span>
                       <span className="mt-1.5 flex flex-wrap items-center gap-1.5">
                         <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] font-medium text-foreground/80">{t.stage}</span>
@@ -191,9 +202,9 @@ export function ApprovalPage() {
           {selected ? (
             <TaskDetail key={selected.key} task={selected} history={tab === 'done'} onBack={() => select(null)} onDone={() => select(null)} />
           ) : (
-            <Card className="flex flex-col items-center gap-2 py-24 text-center text-muted-foreground">
-              <Inbox className="size-10" />
-              <p>Pilih tugas di sebelah kiri.</p>
+            <Card className="flex flex-col items-center gap-2 border-dashed py-24 text-center text-muted-foreground">
+              <Inbox className="size-10 text-muted-foreground/50" />
+              <p>Select a task on the left.</p>
             </Card>
           )}
         </div>
@@ -206,19 +217,19 @@ export function ApprovalPage() {
 function DetailHeader({ task, onBack, link, actions }: { task: Task; onBack: () => void; link: string; actions?: React.ReactNode }) {
   const K = KIND[task.kind]
   return (
-    <div className="space-y-3 border-b p-4">
-      <button type="button" onClick={onBack} className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground lg:hidden"><ArrowLeft className="size-4" /> Kembali</button>
+    <div className="space-y-4 border-b p-4">
+      <button type="button" onClick={onBack} className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground lg:hidden"><ArrowLeft className="size-4" /> Back</button>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <span className={cn('rounded px-1.5 py-0.5 text-xs font-medium', K.tone)}>{K.label}</span>
-            <h2 className="font-mono text-lg font-semibold">{task.number}</h2>
+            <h2 className=" text-xl font-semibold tracking-tight">{task.number}</h2>
             {task.urgent && <span className="rounded bg-red-50 px-1.5 py-0.5 text-xs font-semibold text-red-700">Urgent</span>}
           </div>
           <p className="mt-0.5 text-sm text-muted-foreground">{task.title}{task.subtitle ? ` · ${task.subtitle}` : ''}</p>
           <p className="mt-1 text-xs font-medium text-amber-700">{task.stage}</p>
         </div>
-        <Link to={link} className="inline-flex shrink-0 items-center gap-1 text-sm text-primary hover:underline">Buka dokumen <ExternalLink className="size-3.5" /></Link>
+        <Link to={link} className="inline-flex shrink-0 items-center gap-1 text-sm text-primary hover:underline">Open document <ExternalLink className="size-3.5" /></Link>
       </div>
       {actions}
     </div>
@@ -228,7 +239,7 @@ function DetailHeader({ task, onBack, link, actions }: { task: Task; onBack: () 
 /** The "Field: value" grid of an object page. */
 function Facts({ items }: { items: [string, React.ReactNode][] }) {
   return (
-    <dl className="grid grid-cols-2 gap-x-4 gap-y-2 p-4 text-sm sm:grid-cols-4">
+    <dl className={cn('grid grid-cols-2 gap-x-4 gap-y-2 p-4 text-sm', items.length > 4 ? 'sm:grid-cols-3 lg:grid-cols-5' : 'sm:grid-cols-4')}>
       {items.map(([k, v]) => <div key={k}><dt className="text-xs text-muted-foreground">{k}</dt><dd className="font-medium">{v ?? ''}</dd></div>)}
     </dl>
   )
@@ -240,7 +251,7 @@ function LinesTable({ head, rows, numericFrom, rowClass }: { head: string[]; row
   return (
     <div className="overflow-x-auto border-t">
       <table className="w-full text-sm">
-        <thead className="whitespace-nowrap bg-muted/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
+        <thead className="whitespace-nowrap bg-muted/40 text-left text-xs text-muted-foreground">
           <tr>{head.map((h, i) => <th key={h} className={cn('px-4 py-2 font-medium', i > 0 && i >= from && 'text-right')}>{h}</th>)}</tr>
         </thead>
         <tbody className="divide-y">
@@ -267,7 +278,7 @@ function RequestDetail({ task, r, gudang, lines, history, onBack, onDone }: {
   // the inbox refreshes itself (stock included): when it last did
   const live = useApprovals(history ? 'done' : 'todo')
   // Gudang: what is handed over, fixed in the table before the serah terima
-  const [draft, setDraft] = useState<HandoverDraft>({ qty: {}, drop: {} })
+  const [draft] = useState<HandoverDraft>({ qty: {}, drop: {} })
   const openF = gudang && !history ? r.fulfillments?.find((f) => f.status !== 'DISERAHKAN') ?? null : null
   const waiting = openF ? lines.filter((l) => !openF.lines.some((fl) => fl.line_id === l.id)) : lines
   // Manager / Direktur do not change quantities: "Revisi" sends it to admin gudang to revise them
@@ -282,101 +293,184 @@ function RequestDetail({ task, r, gudang, lines, history, onBack, onDone }: {
     m[k].n += 1
     return m
   }, {}))
-  const [picked, setPicked] = useState<string | null>(null)
-  const [hovered, setHovered] = useState<string | null>(null)
-  const lit = hovered ?? picked
-  const litClass = (l: ApprovalRow['lines'][number]) => lit !== null && (keyOf(l) === lit ? 'bg-blue-50 ring-1 ring-inset ring-blue-300' : 'opacity-60')
-  const itemCell = (l: ApprovalRow['lines'][number]) => (
-    <div>
-      <div className="font-medium">{l.item_description ?? l.deskripsi_barang}</div>
-      <div className="text-xs text-muted-foreground">{[l.kode_barang, l.satuan, l.item_description && l.item_description !== askedOf(l) ? `diminta: ${askedOf(l)}` : null, l.note].filter(Boolean).join(' · ')}</div>
-    </div>
-  )
   return (
-    <div className="grid gap-4 xl:grid-cols-[15rem_minmax(0,1fr)] xl:items-start">
-    <Card className="overflow-hidden xl:sticky xl:top-20">
-      <div className="border-b px-4 py-3">
-        <div className="text-sm font-semibold">Permintaan</div>
-        <div className="text-xs text-muted-foreground">Nama dari peminta · klik untuk menyorot itemnya</div>
-      </div>
-      <ul className="divide-y">
-        {asked.map((a) => (
-          <li key={a.key}>
-            <button type="button" onClick={() => setPicked(picked === a.key ? null : a.key)} onMouseEnter={() => setHovered(a.key)} onMouseLeave={() => setHovered(null)}
-              aria-pressed={picked === a.key}
-              className={cn('flex w-full items-start justify-between gap-2 px-4 py-2.5 text-left text-sm transition-colors hover:bg-blue-50',
-                picked === a.key && 'bg-blue-100 font-semibold text-blue-900 shadow-[inset_3px_0_0_theme(colors.blue.500)]')}>
-              <span className="min-w-0 break-words">{a.name}</span>
-              <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{fmtQty(a.qty)} {a.unit ?? ''}{a.n > 1 ? ` · ${a.n} item` : ''}</span>
-            </button>
-          </li>
-        ))}
-      </ul>
-      {picked && <button type="button" className="w-full border-t px-4 py-2 text-left text-xs text-primary hover:underline" onClick={() => setPicked(null)}>Tampilkan semua</button>}
-    </Card>
     <Card className="overflow-hidden">
       <DetailHeader task={task} onBack={onBack} link={`/item-requests/${r.id}`}
         actions={!history && (
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-muted/40 p-3">
-            <p className="text-xs text-muted-foreground">{STAGE_INFO[r.status]?.hint}{r.can_approve ? ' Ada yang kurang sesuai? Klik Revisi, admin gudang yang memperbaiki.' : ''}</p>
             <ApprovalActions req={r} onDone={onDone} handover={openF ? draft : undefined} />
           </div>
         )} />
-      <Facts items={[['Pemohon', r.requester_name], ['Divisi', r.divisi], ['Dibutuhkan', fmtDate(r.needed_date)], ['Status', <RequestStatusBadge status={r.status} label={r.status_label} />]]} />
-      {r.note && <p className="border-t px-4 py-3 text-sm"><span className="text-muted-foreground">Keperluan: </span>{r.note}</p>}
+      <Facts items={[['Requester', r.requester_name], ['Division', r.divisi], ['Verifying admin', r.verified_step?.user_name ?? '-'], ['Needed', fmtDate(r.needed_date)], ['Status', <RequestStatusBadge status={r.status} label={r.status_label} />]]} />
+      {r.note && <p className="border-t px-4 py-3 text-sm"><span className="text-muted-foreground">Purpose: </span>{r.note}</p>}
+      {r.verify_note && <p className="whitespace-pre-wrap border-t bg-blue-50/60 px-4 py-3 text-sm"><span className="text-blue-700">Warehouse admin notes: </span>{r.verify_note}</p>}
+      {r.proxy && (
+        <p className="border-t bg-emerald-50/60 px-4 py-3 text-sm">
+          <span className="text-emerald-700">Picked up by representative: </span><b>{r.proxy.name}</b>
+          <span className="text-muted-foreground"> · scan its QR at handover (valid until {new Date(r.proxy.expires_at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })})</span>
+        </p>
+      )}
       {/* the requester's images: Manager, Direktur and Gudang see what is asked */}
       {(r.images?.length ?? 0) > 0 && (
         <div className="space-y-1.5 border-t px-4 py-3">
-          <div className="text-xs text-muted-foreground">Gambar dari peminta</div>
+          <div className="text-xs text-muted-foreground">Image from requester</div>
           <RequestImages requestId={r.id} slots={r.images} />
         </div>
       )}
       {openF && (
         // Gudang: only what is handed over (default: the approved NPBG quantity, can be lowered)
         <div className="border-t">
-          <div className="px-4 pb-1 pt-3 text-xs text-muted-foreground">NPBG <span className="font-mono">{openF.no_npbg}</span>{openF.seq > 1 ? ` (#${openF.seq})` : ''}</div>
-          <HandoverQty f={openF} value={draft} onChange={setDraft} stock={Object.fromEntries(r.lines.map((l) => [l.id, l.on_hand ?? l.available]))}
-            images={{ requestId: r.id, byLine: Object.fromEntries(r.lines.map((l) => [l.id, l.images ?? []])) }} />
+          <div className="px-4 pb-1 pt-3 text-xs text-muted-foreground">Delivery Order <span className="">{openF.no_npbg}</span>{openF.seq > 1 ? ` (#${openF.seq})` : ''}</div>
+          {/* the same view as the other approvals, without the bought (PPB) split: all of it leaves the stock */}
+          <GudangPicks r={r} lines={r.lines.filter((l) => openF.lines.some((fl) => fl.line_id === l.id))} asked={asked} keyOf={keyOf} forGudang
+            approvedOf={(l) => openF.lines.filter((fl) => fl.line_id === l.id).reduce((n, fl) => n + Number(fl.qty), 0)} />
         </div>
       )}
       {gudang && !history && (
         <p className="border-t px-4 py-2 text-right text-xs text-muted-foreground">
-          Stok realtime{live.dataUpdatedAt ? `, diperbarui ${new Date(live.dataUpdatedAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}` : ''}
+          Real-time stock{live.dataUpdatedAt ? `, updated ${new Date(live.dataUpdatedAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}` : ''}
         </p>
       )}
       {gudang ? (!openF && waiting.length > 0 && (
-        <>
-          <LinesTable head={['Item terverifikasi', 'Stok', 'Disetujui', 'Sisa', 'Gambar']} numericFrom={1} rowClass={(i) => litClass(waiting[i])}
-          rows={waiting.map((l) => [
-            itemCell(l),
-            <StockCell onHand={l.on_hand} free={l.available} />,
-            fmtQty(l.approved_qty), fmtQty(l.remaining),
-            <LineImagesCell requestId={r.id} lineId={l.id} slots={l.images} />,
-          ])} />
-        </>
+        <GudangPicks r={r} lines={waiting} asked={asked} keyOf={keyOf} approvedOf={(l) => Number(l.remaining)} forGudang />
       )) : (
-        // what the stock can give now (NPBG) and what has to be bought (PPB) — decided by the system after the Direktur
-        <LinesTable head={['Item terverifikasi', 'Diminta', 'Disetujui', 'Stok', 'NPBG', 'PPB', 'Gambar']} numericFrom={1} rowClass={(i) => litClass(lines[i])}
-          rows={lines.map((l) => {
-            const need = approvedOf(l)
-            const stock = Math.max(0, l.available ?? 0)
-            const npbg = l.item_id ? Math.min(need, stock) : 0
-            return [
-              itemCell(l),
-              fmtQty(l.qty),
-              fmtQty(need),
-              <StockCell onHand={l.on_hand} free={l.available} tone={l.available == null ? 'text-muted-foreground' : stock >= need ? 'text-emerald-700' : 'text-red-600'} />,
-              <span className="font-semibold text-emerald-700" title="Dikeluarkan dari stok (perkiraan)">{fmtQty(npbg)}</span>,
-              <span className="font-semibold text-indigo-700" title="Dibeli lewat PPB sampai RI (perkiraan)">{fmtQty(Math.round((need - npbg) * 100) / 100)}</span>,
-              <LineImagesCell requestId={r.id} lineId={l.id} slots={l.images} />,
-            ]
-          })} />
+        <GudangPicks r={r} lines={lines} asked={asked} keyOf={keyOf} approvedOf={approvedOf} />
       )}
-      {!gudang && !history && <p className="border-t px-4 py-2 text-xs text-muted-foreground">NPBG = bisa dikeluarkan dari stok sekarang · PPB = stok tidak ada, dibeli sampai RI. Angka final ditentukan sistem saat Direktur menyetujui.</p>}
       {r.last_step && (
-        <p className="border-t px-4 py-3 text-xs text-muted-foreground">Langkah terakhir: {stepText(r.last_step.action, r.last_step.note, r.last_step.stage)}{isAutoApproval(r.last_step.note) ? '' : ` · ${r.last_step.user_name ?? 'Sistem'}`}{r.last_step.note && !isAutoApproval(r.last_step.note) ? ` · ${r.last_step.note}` : ''}</p>
+        <p className="border-t px-4 py-3 text-xs text-muted-foreground">Last step: {stepText(r.last_step.action, r.last_step.note, r.last_step.stage)}{isAutoApproval(r.last_step.note) ? '' : ` · ${r.last_step.user_name ?? 'System'}`}{r.last_step.note && !isAutoApproval(r.last_step.note) ? ` · ${r.last_step.note}` : ''}</p>
       )}
     </Card>
+  )
+}
+
+/**
+ * What admin gudang picked, per item the requester asked — Manager and Direktur alike: one row per asked
+ * item ("sabun · 10 PCS · 1 barang dipilih · 10/10 ✓"); a click drops it down to its picked Master Produk
+ * items in columns (qty, stock, from stock = NPBG, bought = PPB). The final split is made after the Direktur.
+ */
+function GudangPicks({ r, lines, asked, keyOf, approvedOf, forGudang }: {
+  r: ApprovalRow; lines: ApprovalRow['lines']; asked: { key: string; name: string; qty: number; unit: string | null }[]
+  keyOf: (l: ApprovalRow['lines'][number]) => string; approvedOf: (l: ApprovalRow['lines'][number]) => number
+  /** Gudang: only what is handed over (no from-stock / bought split — buying is not its task) */
+  forGudang?: boolean
+}) {
+  const round = (n: number) => Math.round(n * 100) / 100
+  const split = (l: ApprovalRow['lines'][number]) => {
+    const need = approvedOf(l)
+    const npbg = l.item_id ? Math.min(need, Math.max(0, l.available ?? 0)) : 0
+    return { need, npbg, ppb: round(need - npbg) }
+  }
+  const groups = asked.map((a) => ({ ...a, lines: lines.filter((l) => keyOf(l) === a.key) })).filter((g) => g.lines.length > 0)
+  const [open, setOpen] = useState<Record<string, boolean>>({})
+  const allOpen = groups.length > 0 && groups.every((g) => open[g.key])
+  const all = lines.map(split)
+  const fromStock = round(all.reduce((n, x) => n + x.npbg, 0))
+  const bought = round(all.reduce((n, x) => n + x.ppb, 0))
+  const handed = round(all.reduce((n, x) => n + x.need, 0))
+  const v = r.verified_step
+
+  return (
+    <div className="space-y-4 border-t px-4 py-4">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        <h3 className="text-[15px] font-semibold">{forGudang ? 'Items handed over' : 'Warehouse picks'} <span className="font-normal text-muted-foreground">· {lines.length} Product Master items</span></h3>
+        {v && <span className="text-xs text-muted-foreground">selected {v.user_name ?? 'warehouse admin'}{v.at ? ` · ${new Date(v.at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}` : ''}</span>}
+      </div>
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        {forGudang ? <span className="rounded-full bg-emerald-50 px-2.5 py-1 font-medium text-emerald-800">Handed Over {fmtQty(handed)}</span> : <>
+          <span className="rounded-full bg-emerald-50 px-2.5 py-1 font-medium text-emerald-800">Handed Over (Delivery Order) {fmtQty(fromStock)}</span>
+          <span className="rounded-full bg-indigo-50 px-2.5 py-1 font-medium text-indigo-800">Purchased (Purchase Request) {fmtQty(bought)}</span>
+        </>}
+        <button type="button" className="ml-auto font-medium text-primary hover:underline" onClick={() => setOpen(allOpen ? {} : Object.fromEntries(groups.map((g) => [g.key, true])))}>
+          {allOpen ? 'Close all' : 'Open all'}
+        </button>
+      </div>
+
+      <div className="divide-y overflow-hidden rounded-lg border bg-card">
+        {groups.map((g) => {
+          const total = round(g.lines.reduce((n, l) => n + approvedOf(l), 0))
+          const ok = Math.abs(total - g.qty) < 0.005
+          const isOpen = !!open[g.key]
+          return (
+            <div key={g.key}>
+              {/* the asked item: click to drop down its picks */}
+              <button type="button" onClick={() => setOpen((o) => ({ ...o, [g.key]: !o[g.key] }))} aria-expanded={isOpen}
+                className={cn('flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/40', isOpen && 'bg-blue-50/70')}>
+                <ChevronDown className={cn('size-4 shrink-0 text-muted-foreground transition-transform', !isOpen && '-rotate-90')} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-semibold">{g.name}</span>
+                  <span className="block text-xs text-muted-foreground">{g.lines.length} items{forGudang ? ' handed over' : ' picked by warehouse'}</span>
+                  {/* given less than asked on purpose: admin gudang's reason */}
+                  {g.lines.find((l) => l.short_reason)?.short_reason && <span className="block text-xs text-amber-700">Reason: {g.lines.find((l) => l.short_reason)!.short_reason}</span>}
+                </span>
+                <span className="shrink-0 text-right text-sm tabular-nums">
+                  <span className="font-semibold">{fmtQty(g.qty)}</span> <span className="text-xs text-muted-foreground">{g.unit ?? ''}</span>
+                  <span className={cn('block text-xs font-medium', ok ? 'text-emerald-700' : 'text-amber-700')}>{fmtQty(total)} / {fmtQty(g.qty)}{forGudang ? ' handed over' : ok ? ' ✓' : ' given less'}</span>
+                </span>
+              </button>
+
+              {isOpen && (
+                // phone: one small card per pick (no table wider than the screen)
+                <ul className="divide-y border-t bg-muted/10 sm:hidden">
+                  {g.lines.map((l) => {
+                    const x = split(l)
+                    return (
+                      <li key={l.id} className="space-y-2 px-4 py-3 text-sm">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0"><div className="break-words font-medium leading-snug">{l.item_description ?? l.deskripsi_barang}</div>
+                            <div className="text-xs text-muted-foreground"><span className="">{l.kode_barang ?? '-'}</span>{l.note ? ` · ${l.note}` : ''}</div></div>
+                          <LineImagesCell requestId={r.id} lineId={l.id} slots={l.images} />
+                        </div>
+                        <dl className={cn('grid gap-1 text-center text-xs', forGudang ? 'grid-cols-2' : 'grid-cols-4')}>
+                          {([['Stock', l.available == null ? '?' : fmtQty(l.available), l.available == null ? '' : (l.available ?? 0) >= x.need ? 'text-emerald-700' : 'text-red-600'],
+                            ...(forGudang ? [['Handed Over', <b>{fmtQty(x.need)}</b>, '']] : [['Requested', <b>{fmtQty(x.need)}</b>, ''], ['Handed Over', fmtQty(x.npbg), 'font-semibold text-emerald-700'], ['Purchased', fmtQty(x.ppb), 'font-semibold text-indigo-700']])] as [string, React.ReactNode, string][]).map(([k, val, tone]) => (
+                            <div key={k} className="rounded-md bg-card px-1 py-1.5 ring-1 ring-inset ring-border"><dt className="text-[11px] text-muted-foreground">{k}</dt><dd className={cn('mt-0.5 tabular-nums', tone)}>{val}</dd></div>
+                          ))}
+                        </dl>
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
+              {isOpen && (
+                <div className="hidden overflow-x-auto border-t bg-muted/10 sm:block">
+                  <table className={cn('w-full text-sm', forGudang ? 'min-w-[420px]' : 'min-w-[520px]')}>
+                    <thead className="whitespace-nowrap text-left text-xs text-muted-foreground">
+                      <tr className="border-b">
+                        <th className="py-2 pl-11 pr-3 font-medium">Selected items</th>
+                        <th className="px-3 py-2 text-right font-medium">Stock</th>
+                        <th className="px-3 py-2 text-right font-medium">{forGudang ? 'Handed Over' : 'Requested'}</th>
+                        {!forGudang && <>
+                          <th className="px-3 py-2 text-right font-medium" title="Issued from stock and handed over (estimate)">Handed Over</th>
+                          <th className="px-3 py-2 text-right font-medium" title="Purchased through Purchase Request until Receipt (estimate)">Purchased</th>
+                        </>}
+                        <th className="px-4 py-2 text-right font-medium">Image</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {g.lines.map((l) => {
+                        const x = split(l)
+                        return (
+                          <tr key={l.id} className="align-top">
+                            <td className="py-2.5 pl-11 pr-3"><div className="font-medium leading-snug">{l.item_description ?? l.deskripsi_barang}</div>
+                              <div className="text-xs text-muted-foreground"><span className="">{l.kode_barang ?? '-'}</span>{l.note ? ` · ${l.note}` : ''}</div></td>
+                            <td className="whitespace-nowrap px-3 py-2.5 text-right"><StockCell onHand={l.on_hand} free={l.available} tone={l.available == null ? 'text-muted-foreground' : (l.available ?? 0) >= x.need ? 'text-emerald-700' : 'text-red-600'} /></td>
+                            <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums"><b>{fmtQty(x.need)}</b> <span className="text-xs text-muted-foreground">{l.satuan ?? ''}</span></td>
+                            {!forGudang && <>
+                              <td className="whitespace-nowrap px-3 py-2.5 text-right font-semibold tabular-nums text-emerald-700">{fmtQty(x.npbg)}</td>
+                              <td className="whitespace-nowrap px-3 py-2.5 text-right font-semibold tabular-nums text-indigo-700">{fmtQty(x.ppb)}</td>
+                            </>}
+                            <td className="px-4 py-2"><div className="flex justify-end"><LineImagesCell requestId={r.id} lineId={l.id} slots={l.images} /></div></td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }
@@ -385,7 +479,7 @@ function RequestDetail({ task, r, gudang, lines, history, onBack, onDone }: {
  * Approve / Revisi (back to the admin who made it, with a required note) / Tolak — the same bar for PPB,
  * NPBG and PO. Every change goes through Revisi: the approver does not edit the document.
  */
-function DecisionBar({ approveLabel, rejectLabel, busy, onApprove, onReject, onReturn, returnTo = 'admin', hint, withNote }: {
+function DecisionBar({ approveLabel, rejectLabel, busy, onApprove, onReject, onReturn, returnTo = 'admin', withNote }: {
   approveLabel: string; rejectLabel?: string; busy: boolean; onApprove: (note?: string) => void; onReject?: (note: string) => void; hint?: string
   /** Revisi: send it back for a revision (a note is required) */
   onReturn?: (note: string) => void
@@ -401,20 +495,20 @@ function DecisionBar({ approveLabel, rejectLabel, busy, onApprove, onReject, onR
     const back = rejecting === 'return'
     // an empty note is a validation (😆), not a greyed-out button
     const submit = () => {
-      if (!note.trim()) return toast.invalid(back ? 'Catatan wajib diisi: tulis kenapa direvisi.' : 'Alasan penolakan wajib diisi.')
+      if (!note.trim()) return toast.invalid(back ? 'A note is required: write why it is revised.' : 'The rejection reason is required.')
       if (back) onReturn?.(note.trim())
       else onReject?.(note.trim())
     }
     return (
       <div className={back ? 'space-y-2 rounded-lg border border-orange-200 bg-orange-50/60 p-3' : 'space-y-2 rounded-lg border border-red-200 bg-red-50/60 p-3'}>
-        <Input autoFocus value={note} maxLength={1000} onChange={(e) => setNote(e.target.value)} aria-label="Catatan"
+        <Input autoFocus value={note} maxLength={1000} onChange={(e) => setNote(e.target.value)} aria-label="Notes"
           onKeyDown={(e) => { if (e.key === 'Enter') submit() }}
-          placeholder={back ? 'Kenapa direvisi? Apa yang perlu diubah? (wajib)' : 'Alasan ditolak (wajib)'} />
-        {back && <p className="text-xs text-orange-900/80">Dikembalikan ke {returnTo} untuk direvisi, lalu diajukan ulang ke approval.</p>}
+          placeholder={back ? 'Why revise? What needs changing? (required)' : 'Rejection reason (required)'} />
+        {back && <p className="text-xs text-orange-900/80">Returned to {returnTo} to be revised, then resubmitted to approval.</p>}
         <div className="flex justify-end gap-2">
-          <Button size="sm" variant="ghost" onClick={() => setRejecting(false)}>Batal</Button>
+          <Button size="sm" variant="ghost" onClick={() => setRejecting(false)}>Cancel</Button>
           {back ? (
-            <Button size="sm" className="bg-orange-600 text-white hover:bg-orange-700" disabled={busy} onClick={submit}><Undo2 className="size-4" /> Kirim revisi ke {returnTo}</Button>
+            <Button size="sm" disabled={busy} onClick={submit}><Undo2 className="size-4" /> Send revision to {returnTo}</Button>
           ) : (
             <Button size="sm" className="bg-red-600 text-white hover:bg-red-700" disabled={busy} onClick={submit}><XCircle className="size-4" /> {rejectLabel}</Button>
           )}
@@ -425,15 +519,14 @@ function DecisionBar({ approveLabel, rejectLabel, busy, onApprove, onReject, onR
   return (
     <div className="space-y-2 rounded-lg bg-muted/40 p-3">
       {withNote && (
-        <Input value={approveNote} maxLength={1000} onChange={(e) => setApproveNote(e.target.value)} aria-label="Catatan persetujuan"
-          className="bg-card" placeholder="Catatan (opsional), terlihat oleh semua" />
+        <Input value={approveNote} maxLength={1000} onChange={(e) => setApproveNote(e.target.value)} aria-label="Approval notes"
+          className="bg-card" placeholder="Notes (optional), visible to everyone" />
       )}
       <div className="flex flex-wrap items-center justify-between gap-3">
-      <p className="text-xs text-muted-foreground">{hint}</p>
       <div className="flex gap-2">
-        {onReturn && <Button size="sm" variant="outline" className="border-orange-300 text-orange-700 hover:bg-orange-50" disabled={busy} onClick={() => setRejecting('return')}><Undo2 className="size-4" /> Revisi</Button>}
+        {onReturn && <Button size="sm" variant="outline" className="border-orange-300 text-orange-700 hover:bg-orange-50" disabled={busy} onClick={() => setRejecting('return')}><Undo2 className="size-4" /> Revise</Button>}
         {onReject && <Button size="sm" variant="outline" className="border-red-300 text-red-700 hover:bg-red-50" disabled={busy} onClick={() => setRejecting('reject')}><XCircle className="size-4" /> {rejectLabel}</Button>}
-        <Button size="sm" className="bg-emerald-600 text-white hover:bg-emerald-700" disabled={busy} onClick={() => onApprove(withNote ? approveNote.trim() || undefined : undefined)}>
+        <Button size="sm" disabled={busy} onClick={() => onApprove(withNote ? approveNote.trim() || undefined : undefined)}>
           {busy ? <Loader2 className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />} {approveLabel}
         </Button>
       </div>
@@ -450,13 +543,13 @@ function StockCell({ onHand, free, tone }: { onHand?: number | null; free?: numb
   return (
     <span className="inline-flex flex-col items-end">
       <span className={tone ?? (stock > 0 ? 'text-emerald-700' : 'text-muted-foreground')}>{fmtQty(stock)}</span>
-      {held > 0 && <span className="text-[11px] text-muted-foreground">dipesan {fmtQty(held)}</span>}
+      {held > 0 && <span className="text-[11px] text-muted-foreground">on order {fmtQty(held)}</span>}
     </span>
   )
 }
 
 // Manager / Direktur do not change anything (PPB, NPBG): what is not right goes back to admin with "Revisi"
-const QTY_HINT = 'Ada yang kurang sesuai? Klik Revisi, admin yang memperbaiki.'
+const QTY_HINT = 'Something not right? Click Revise, the admin will correct it.'
 
 function PpbDetail({ task, onBack, onDone }: { task: Task; onBack: () => void; onDone: () => void }) {
   const { data: ppb, isLoading } = usePpb(task.id)
@@ -470,22 +563,23 @@ function PpbDetail({ task, onBack, onDone }: { task: Task; onBack: () => void; o
     <Card className="overflow-hidden">
       <DetailHeader task={task} onBack={onBack} link={`/ppb/${ppb.id}`}
         actions={ppb.can_decide && <>
-          <DecisionBar approveLabel={task.stage.includes('Direktur') ? 'Approve (Direktur)' : 'Approve (Manajer)'} rejectLabel="Tolak" busy={decide.isPending}
-            hint={`${task.stage.includes('Direktur') ? 'Setelah disetujui, PPB masuk tabel PO untuk dilengkapi vendor & harga.' : 'Setelah disetujui Manajer, PPB menunggu Direktur.'} ${QTY_HINT}`}
+          <DecisionBar approveLabel={task.stage.includes('Director') ? 'Approve (Director)' : 'Approve (Manager)'} rejectLabel="Reject" busy={decide.isPending}
+            hint={`${task.stage.includes('Director') ? 'Once approved, the Purchase Request goes to the PO table for vendor & price.' : 'After Manager approval, the Purchase Request waits for the Director.'} ${QTY_HINT}`}
             withNote
             onApprove={(n) => run('APPROVE', n)} onReject={(n) => run('REJECT', n)} onReturn={(n) => run('RETURN', n)} />
           {err && <p className="text-sm text-destructive">{err}</p>}
         </>} />
-      <Facts items={[['Tanggal PPB', fmtDate(ppb.tgl_ppb)], ['Diperlukan', fmtDate(ppb.tgl_diperlukan)], ['Divisi', ppb.divisi], ['Barang', `${items.length} baris`]]} />
-      <LinesTable head={['Barang', 'Peminta', 'Qty']}
+      <Facts items={[['Purchase Request Date', fmtDate(ppb.tgl_ppb)], ['Needed', fmtDate(ppb.tgl_diperlukan)], ['Division', ppb.divisi], ['Item', `${items.length} rows`]]} />
+      <LinesTable head={['Item', 'Reference', 'Requester', 'Qty']} numericFrom={3}
         rows={items.map((it) => [
-          <div><div className="font-medium">{it.deskripsi_barang}</div><div className="font-mono text-xs text-muted-foreground">{it.kode_barang ?? ''}</div>{it.catatan_baris && <div className="text-xs text-muted-foreground">{it.catatan_baris}</div>}</div>,
+          <div><div className="font-medium">{it.deskripsi_barang}</div><div className="text-[13px] text-muted-foreground">{it.kode_barang ?? ''}</div>{it.catatan_baris && <div className="text-xs text-muted-foreground">{it.catatan_baris}</div>}</div>,
+          <PpbReference r={it.reference} />,
           it.peminta ?? '',
           `${fmtQty(it.kuantitas)} ${it.satuan ?? ''}`,
         ])} />
       {(ppb.approval_log?.length ?? 0) > 0 && (
         <ol className="space-y-1 border-t px-4 py-3 text-xs text-muted-foreground">
-          {ppb.approval_log!.map((l) => <li key={l.id}>{fmtDate(l.created_at)} · <span className="font-medium text-foreground">{stepText(l.action, l.note)}</span>{isAutoApproval(l.note) ? '' : ` · ${l.user_name ?? 'Sistem'}${l.note ? `, ${l.note}` : ''}`}</li>)}
+          {ppb.approval_log!.map((l) => <li key={l.id}>{fmtDate(l.created_at)} · <span className="font-medium text-foreground">{stepText(l.action, l.note)}</span>{isAutoApproval(l.note) ? '' : ` · ${l.user_name ?? 'System'}${l.note ? `, ${l.note}` : ''}`}</li>)}
         </ol>
       )}
     </Card>
@@ -503,16 +597,16 @@ function NpbgDetail({ task, onBack, onDone }: { task: Task; onBack: () => void; 
     <Card className="overflow-hidden">
       <DetailHeader task={task} onBack={onBack} link={`/npbg/${n.id}`}
         actions={n.can_decide && <>
-          <DecisionBar approveLabel={task.stage.includes('Direktur') ? 'Approve (Direktur)' : 'Approve (Manajer)'} rejectLabel="Tolak" busy={decide.isPending}
-            hint={`${task.stage.includes('Direktur') ? 'Setelah disetujui, barang langsung dikeluarkan dari stok.' : 'Setelah disetujui Manajer, NPBG menunggu Direktur.'} ${QTY_HINT}`}
+          <DecisionBar approveLabel={task.stage.includes('Director') ? 'Approve (Director)' : 'Approve (Manager)'} rejectLabel="Reject" busy={decide.isPending}
+            hint={`${task.stage.includes('Director') ? 'Once approved, items leave stock right away.' : 'After Manager approval, the Delivery Order waits for the Director.'} ${QTY_HINT}`}
             withNote
             onApprove={(note) => run('APPROVE', note)} onReject={(note) => run('REJECT', note)} onReturn={(note) => run('RETURN', note)} />
           {err && <p className="text-sm text-destructive">{err}</p>}
         </>} />
-      <Facts items={[['Tanggal', fmtDate(n.tgl_npbg)], ['Pelanggan', n.pelanggan], ['Peminta', n.peminta], ['Tipe', n.tipe_npbg]]} />
-      <LinesTable head={['Barang', 'Keterangan', 'Qty']}
+      <Facts items={[['Date', fmtDate(n.tgl_npbg)], ['Customer', n.pelanggan], ['Requester', n.peminta], ['Type', n.tipe_npbg]]} />
+      <LinesTable head={['Item', 'Remarks', 'Qty']}
         rows={[[
-          <div><div className="font-medium">{n.deskripsi_barang}</div><div className="font-mono text-xs text-muted-foreground">{n.kode_barang ?? ''}</div></div>,
+          <div><div className="font-medium">{n.deskripsi_barang}</div><div className="text-[13px] text-muted-foreground">{n.kode_barang ?? ''}</div></div>,
           n.deskripsi ?? n.keterangan ?? '',
           `${fmtQty(n.kuantitas)} ${n.satuan ?? ''}`,
         ]]} />
@@ -530,15 +624,16 @@ function PoDetail({ task, onBack, onDone }: { task: Task; onBack: () => void; on
     <Card className="overflow-hidden">
       <DetailHeader task={task} onBack={onBack} link={`/purchase-orders/${po.id}`}
         actions={po.can_approve && <>
-          <DecisionBar approveLabel="Approve (Direktur)" busy={action.isPending} returnTo="purchasing"
-            hint="Setelah disetujui, purchasing mengirim PO ke vendor. Ada yang kurang sesuai? Klik Revisi, purchasing yang memperbaiki."
+          <DecisionBar approveLabel="Approve (Director)" busy={action.isPending} returnTo="purchasing"
+            hint="Once approved, purchasing sends the PO to the vendor. Something not right? Click Revise; purchasing corrects it."
             onApprove={() => run('approve')} onReturn={(n) => run('reject', { note: n })} />
           {err && <p className="text-sm text-destructive">{err}</p>}
         </>} />
-      <Facts items={[['Vendor', (po.vendors?.length ?? 0) > 1 ? po.vendors!.map((v) => v.name).join(' · ') : po.vendor?.name ?? po.vendor_name], ['Tanggal', fmtDate(po.date)], ['Perkiraan tiba', fmtDate(po.expected_date)], ['Total', <span className="tabular-nums">{rupiah(po.total)}</span>]]} />
-      <LinesTable head={['Barang', 'Qty', 'Harga', 'Subtotal']}
+      <Facts items={[['Vendor', (po.vendors?.length ?? 0) > 1 ? po.vendors!.map((v) => v.name).join(' · ') : po.vendor?.name ?? po.vendor_name], ['Date', fmtDate(po.date)], ['Estimated arrival', fmtDate(po.expected_date)], ['Total', <span className="tabular-nums">{rupiah(po.total)}</span>]]} />
+      <LinesTable head={['Item', 'Qty', 'Price', 'Subtotal']}
+        rowClass={(i) => (po.items?.[i]?.director_pick?.status === 'BUKAN' ? 'bg-amber-100 dark:bg-amber-950/50' : undefined)}
         rows={(po.items ?? []).map((l) => [
-          <div><div className="font-medium">{l.description}</div><div className="font-mono text-xs text-muted-foreground">{[l.item_code, (po.vendors?.length ?? 0) > 1 ? l.vendor_name : null].filter(Boolean).join(' · ')}</div></div>,
+          <div><div className="font-medium">{l.description}</div><div className="text-[13px] text-muted-foreground">{[l.item_code, (po.vendors?.length ?? 0) > 1 ? l.vendor_name : null].filter(Boolean).join(' · ')}</div><DirectorPickTag pick={l.director_pick} /></div>,
           `${fmtQty(l.qty)} ${l.unit ?? ''}`, rupiah(l.unit_price), rupiah(l.line_total),
         ])} />
       {po.notes && <p className="border-t px-4 py-3 text-xs text-muted-foreground">{po.notes}</p>}

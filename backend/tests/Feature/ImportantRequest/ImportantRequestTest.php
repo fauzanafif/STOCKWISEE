@@ -121,7 +121,11 @@ class ImportantRequestTest extends TestCase
         // returned for revision (a reason), handed in again, approved: that part is done
         $this->as($this->boss);
         $this->getJson('/api/important-requests?scope=review')->assertJsonCount(1, 'data');
-        $this->postJson("/api/important-requests/{$id}/submissions/{$sub->id}/review", ['approve' => false])->assertStatus(422)->assertJsonValidationErrors('note');
+        // the reviewer opening it: On Review — the recipient can no longer withdraw it
+        $this->getJson("/api/important-requests/{$id}")->assertJsonPath('data.status_label', 'On Review');
+        $this->as($this->finance)->getJson("/api/important-requests/{$id}")->assertJsonPath('data.me.assignee.status', 'ON_REVIEW')->assertJsonPath('data.me.assignee.status_label', 'On Review');
+        $this->postJson("/api/important-requests/{$id}/act", ['action' => 'unsubmit'])->assertStatus(422);
+        $this->as($this->boss);
         $this->postJson("/api/important-requests/{$id}/submissions/{$sub->id}/review", ['approve' => false, 'note' => 'Total November ikut berubah'])->assertOk()->assertJsonPath('data.status', 'DITUGASKAN');
         $this->as($this->finance)->getJson("/api/important-requests/{$id}")->assertJsonPath('data.me.assignee.status', 'REVISI');
         $this->postJson("/api/important-requests/{$id}/act", ['action' => 'submit', 'attachments' => [$this->upload('hasil-v2.pdf', self::PDF)]])->assertOk();
@@ -141,6 +145,10 @@ class ImportantRequestTest extends TestCase
         $this->postJson("/api/important-requests/{$id}/submissions/{$last->id}/review", ['approve' => true])->assertOk()->assertJsonPath('data.status', 'SELESAI');
         $this->as($this->finance)->postJson("/api/important-requests/{$id}/act", ['action' => 'submit', 'note' => 'x'])->assertStatus(422);
         $this->getJson('/api/important-requests?scope=done')->assertJsonCount(1, 'data');
+        // approved = the forum is closed: still readable, no new comment / reply / edit
+        $this->getJson("/api/important-requests/{$id}")->assertJsonPath('data.me.can_comment', false)->assertJsonPath('data.me.discussion_closed', true);
+        $this->postJson("/api/important-requests/{$id}/comments", ['body' => 'masih bisa?'])->assertStatus(422);
+        $this->getJson("/api/important-requests/{$id}/comments")->assertOk()->assertJsonPath('data.0.can_edit', false);
 
         $actions = ImportantRequest::find($id)->activities()->pluck('action')->all();
         foreach (['CREATED', 'SENT', 'COMMENTED', 'REPLIED', 'COMMENT_EDITED', 'SUBMITTED', 'UNSUBMITTED', 'REVISION_REQUESTED', 'APPROVED', 'COMPLETED'] as $a) {
@@ -148,6 +156,43 @@ class ImportantRequestTest extends TestCase
         }
         // reopened by its creator, with a reason: back to revision
         $this->as($this->boss)->postJson("/api/important-requests/{$id}/reopen", ['reason' => 'Ada sheet Desember'])->assertOk()->assertJsonPath('data.status', 'DITUGASKAN');
+    }
+
+    public function test_a_cancelled_request_keeps_its_closed_forum_readable_from_the_done_list(): void
+    {
+        $draft = $this->create(['title' => 'Masih draf'])['id'];
+        $id = $this->create()['id'];
+        $this->postJson("/api/important-requests/{$id}/send")->assertOk();
+        $this->as($this->finance)->postJson("/api/important-requests/{$id}/comments", ['body' => 'Sudah saya mulai.'])->assertCreated();
+        $this->as($this->boss)->postJson("/api/important-requests/{$id}/cancel", ['reason' => 'Tidak jadi'])->assertOk();
+        $this->assertSame([$id], collect($this->getJson('/api/important-requests?scope=done')->assertOk()->json('data'))->pluck('id')->all(), "draft {$draft} is not done");
+
+        $this->as($this->finance);
+        $this->assertContains($id, collect($this->getJson('/api/important-requests?scope=done')->assertOk()->json('data'))->pluck('id')->all());
+        $this->getJson("/api/important-requests/{$id}")->assertJsonPath('data.me.can_comment', false)->assertJsonPath('data.me.discussion_closed', true);
+        $this->getJson("/api/important-requests/{$id}/comments")->assertOk()->assertJsonPath('data.0.body', 'Sudah saya mulai.')->assertJsonPath('data.0.can_edit', false);
+        $this->assertContains('CANCELLED', collect($this->getJson("/api/important-requests/{$id}/activities")->assertOk()->json('data'))->pluck('action')->all());
+        $this->postJson("/api/important-requests/{$id}/comments", ['body' => 'masih bisa?'])->assertStatus(422);
+    }
+
+    public function test_my_tasks_split_like_classroom_assigned_missing_handed_in(): void
+    {
+        $soon = $this->create()['id'];
+        $late = $this->create(['title' => 'Laporan kemarin'])['id'];
+        $this->postJson("/api/important-requests/{$soon}/send")->assertOk();
+        $this->postJson("/api/important-requests/{$late}/send")->assertOk();
+        ImportantRequest::whereKey($late)->update(['deadline' => now()->subDay()]);
+        $part = fn (string $p) => collect($this->getJson("/api/important-requests?scope=tasks&part={$p}")->assertOk()->json('data'))->pluck('id')->sort()->values()->all();
+        $both = collect([$soon, $late])->sort()->values()->all();
+
+        // "Ditugaskan" holds every task still to hand in, the late one too; "Terlambat" only the late one
+        $this->as($this->finance);
+        $this->assertSame([$both, [$late], []], [$part('todo'), $part('late'), $part('handed')]);
+        $this->postJson("/api/important-requests/{$late}/act", ['action' => 'submit', 'note' => 'terlambat, maaf'])->assertOk();
+        $this->assertSame([[$soon], [], [$late]], [$part('todo'), $part('late'), $part('handed')]);
+        // another recipient's own part is theirs
+        $this->as($this->gudang);
+        $this->assertSame([$both, [$late], []], [$part('todo'), $part('late'), $part('handed')]);
     }
 
     public function test_deadline_late_reminders_cancel_analytics_and_who_may_create(): void

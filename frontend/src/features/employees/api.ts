@@ -33,6 +33,16 @@ export function useEmployeeDepartments() {
   })
 }
 
+/** A new divisi (a name already there, in any case, is given back instead). */
+export function useAddDepartment() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (name: string) => (await api.post<{ data: { id: number; name: string } }>('/api/employees/departments', { name })).data.data,
+    meta: { successMessage: false },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['employees', 'departments'] }),
+  })
+}
+
 /** Accounts to link a worker to (only for who may manage the roster). */
 export function useEmployeeUsers(enabled: boolean) {
   return useQuery({

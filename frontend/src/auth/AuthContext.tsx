@@ -8,6 +8,8 @@ export interface AuthContextValue {
   logout: () => Promise<void>
   hasPermission: (slug: string) => boolean
   hasRole: (...slugs: string[]) => boolean
+  /** the signed-in user as the server now returns it (e.g. after a new profile photo) */
+  setCurrentUser?: (u: AuthUser) => void
 }
 
 export const AuthContext = createContext<AuthContextValue | null>(null)

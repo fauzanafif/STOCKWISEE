@@ -9,6 +9,47 @@ use Illuminate\Http\Resources\Json\JsonResource;
 /** @mixin Item */
 class ItemResource extends JsonResource
 {
+    /** item => its stock and approved incoming (prime()); per model instance, so never stale across requests */
+    private static ?\WeakMap $primed = null;
+
+    /** A page of items: their stock and approved incoming PPB / PO in a few queries, not one set per item. */
+    public static function prime(iterable $items): void
+    {
+        $items = collect($items)->filter(fn ($i) => $i instanceof Item && $i->id);
+        $ids = $items->pluck('id')->unique()->values()->all();
+        if ($ids === []) {
+            return;
+        }
+        self::$primed ??= new \WeakMap();
+        $stock = \App\Models\Inventory::whereIn('item_id', $ids)->groupBy('item_id')->selectRaw('item_id, SUM(actual_qty) a')->pluck('a', 'item_id');
+        $incoming = \App\Services\Inventory\OnOrder::approvedByItem($ids);
+        foreach ($items as $item) {
+            self::$primed[$item] = ['stock' => isset($stock[$item->id]) ? round(max(0.0, (float) $stock[$item->id]), 2) : null, 'incoming' => $incoming[$item->id] ?? null];
+        }
+    }
+
+    private static function primedOf(Item $item): array
+    {
+        if (! $item->id) {
+            return ['stock' => null, 'incoming' => null];
+        }
+        if (! isset(self::$primed[$item])) {
+            self::prime([$item]);
+        }
+
+        return self::$primed[$item];
+    }
+
+    private static function stockOf(Item $item): float
+    {
+        return self::primedOf($item)['stock'] ?? round(max(0.0, (float) ($item->accurate_qty_onhand ?? 0)), 2);
+    }
+
+    private static function incomingOf(Item $item): array
+    {
+        return self::primedOf($item)['incoming'] ?? ['ppb' => 0.0, 'po' => 0.0, 'total' => 0.0, 'docs' => []];
+    }
+
     public function toArray(Request $request): array
     {
         return [
@@ -25,10 +66,12 @@ class ItemResource extends JsonResource
             'accurate_synced_at' => $this->accurate_synced_at,
             'accurate_qty_onhand' => $this->accurate_qty_onhand,
             'accurate_qty_onorder' => $this->accurate_qty_onorder,
-            // Forecast = qty aktual sekarang + qty yang sedang dipesan di PO
-            // terbuka (Accurate's own "Qty On Order", disinkron langsung —
-            // bukan dihitung ulang dari purchase_order_items internal).
-            'forecast_qty' => (float) ($this->accurate_qty_onhand ?? 0) + (float) ($this->accurate_qty_onorder ?? 0),
+            // QTY = the warehouse stock in STOCKWISE (Accurate's + STOCKWISE's RI / NPBG); Accurate's when not tracked yet
+            'stock_qty' => $stock = self::stockOf($this->resource),
+            // what is coming in and approved: PPB DISETUJUI without PO, approved / sent POs not received yet
+            'incoming' => $incoming = self::incomingOf($this->resource),
+            // Forecast = QTY + incoming; an RI moves it from incoming into QTY
+            'forecast_qty' => round($stock + $incoming['total'], 2),
             'category' => $this->whenLoaded('category', fn () => $this->category ? [
                 'id' => $this->category->id,
                 'name' => $this->category->name,

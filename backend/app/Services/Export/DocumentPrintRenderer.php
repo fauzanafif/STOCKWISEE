@@ -43,6 +43,60 @@ class DocumentPrintRenderer
         return is_file($path) ? 'data:image/png;base64,'.base64_encode(file_get_contents($path)) : null;
     }
 
+    public const A4_MARGIN_MM = 0;
+
+    /** Plain paper: the item table always has this many rows (more only when there are more items). */
+    public const FIXED_ROWS = 15;
+
+    /**
+     * The fixed-size item table of a full print. $grow (A4): FIXED_ROWS rows, whatever sits below the
+     * table moves down and the page grows to hold it; otherwise the rows that fit above what sits below.
+     *
+     * @return int the table's body rows
+     */
+    private static function fixTable(float &$pageHeightMm, array &$texts, array $table, int $count, ?array &$signatures, bool $grow): int
+    {
+        $rh = $table['rowHeight'];
+        $body = $table['y'] + $rh;
+        $below = array_values(array_filter(array_column($texts, 'y'), fn ($y) => $y > $table['y']));
+        if ($signatures) {
+            $below[] = $signatures['y'];
+        }
+        $limit = $below ? min($below) - 1 : $pageHeightMm - 5;
+        if (! $grow) {
+            return max(1, (int) floor(($limit - $body) / $rh));
+        }
+        $rows = max(self::FIXED_ROWS, $count);
+        $delta = round(max(0, $rows * $rh + 2 - ($limit - $body)), 2);
+        $bottom = $body + $rows * $rh;
+        foreach ($texts as &$t) {
+            if ($t['y'] > $table['y']) {
+                $t['y'] += $delta;
+            }
+            $bottom = max($bottom, $t['y'] + ($t['h'] ?? 5));
+        }
+        unset($t);
+        if ($signatures) {
+            $signatures['lineY'] = ($signatures['lineY'] ?? ($signatures['y'] + 15)) + $delta;
+            $signatures['roleY'] = ($signatures['roleY'] ?? ($signatures['y'] + 15.5)) + $delta;
+            $signatures['y'] += $delta;
+            $bottom = max($bottom, $signatures['roleY'] + 5);
+        }
+        $pageHeightMm = max($pageHeightMm, round($bottom + 5, 1));
+
+        return $rows;
+    }
+
+    /** @return array{0: array{w: float, h: float, orientation: string}, 1: float} the A4 portrait sheet and the scale of the page on it (top-aligned) */
+    public static function a4Fit(float $widthMm, float $heightMm): array
+    {
+        $sheet = ['w' => 210.0, 'h' => 297.0, 'orientation' => 'portrait'];
+        $m = 2 * self::A4_MARGIN_MM;
+
+        // the template's own size (100%), smaller only when it would not fit the sheet
+        return [$sheet, round(min(1, ($sheet['w'] - $m) / $widthMm, ($sheet['h'] - $m) / $heightMm), 4)];
+    }
+
     /** CSS @page size: a standard sheet name when the page is (within 2mm) A4/A5, else exact mm. */
     public static function cssPageSize(float $widthMm, float $heightMm): string
     {
@@ -78,6 +132,8 @@ class DocumentPrintRenderer
         float $offsetYMm = 0,
         bool $autoPageSize = false,
         bool $dataOnly = false,
+        bool $full = false,
+        bool $fitA4 = false,
     ): string {
         $esc = fn ($v) => htmlspecialchars((string) ($v ?? ''), ENT_QUOTES);
         $ox = fn (float $v) => round($v + $offsetXMm, 2);
@@ -89,6 +145,7 @@ class DocumentPrintRenderer
         // distinction to rely on.
         $logo = $dataOnly ? null : $this->logoDataUri();
         $logoBox ??= ['x' => 7.4, 'y' => 5.3, 'w' => 16.9, 'h' => 16.9];
+        $frameRows = $full && $table ? self::fixTable($pageHeightMm, $texts, $table, count($tableRows), $signatures, $fitA4) : 0;
 
         $html = '<!doctype html><html lang="id"><head><meta charset="utf-8"><title>Cetak Dokumen</title><style>';
         // autoPageSize: skip the explicit `size:` — some printer drivers (dot-
@@ -104,7 +161,14 @@ class DocumentPrintRenderer
         // Accurate prints on. "210mm 147mm" is 1mm off A5 and became a CUSTOM
         // paper size, which made the HP LaserJet P1102 (host-based) driver
         // crash the whole browser on Print, in Chrome and Firefox alike.
-        $html .= $autoPageSize ? '@page{margin:0}' : '@page{size:'.self::cssPageSize($pageWidthMm, $pageHeightMm).';margin:0}';
+        // $fitA4: plain A4 in the document's orientation, the page scaled up to fill it (A5 → A4 landscape)
+        if ($fitA4) {
+            [$sheet, $zoom] = self::a4Fit($pageWidthMm, $pageHeightMm);
+            $html .= "@page{size:A4 {$sheet['orientation']};margin:".self::A4_MARGIN_MM.'mm}';
+            $html .= "@media print{.page{zoom:{$zoom};margin:0 auto}}";
+        } else {
+            $html .= $autoPageSize ? '@page{margin:0}' : '@page{size:'.self::cssPageSize($pageWidthMm, $pageHeightMm).';margin:0}';
+        }
         $html .= '*{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif;color:#000}';
         $html .= ".page{position:relative;width:{$pageWidthMm}mm;height:{$pageHeightMm}mm;overflow:hidden;border:0.5pt dashed #ccc}";
         $html .= '.t{position:absolute;line-height:1.15;overflow:hidden;white-space:pre-wrap}';
@@ -119,9 +183,13 @@ class DocumentPrintRenderer
         // header, signature captions/lines, the preview banner, the dashed
         // page border) disappears under @media print; the browser's own print
         // preview pane already honors this, so it matches the paper exactly.
-        $html .= '@media print{.static,.previewtag{display:none!important}.page{border:none}}';
+        // $full: plain paper — the kop, labels, table header and lines are printed too
+        $html .= $full ? '@media print{.page{border:none}}' : '@media print{.static,.previewtag{display:none!important}.page{border:none}}';
+        if ($full) {
+            $html .= '.th,.td{border:none!important;padding:1.9mm 1mm 0}.ln{position:absolute}';
+        }
         $html .= '</style></head><body><div class="page">';
-        if (! $dataOnly) {
+        if (! $dataOnly && ! $full) {
             $html .= '<div class="static previewtag">PREVIEW — label &amp; kop tidak ikut tercetak (kertas sudah pre-printed)</div>';
         }
 
@@ -155,6 +223,23 @@ class DocumentPrintRenderer
                         '<div class="th static" style="left:%smm;top:%smm;width:%smm;font-size:7.5pt;text-align:%s">%s</div>',
                         $ox($c['x']), $oy($table['y']), $c['w'], $c['align'] ?? 'left', $esc($c['header']),
                     );
+                }
+            }
+            if ($frameRows) {
+                // the fixed table: frame, header line, empty row lines and column lines, whatever the number of items
+                $rh = $table['rowHeight'];
+                $x0 = $table['columns'][0]['x'];
+                $last = end($table['columns']);
+                $w = round($last['x'] + $last['w'] - $x0, 2);
+                $h = round($rh * ($frameRows + 1), 2);
+                $line = fn (float $x, float $y, string $css) => sprintf('<div class="ln static" style="left:%smm;top:%smm;%s"></div>', $ox($x), $oy($y), $css);
+                $html .= $line($x0, $table['y'], "width:{$w}mm;height:{$h}mm;border:0.6pt solid #000");
+                $html .= $line($x0, $table['y'] + $rh, "width:{$w}mm;border-top:0.6pt solid #000");
+                for ($r = 2; $r <= $frameRows; $r++) {
+                    $html .= $line($x0, $table['y'] + $rh * $r, "width:{$w}mm;border-top:0.3pt solid #999");
+                }
+                foreach (array_slice($table['columns'], 1) as $c) {
+                    $html .= $line($c['x'], $table['y'], "height:{$h}mm;border-left:0.3pt solid #000");
                 }
             }
             $y = $table['y'] + $table['rowHeight'];
@@ -213,22 +298,65 @@ class DocumentPrintRenderer
         float $offsetXMm = 0,
         float $offsetYMm = 0,
         bool $autoPageSize = false,
+        bool $full = false,
+        bool $fitA4 = false,
     ): string {
-        $pdf = new DocumentPdfWriter($pageWidthMm, $pageHeightMm);
+        $frameRows = $full && $table ? self::fixTable($pageHeightMm, $texts, $table, count($tableRows), $signatures, $fitA4) : 0;
+        $sheet = null;
+        if ($fitA4) {
+            [$a4, $zoom] = self::a4Fit($pageWidthMm, $pageHeightMm);
+            $sheet = ['w' => $a4['w'], 'h' => $a4['h'], 'scale' => $zoom, 'top' => self::A4_MARGIN_MM];
+        }
+        $pdf = new DocumentPdfWriter($pageWidthMm, $pageHeightMm, $sheet);
+        $ox = $offsetXMm;
+        $oy = $offsetYMm;
         foreach ($texts as $t) {
-            if (! ($t['static'] ?? false)) {
-                $pdf->text($t['x'] + $offsetXMm, $t['y'] + $offsetYMm, $t['w'], $t['h'] ?? null, $t['text'] ?? null,
+            if ($full || ! ($t['static'] ?? false)) {
+                $pdf->text($t['x'] + $ox, $t['y'] + $oy, $t['w'], $t['h'] ?? null, $t['text'] ?? null,
                     (float) ($t['size'] ?? 8), (bool) ($t['bold'] ?? false), $t['align'] ?? 'left');
             }
         }
         if ($table) {
-            $y = $table['y'] + $table['rowHeight'];
+            $rh = $table['rowHeight'];
+            // full: cells padded inside the fixed table's lines, like the HTML (.th/.td padding 1.9mm 1mm)
+            [$px, $py] = $full ? [1.0, 1.9] : [0.0, 0.0];
+            if ($full) {
+                $x0 = $table['columns'][0]['x'] + $ox;
+                $last = end($table['columns']);
+                $w = $last['x'] + $last['w'] + $ox - $x0;
+                $top = $table['y'] + $oy;
+                $bottom = $top + $rh * ($frameRows + 1);
+                $pdf->rule($x0, $top, $w, 0.6);
+                $pdf->rule($x0, $top + $rh, $w, 0.6);
+                for ($r = 2; $r <= $frameRows; $r++) {
+                    $pdf->rule($x0, $top + $rh * $r, $w, 0.3, 0.6);
+                }
+                $pdf->rule($x0, $bottom, $w, 0.6);
+                $pdf->vline($x0, $top, $bottom, 0.6);
+                $pdf->vline($x0 + $w, $top, $bottom, 0.6);
+                foreach ($table['columns'] as $i => $c) {
+                    if ($i > 0) {
+                        $pdf->vline($c['x'] + $ox, $top, $bottom, 0.3);
+                    }
+                    $pdf->text($c['x'] + $ox + $px, $top + $py, $c['w'] - 2 * $px, null, $c['header'], 7.5, true, $c['align'] ?? 'left');
+                }
+            }
+            $y = $table['y'] + $rh;
             foreach ($tableRows as $row) {
                 foreach ($table['columns'] as $i => $c) {
                     $v = $row[$i] ?? null;
-                    $pdf->cell($c['x'] + $offsetXMm, $y + $offsetYMm, $c['w'], $v === null ? null : (string) $v, 7.5, $c['align'] ?? 'left');
+                    $pdf->cell($c['x'] + $ox + $px, $y + $oy + $py, $c['w'] - 2 * $px, $v === null ? null : (string) $v, 7.5, $c['align'] ?? 'left');
                 }
-                $y += $table['rowHeight'];
+                $y += $rh;
+            }
+        }
+        if ($full && $signatures) {
+            $lineY = $signatures['lineY'] ?? ($signatures['y'] + 15);
+            $roleY = $signatures['roleY'] ?? ($signatures['y'] + 15.5);
+            foreach ($signatures['columns'] as $c) {
+                $pdf->text($c['x'] + $ox, $signatures['y'] + $oy, $c['w'], null, $c['action'], 7.5, false, 'center');
+                $pdf->rule($c['x'] + 1 + $ox, $lineY + $oy, $c['w'] - 2);
+                $pdf->text($c['x'] + $ox, $roleY + $oy, $c['w'], null, $c['role'], 7.5, false, 'center');
             }
         }
 

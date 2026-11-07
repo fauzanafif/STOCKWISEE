@@ -35,15 +35,15 @@ describe('useInfiniteRows (numbered pages)', () => {
     expect(items(screen.getAllByRole('listitem'))).toEqual(['a1', 'a2'])
     expect(screen.getByText('1–2')).toBeInTheDocument()
 
-    await userEvent.click(screen.getByRole('button', { name: 'Halaman berikutnya' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Next page' }))
     expect(items(screen.getAllByRole('listitem'))).toEqual(['a3', 'a4'])
     await userEvent.click(screen.getByRole('button', { name: '3' }))
     expect(items(screen.getAllByRole('listitem'))).toEqual(['a5'])
-    expect(screen.getByRole('button', { name: 'Halaman berikutnya' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Next page' })).toBeDisabled()
 
     await userEvent.click(screen.getByRole('button', { name: 'filter' }))
     expect(items(screen.getAllByRole('listitem'))).toEqual(['b1'])
-    expect(screen.queryByRole('navigation', { name: 'Halaman' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('navigation', { name: 'Page' })).not.toBeInTheDocument()
   })
 })
 

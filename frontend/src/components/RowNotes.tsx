@@ -57,10 +57,10 @@ export function NoteCell({ entity, rowKey, note }: { entity: string; rowKey: str
           }} />
         {save.isError && <p className="text-xs text-destructive">{apiErrorMessage(save.error)}</p>}
         <div className="flex justify-end gap-1">
-          <button type="button" className="rounded p-1 text-muted-foreground hover:bg-muted" onClick={() => setEditing(false)} aria-label="Batal">
+          <button type="button" className="rounded p-1 text-muted-foreground hover:bg-muted" onClick={() => setEditing(false)} aria-label="Cancel">
             <X className="size-4" />
           </button>
-          <button type="button" className="rounded p-1 text-primary hover:bg-muted" disabled={save.isPending} onClick={() => save.mutate(text)} aria-label="Simpan catatan">
+          <button type="button" className="rounded p-1 text-primary hover:bg-muted" disabled={save.isPending} onClick={() => save.mutate(text)} aria-label="Save note">
             {save.isPending ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
           </button>
         </div>
@@ -75,15 +75,15 @@ export function NoteCell({ entity, rowKey, note }: { entity: string; rowKey: str
   }
   if (!note) {
     return (
-      <button type="button" onClick={open} title="Tambah catatan"
+      <button type="button" onClick={open} title="Add note"
         className="inline-flex items-center gap-1 rounded px-1 text-xs text-muted-foreground/70 hover:bg-muted hover:text-foreground">
-        <MessageSquarePlus className="size-3.5" /> Catatan
+        <MessageSquarePlus className="size-3.5" /> Notes
       </button>
     )
   }
   return (
     <button type="button" onClick={open} className="group block w-56 text-left"
- title={`${note.note}${note.by ? `\n${note.by}` : ''}${note.at ? `, ${new Date(note.at).toLocaleString('id-ID')}` : ''}`}>
+ title={`${note.note}${note.by ? `\n${note.by}` : ''}${note.at ? `, ${new Date(note.at).toLocaleString('en-GB')}` : ''}`}>
       <span className="line-clamp-2 whitespace-pre-line text-xs">{note.note}</span>
       <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
         {note.by ?? ''} <Pencil className="size-3 opacity-0 group-hover:opacity-100" />

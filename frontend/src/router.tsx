@@ -1,11 +1,13 @@
 import { createBrowserRouter, Navigate } from 'react-router-dom'
 import { recordLocation } from '@/lib/navHistory'
-import { RequireAuth, RequirePermission } from '@/auth/guards'
+import { RequireAuth, RequirePermission, RequireRole } from '@/auth/guards'
 import { AppLayout } from '@/components/AppLayout'
 import { DashboardPage } from '@/pages/DashboardPage'
 import { VendorsPage } from '@/pages/VendorsPage'
 import { EmployeesPage } from '@/pages/EmployeesPage'
-import { IrDashboardPage, IrListPage } from '@/pages/importantRequests/IrListPages'
+import { ItemCategoriesPage } from '@/pages/ItemCategoriesPage'
+import { UomPage } from '@/pages/UomPage'
+import { IrListPage } from '@/pages/importantRequests/IrListPages'
 import { IrDetailPage } from '@/pages/importantRequests/IrDetailPage'
 import { IrFormPage } from '@/pages/importantRequests/IrFormPage'
 import { IrAnalyticsPage } from '@/pages/importantRequests/IrAnalyticsPage'
@@ -22,10 +24,9 @@ import { StockCardProjectsPage } from '@/pages/StockCardProjectsPage'
 import { StockCardProjectPage } from '@/pages/StockCardProjectPage'
 import { PoDetailPage } from '@/pages/PoDetailPage'
 import { PoListPage } from '@/pages/PoListPage'
-import { PoDraftPage } from '@/pages/PoDraftPage'
+import { PoDraftPage, PoQuotationPage, PoReadyPage } from '@/pages/PoFlowPages'
 import { PpbDetailPage } from '@/pages/PpbDetailPage'
 import { PpbListPage } from '@/pages/PpbListPage'
-import { ReportsPage } from '@/pages/ReportsPage'
 import { RiDetailPage } from '@/pages/RiDetailPage'
 import { RiListPage } from '@/pages/RiListPage'
 import { SyncPage } from '@/pages/SyncPage'
@@ -39,6 +40,9 @@ import { TyrePage } from '@/pages/tracking/TyrePage'
 import { UsedReturnPage } from '@/pages/tracking/UsedReturnPage'
 import { UsersPage } from '@/pages/UsersPage'
 import { RolesPage } from '@/pages/RolesPage'
+import { UpdateAlertsPage } from '@/pages/UpdateAlertsPage'
+import { AutoRefreshPage } from '@/pages/AutoRefreshPage'
+import { GuidePage } from '@/pages/GuidePage'
 import { SharedStockCardLayout, SharedStockCardProject } from '@/pages/SharedStockCardLayout'
 import { PublicItemRequestPage } from '@/pages/PublicItemRequestPage'
 import { ItemRequestListPage } from '@/pages/ItemRequestListPage'
@@ -50,6 +54,7 @@ import { PurchaseReturnNewPage } from '@/pages/PurchaseReturnNewPage'
 import { PurchaseReturnDetailPage } from '@/pages/PurchaseReturnDetailPage'
 import { RequestStatusPage } from '@/pages/RequestStatusPage'
 import { APPROVAL_PERMISSIONS } from '@/features/itemRequests/api'
+import { ModuleDashboardPage } from '@/pages/ModuleDashboardPage'
 
 export const router = createBrowserRouter([
   { path: '/login', element: <LoginPage /> },
@@ -79,6 +84,7 @@ export const router = createBrowserRouter([
             element: <RequirePermission permission={['item_request.create', 'item_request.view']} />,
             children: [
               { path: '/item-requests', element: <ItemRequestListPage /> },
+              { path: '/item-requests/dashboard', element: <ModuleDashboardPage key="request" module="request" /> },
             ],
           },
           {
@@ -105,7 +111,7 @@ export const router = createBrowserRouter([
             // Important Request
             element: <RequirePermission permission={['important_request.access']} />,
             children: [
-              { path: '/important-requests', element: <IrDashboardPage /> },
+              { path: '/important-requests', element: <ModuleDashboardPage key="important" module="important" /> },
               { path: '/important-requests/saya', element: <IrListPage key="mine" scope="mine" /> },
               { path: '/important-requests/tugas', element: <IrListPage key="tasks" scope="tasks" /> },
               { path: '/important-requests/persetujuan', element: <IrListPage key="review" scope="review" /> },
@@ -128,6 +134,15 @@ export const router = createBrowserRouter([
             // Master Data · Data Pekerja
             element: <RequirePermission permission={['master.employee.view']} />,
             children: [{ path: '/employees', element: <EmployeesPage /> }],
+          },
+          {
+            // Master Data · Kategori Barang
+            element: <RequirePermission permission={['master.unit.view']} />,
+            children: [{ path: '/uom', element: <UomPage /> }],
+          },
+          {
+            element: <RequirePermission permission={['master.category.view']} />,
+            children: [{ path: '/item-categories', element: <ItemCategoriesPage /> }],
           },
           {
             element: <RequirePermission permission={['purchase_return.view']} />,
@@ -159,18 +174,29 @@ export const router = createBrowserRouter([
             element: <RequirePermission permission={['ppb.view']} />,
             children: [
               { path: '/ppb', element: <PpbListPage /> },
+              { path: '/ppb/dashboard', element: <ModuleDashboardPage key="ppb" module="ppb" /> },
               { path: '/ppb/:id', element: <PpbDetailPage /> },
             ],
           },
           {
-            // Draft PO: approved PPB items, vendor prices compared, picked into one PO per vendor
+            // PPB Siap PO → Penawaran Harga (vendor prices) → the Direktur picks → Draft PO (one PO per vendor)
             element: <RequirePermission permission={['po.create']} />,
-            children: [{ path: '/purchase-orders/draft', element: <PoDraftPage /> }],
+            children: [
+              { path: '/purchase-orders/siap-po', element: <PoReadyPage /> },
+              { path: '/purchase-orders/draft', element: <PoDraftPage /> },
+              { path: '/purchase-orders/draft-harga', element: <Navigate to="/purchase-orders/penawaran" replace /> },
+            ],
+          },
+          {
+            // the Direktur picks the vendors here too
+            element: <RequirePermission permission={['po.create', 'po.approve_director']} />,
+            children: [{ path: '/purchase-orders/penawaran', element: <PoQuotationPage /> }],
           },
           {
             element: <RequirePermission permission="po.view" />,
             children: [
               { path: '/purchase-orders', element: <PoListPage /> },
+              { path: '/purchase-orders/dashboard', element: <ModuleDashboardPage key="po" module="po" /> },
               { path: '/purchase-orders/:id', element: <PoDetailPage /> },
             ],
           },
@@ -178,6 +204,7 @@ export const router = createBrowserRouter([
             element: <RequirePermission permission={['ri.view']} />,
             children: [
               { path: '/ri', element: <RiListPage /> },
+              { path: '/ri/dashboard', element: <ModuleDashboardPage key="ri" module="ri" /> },
               { path: '/ri/:id', element: <RiDetailPage /> },
             ],
           },
@@ -246,14 +273,6 @@ export const router = createBrowserRouter([
             ],
           },
           {
-            element: (
-              <RequirePermission
-                permission={['report.inventory', 'report.request', 'report.npbg', 'report.ppb', 'report.ri', 'report.opname', 'report.stock_movement']}
-              />
-            ),
-            children: [{ path: '/reports', element: <ReportsPage /> }],
-          },
-          {
             element: <RequirePermission permission="accurate.session.view" />,
             children: [{ path: '/accurate/online', element: <AccurateOnlinePage /> }],
           },
@@ -265,6 +284,14 @@ export const router = createBrowserRouter([
             element: <RequirePermission permission="role.view" />,
             children: [{ path: '/settings/roles', element: <RolesPage /> }],
           },
+          {
+            element: <RequireRole role="super_admin" />,
+            children: [
+              { path: '/settings/update-alerts', element: <UpdateAlertsPage /> },
+              { path: '/settings/auto-refresh', element: <AutoRefreshPage /> },
+            ],
+          },
+          { path: '/panduan', element: <GuidePage /> },
           { path: '*', element: <Navigate to="/" replace /> },
         ],
       },

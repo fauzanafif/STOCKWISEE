@@ -88,13 +88,13 @@ export function SyncProgressModal() {
     <Modal
       open={open}
       onClose={() => setDismissed(true)}
-      title="Sinkronisasi Accurate sedang berjalan"
-      description="Proses berjalan di server — aplikasi tetap bisa dipakai. Jendela ini boleh ditutup; hasilnya akan diberitahukan."
+      title="Accurate sync is running"
+      description="The process runs on the server; the application stays usable. You may close this window; you will be told the result."
     >
       <div className="space-y-4">
         <div className="flex items-center justify-center gap-3 rounded-md bg-muted/50 p-4">
           <Loader2 className="size-6 animate-spin text-primary" />
-          <span className="font-mono text-lg tabular-nums">
+          <span className=" text-lg tabular-nums">
             {minutes}:{seconds.toString().padStart(2, '0')}
           </span>
         </div>
@@ -117,7 +117,7 @@ export function SyncProgressModal() {
           })}
         </ol>
         {(step === 'queued' || step === 'staging' || stepIndex < 0) && (
-          <p className="text-xs text-muted-foreground">Menyiapkan proses…</p>
+          <p className="text-xs text-muted-foreground">Preparing process…</p>
         )}
       </div>
     </Modal>

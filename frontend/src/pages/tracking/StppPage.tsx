@@ -32,9 +32,9 @@ import { FilterBar } from '@/components/FilterBar'
 const ENTITY = 'stpp'
 const today = () => new Date().toISOString().slice(0, 10)
 const STATUS: Record<string, { label: string; variant: 'default' | 'neutral' | 'warning'; hint: string }> = {
- ACTIVE: { label: 'ACTIVE', variant: 'default', hint: 'No. NPBG + Bukti Keluar alat sedang dipakai' },
- PASSIVE: { label: 'PASSIVE', variant: 'neutral', hint: 'Tanda Kembali (RI) + Bukti Terima alat sudah kembali' },
-  INCOMPLETE: { label: 'Belum lengkap', variant: 'warning', hint: 'No. NPBG / Bukti Keluar belum ada' },
+ ACTIVE: { label: 'ACTIVE', variant: 'default', hint: 'NPBG No. + Out Proof; tool in use' },
+ PASSIVE: { label: 'PASSIVE', variant: 'neutral', hint: 'Return Mark (RI) + Receipt Proof; the tool is back' },
+  INCOMPLETE: { label: 'Incomplete', variant: 'warning', hint: 'NPBG No. / Out Proof missing' },
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -95,7 +95,7 @@ function toBody(f: Form): Record<string, unknown> {
   }
 }
 function invalidForm(f: Form): string | null {
-  if (!f.description_raw.trim() && !f.serial_no.trim()) return 'Isi No Seri atau Deskripsi'
+  if (!f.description_raw.trim() && !f.serial_no.trim()) return 'Fill in Serial No or Description'
   return null
 }
 
@@ -143,19 +143,19 @@ function StppTableRow({ row, canEdit, canDelete, note, opts }: {
     await action.mutateAsync({ action: 'reissue', body: {} })
   }
   async function remove() {
-    if (!row || !(await confirmDialog(`Hapus STPP ${row.serial_no ?? row.number}?`))) return
+    if (!row || !(await confirmDialog(`Delete STPP ${row.serial_no ?? row.number}?`))) return
     await del.mutateAsync(row.id)
   }
 
   return (
     <tr ref={(el) => { box.current = el }} onBlur={leaveRow} id={isNew ? 'stpp-new-row' : undefined} className={cn('align-top', isNew ? 'bg-primary/5' : 'bg-card')}>
-      <td className="border px-1 py-1">{input('out_date', { type: 'date', 'aria-label': 'Tgl NPBG', className: cn(cellInput, 'min-w-[8rem]') })}</td>
-      <td className="border px-1 py-1">{input('serial_no', { placeholder: 'SN-0001', 'aria-label': 'No Seri', className: cn(cellInput, 'min-w-[6rem] font-mono') })}</td>
+      <td className="border px-1 py-1">{input('out_date', { type: 'date', 'aria-label': 'NPBG Date', className: cn(cellInput, 'min-w-[8rem]') })}</td>
+      <td className="border px-1 py-1">{input('serial_no', { placeholder: 'SN-0001', 'aria-label': 'Serial No', className: cn(cellInput, 'min-w-[6rem]') })}</td>
       <td className="border px-1 py-1 min-w-[14rem]">
-        <ListInput id={`stpp-desc-${row?.id ?? 'new'}`} value={ed.form.description_raw} onChange={(v) => ed.change('description_raw', v)} options={opts?.descriptions ?? []} placeholder={isNew ? 'Ketik barang baru…' : ''} />
+        <ListInput id={`stpp-desc-${row?.id ?? 'new'}`} value={ed.form.description_raw} onChange={(v) => ed.change('description_raw', v)} options={opts?.descriptions ?? []} placeholder={isNew ? 'Type a new item…' : ''} />
         <div className="px-2"><InlineSaveBadge state={ed.state} error={ed.error} hint={ed.hint} /></div>
       </td>
-      <td className="border px-1 py-1">{input('qty', { inputMode: 'decimal', 'aria-label': 'Kuantitas', className: cn(cellInput, 'min-w-[4rem] text-right tabular-nums') })}</td>
+      <td className="border px-1 py-1">{input('qty', { inputMode: 'decimal', 'aria-label': 'Quantity', className: cn(cellInput, 'min-w-[4rem] text-right tabular-nums') })}</td>
       <td className="border px-1 py-1 min-w-[5rem]"><ListInput id={`stpp-unit-${row?.id ?? 'new'}`} value={ed.form.unit_raw} onChange={(v) => ed.change('unit_raw', v)} options={['PCS', ...(opts?.units ?? [])]} /></td>
       <td className="border px-1 py-1 min-w-[8rem]"><ListInput id={`stpp-holder-${row?.id ?? 'new'}`} value={ed.form.holder_name_raw} onChange={(v) => ed.change('holder_name_raw', v)} options={opts?.holders ?? []} /></td>
       <td className="border px-1 py-1 min-w-[10rem]"><ListInput id={`stpp-place-${row?.id ?? 'new'}`} value={ed.form.placement_raw} onChange={(v) => ed.change('placement_raw', v)} options={[...PLACEMENTS, ...(opts?.placements ?? [])]} /></td>
@@ -166,34 +166,34 @@ function StppTableRow({ row, canEdit, canDelete, note, opts }: {
               ...s, out_date: d.date ?? s.out_date, out_note: s.out_note || (d.note ?? ''),
               description_raw: s.description_raw || (d.lines[0]?.description ?? ''), unit_raw: d.lines[0]?.unit ?? s.unit_raw,
             }))} />
- ) : <span className="whitespace-nowrap px-2 py-1.5 font-mono text-xs">{row?.out_npbg ?? ''}</span>}
+ ) : <span className="whitespace-nowrap px-2 py-1.5 text-[13px]">{row?.out_npbg ?? ''}</span>}
       </td>
       <td className="border px-1 py-1">{input('out_item_no', { type: 'number', min: 1, 'aria-label': 'Item No', className: cn(cellInput, 'min-w-[4rem] text-right') })}</td>
-      <td className="border px-1 py-1">{row && <CompactPhotoSlot entity={ENTITY} entityId={row.id} slot="out" label="Bukti Keluar" photo={row.photos.out} canEdit={canEdit} onChanged={() => qc.invalidateQueries({ queryKey: [ENTITY] })} />}</td>
-      <td className="border px-1 py-1 min-w-[10rem]">{input('out_note', { 'aria-label': 'Keterangan Keluar' })}</td>
+      <td className="border px-1 py-1">{row && <CompactPhotoSlot entity={ENTITY} entityId={row.id} slot="out" label="Out Proof" photo={row.photos.out} canEdit={canEdit} onChanged={() => qc.invalidateQueries({ queryKey: [ENTITY] })} />}</td>
+      <td className="border px-1 py-1 min-w-[10rem]">{input('out_note', { 'aria-label': 'Out Remarks' })}</td>
       <td className="border px-2 py-1 text-center">{row && <StatusBadge status={row.status} />}</td>
-      <td className="border px-1 py-1">{input('return_date', { type: 'date', 'aria-label': 'Tgl RI', className: cn(cellInput, 'min-w-[8rem]') })}</td>
+      <td className="border px-1 py-1">{input('return_date', { type: 'date', 'aria-label': 'RI Date', className: cn(cellInput, 'min-w-[8rem]') })}</td>
       <td className="border px-1 py-1 min-w-[11rem]">
         {canEdit ? (
           <DocNumberInput compact type="ri" value={ed.form.return_ri_no} onChange={(v) => ed.change('return_ri_no', v)}
             onPick={(d) => ed.setForm((s) => ({ ...s, return_date: d.date ?? s.return_date, return_note: s.return_note || (d.note ?? '') }))} />
- ) : <span className="whitespace-nowrap px-2 py-1.5 font-mono text-xs">{row?.return_ri ?? ''}</span>}
+ ) : <span className="whitespace-nowrap px-2 py-1.5 text-[13px]">{row?.return_ri ?? ''}</span>}
       </td>
       <td className="border px-1 py-1">{input('return_item_no', { type: 'number', min: 1, 'aria-label': 'Item No2', className: cn(cellInput, 'min-w-[4rem] text-right') })}</td>
-      <td className="border px-1 py-1">{row && <CompactPhotoSlot entity={ENTITY} entityId={row.id} slot="in" label="Bukti Terima" photo={row.photos.in} canEdit={canEdit} onChanged={() => qc.invalidateQueries({ queryKey: [ENTITY] })} />}</td>
-      <td className="border px-1 py-1 min-w-[10rem]">{input('return_note', { 'aria-label': 'Keterangan Kembali' })}</td>
+      <td className="border px-1 py-1">{row && <CompactPhotoSlot entity={ENTITY} entityId={row.id} slot="in" label="In Proof" photo={row.photos.in} canEdit={canEdit} onChanged={() => qc.invalidateQueries({ queryKey: [ENTITY] })} />}</td>
+      <td className="border px-1 py-1 min-w-[10rem]">{input('return_note', { 'aria-label': 'Return Remarks' })}</td>
       <td className="border px-2 py-1">{row && <NoteCell entity={ENTITY} rowKey={row.id} note={note} />}</td>
       {canEdit && (
         <td className="border px-1 py-1 text-center">
           {row && (
             <div className="flex items-center justify-center gap-1">
               {row.status === 'PASSIVE' && (
-                <button type="button" title="Serahkan lagi (baris baru)" onClick={() => void reissue()} className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-primary">
+                <button type="button" title="Submit again (new row)" onClick={() => void reissue()} className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-primary">
                   <Plus className="size-4" />
                 </button>
               )}
               {canDelete && row.status !== 'PASSIVE' && (
-                <button type="button" title="Hapus baris" onClick={() => void remove()} className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-destructive">
+                <button type="button" title="Delete row" onClick={() => void remove()} className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-destructive">
                   <Trash2 className="size-4" />
                 </button>
               )}
@@ -205,7 +205,7 @@ function StppTableRow({ row, canEdit, canDelete, note, opts }: {
   )
 }
 
-const sttpHeaders = ['Tgl NPBG', 'No Seri', 'Deskripsi Barang', 'Kuantitas', 'Satuan', 'Peminta', 'Penempatan', 'No. NPBG', 'Item No', 'Bukti Keluar', 'Keterangan Keluar', 'Status', 'Tgl RI', 'Tanda Kembali', 'Item No2', 'Bukti Terima', 'Keterangan Kembali', 'Catatan']
+const sttpHeaders = ['NPBG Date', 'Serial No', 'Item Description', 'Quantity', 'Unit', 'Requester', 'Placement', 'NPBG No.', 'Item No', 'Out Proof', 'Out Remarks', 'Status', 'RI Date', 'Return Mark', 'Item No2', 'In Proof', 'Return Remarks', 'Notes']
 
 function StppSheet() {
   const { hasPermission } = useAuth()
@@ -222,31 +222,26 @@ function StppSheet() {
   const { data: noteMap } = useRowNotes(ENTITY, rows.map((r) => r.id))
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       <FilterBar className="items-center">
-        <Input placeholder="Cari no seri, barang, peminta, penempatan, NPBG, RI…" className="max-w-xs" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1) }} />
+        <Input placeholder="Search serial no., item, requester, placement, NPBG, RI…" className="max-w-xs" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1) }} />
         <Select className="max-w-[12rem]" value={status} onChange={(e) => { setStatus(e.target.value); setPage(1) }}>
-          <option value="">Semua status</option>
+          <option value="">All statuses</option>
           {Object.entries(STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
         </Select>
         <ExportBar dataset="stpp" filters={filters} filenameBase="stpp" viewPermission="stpp.view" />
       </FilterBar>
-      {canEdit && (
-        <p className="text-xs text-muted-foreground">
- Ketik langsung di tabel tersimpan otomatis. Baris biru = serah terima baru. Isi "Tanda Kembali" untuk otomatis menandai alat sudah kembali (PASSIVE).
-        </p>
-      )}
       <div className="max-h-[70vh] overflow-auto rounded-lg border">
         <table className="w-full table-auto border-collapse text-sm">
           <thead className="sticky top-0 z-10 bg-muted">
             <tr className="text-left">
               {sttpHeaders.map((h, i) => <th key={i} className="whitespace-nowrap border px-2 py-1.5 font-semibold">{h}</th>)}
-              {canEdit && <th className="whitespace-nowrap border px-2 py-1.5 font-semibold">Aksi</th>}
+              {canEdit && <th className="whitespace-nowrap border px-2 py-1.5 font-semibold">Actions</th>}
             </tr>
           </thead>
           <tbody>
             {isLoading && rows.length === 0 && (
-              <tr><td colSpan={sttpHeaders.length + 1} className="border px-2 py-6 text-center text-muted-foreground">Memuat…</td></tr>
+              <tr><td colSpan={sttpHeaders.length + 1} className="border px-2 py-6 text-center text-muted-foreground">Loading…</td></tr>
             )}
             {rows.map((r) => <StppTableRow key={r.id} row={r} canEdit={canEdit} canDelete={canDelete} note={noteMap?.[r.id]} opts={opts} />)}
             {canCreate && <StppTableRow key="new" row={null} canEdit canDelete={false} opts={opts} />}
@@ -267,7 +262,7 @@ const mFromRow = (r: StppMaintenanceRow): MForm => ({
 })
 const mSame = (a: MForm, b: MForm) => JSON.stringify(a) === JSON.stringify(b)
 function mInvalid(f: MForm): string | null {
-  return f.serial_no.trim() ? null : 'Isi No Seri'
+  return f.serial_no.trim() ? null : 'Fill in Serial No'
 }
 function mToBody(f: MForm) {
   return { serial_no: f.serial_no.trim() || undefined, requester: f.requester.trim() || null, npbg_date: f.npbg_date || null, npbg_no: f.npbg_no.trim() || null, note: f.note.trim() || null }
@@ -296,30 +291,30 @@ function MaintenanceTableRow({ row, canEdit, opts }: { row: StppMaintenanceRow |
     <input data-stppm-input disabled={!canEdit} value={ed.form[k]} onChange={(e) => ed.change(k, e.target.value)} onKeyDown={enter} className={cellInput} {...props} />
   )
   async function remove() {
-    if (!row || !(await confirmDialog('Hapus baris Maintenance ini?'))) return
+    if (!row || !(await confirmDialog('Delete this Maintenance row?'))) return
     await api.delete(`/api/stpp-maintenance/${row.id}`)
     invalidate()
   }
 
   return (
     <tr onBlur={leaveRow} id={isNew ? 'stppm-new-row' : undefined} className={cn('align-top', isNew ? 'bg-primary/5' : 'bg-card')}>
-      <td className="border px-1 py-1">{input('serial_no', { placeholder: 'SN-0396', 'aria-label': 'No Seri', className: cn(cellInput, 'min-w-[6rem] font-mono') })}</td>
+      <td className="border px-1 py-1">{input('serial_no', { placeholder: 'SN-0396', 'aria-label': 'Serial No', className: cn(cellInput, 'min-w-[6rem]') })}</td>
       <td className="border px-1 py-1 min-w-[8rem]">
         <ListInput id={`stppm-req-${row?.id ?? 'new'}`} value={ed.form.requester} onChange={(v) => ed.change('requester', v)} options={opts?.holders ?? []} />
         <div className="px-2"><InlineSaveBadge state={ed.state} error={ed.error} hint={ed.hint} /></div>
       </td>
-      <td className="border px-1 py-1">{input('npbg_date', { type: 'date', 'aria-label': 'Tgl NPBG', className: cn(cellInput, 'min-w-[8rem]') })}</td>
+      <td className="border px-1 py-1">{input('npbg_date', { type: 'date', 'aria-label': 'NPBG Date', className: cn(cellInput, 'min-w-[8rem]') })}</td>
       <td className="border px-1 py-1 min-w-[11rem]">
         {canEdit ? (
           <DocNumberInput compact type="npbg" value={ed.form.npbg_no} onChange={(v) => ed.change('npbg_no', v)}
             onPick={(d) => ed.setForm((s) => ({ ...s, npbg_date: d.date ?? s.npbg_date, note: s.note || (d.note ?? '') }))} />
- ) : <span className="whitespace-nowrap px-2 py-1.5 font-mono text-xs">{row?.npbg_no ?? ''}</span>}
+ ) : <span className="whitespace-nowrap px-2 py-1.5 text-[13px]">{row?.npbg_no ?? ''}</span>}
       </td>
-      <td className="border px-1 py-1 min-w-[12rem]">{input('note', { 'aria-label': 'Keterangan' })}</td>
+      <td className="border px-1 py-1 min-w-[12rem]">{input('note', { 'aria-label': 'Remarks' })}</td>
       {canEdit && (
         <td className="border px-1 py-1 text-center">
           {row && (
-            <button type="button" title="Hapus baris" onClick={() => void remove()} className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-destructive">
+            <button type="button" title="Delete row" onClick={() => void remove()} className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-destructive">
               <Trash2 className="size-4" />
             </button>
           )}
@@ -339,20 +334,19 @@ function MaintenanceSheet() {
   const opts = useOptions()
 
   return (
-    <div className="space-y-3">
-      <Input placeholder="Cari no seri, peminta, NPBG, keterangan…" className="max-w-xs" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1) }} />
-      {canEdit && <p className="text-xs text-muted-foreground">Deskripsi, kuantitas dan satuan diambil otomatis dari data STPP No Seri ini (seperti rumus Excel).</p>}
+    <div className="space-y-4">
+      <Input placeholder="Search serial no., requester, NPBG, remarks…" className="max-w-xs" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1) }} />
       <div className="max-h-[70vh] overflow-auto rounded-lg border">
         <table className="w-full table-auto border-collapse text-sm">
           <thead className="sticky top-0 z-10 bg-muted">
             <tr className="text-left">
-              {['No Seri', 'Peminta', 'Tgl NPBG', 'No NPBG', 'Keterangan'].map((h, i) => <th key={i} className="whitespace-nowrap border px-2 py-1.5 font-semibold">{h}</th>)}
-              {canEdit && <th className="whitespace-nowrap border px-2 py-1.5 font-semibold">Aksi</th>}
+              {['Serial No', 'Requester', 'NPBG Date', 'NPBG No', 'Remarks'].map((h, i) => <th key={i} className="whitespace-nowrap border px-2 py-1.5 font-semibold">{h}</th>)}
+              {canEdit && <th className="whitespace-nowrap border px-2 py-1.5 font-semibold">Actions</th>}
             </tr>
           </thead>
           <tbody>
             {isLoading && rows.length === 0 && (
-              <tr><td colSpan={6} className="border px-2 py-6 text-center text-muted-foreground">Memuat…</td></tr>
+              <tr><td colSpan={6} className="border px-2 py-6 text-center text-muted-foreground">Loading…</td></tr>
             )}
             {rows.map((r) => <MaintenanceTableRow key={r.id} row={r} canEdit={canEdit} opts={opts} />)}
             {canEdit && <MaintenanceTableRow key="new" row={null} canEdit opts={opts} />}
@@ -372,10 +366,10 @@ export function StppPage() {
   const [sheet, setSheet] = useState<Sheet>('stpp')
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       <PageHeader
         title="STPP"
- subtitle="Sesuai Excel Tracking STPP Serah Terima Pinjam Pakai. Ketik langsung di tabel, tersimpan otomatis."
+ subtitle="As in the STPP Loan-for-Use Handover Tracking Excel. Type directly in the table; it saves automatically."
         icon={<Package className="size-5" />}
       />
       <div className="flex gap-1 overflow-x-auto border-b" role="tablist">

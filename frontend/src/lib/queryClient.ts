@@ -32,7 +32,7 @@ export const queryClient = new QueryClient({
       if (mutation.meta?.silent) return
       const message = mutation.meta?.successMessage
       if (message === false) return
-      toast.success(message ?? 'Berhasil disimpan.')
+      toast.success(message ?? 'Saved.')
     },
     onError: (error, _variables, _context, mutation) => {
       if (mutation.meta?.silent) return

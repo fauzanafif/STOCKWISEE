@@ -44,12 +44,12 @@ describe('OpnameDetailPage', () => {
     mockApi(['opname.view', 'opname.count', 'opname.submit'], opname())
     render()
 
-    expect(await screen.findByText(/Masih/)).toHaveTextContent('Masih 1 barang belum diisi')
-    expect(screen.getByText('1/2 barang · 50%')).toBeInTheDocument()
+    expect(await screen.findByText(/Still/)).toHaveTextContent('Still 1 items not filled')
+    expect(screen.getByText('1/2 items · 50%')).toBeInTheDocument()
     // counter never sees the system qty column
-    expect(screen.queryByText('Stok sistem')).not.toBeInTheDocument()
+    expect(screen.queryByText('System stock')).not.toBeInTheDocument()
 
-    await userEvent.click(screen.getByRole('button', { name: 'Tampilkan yang belum diisi' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Show unfilled' }))
     expect(screen.getAllByText('Mur M10').length).toBeGreaterThan(0)
     expect(screen.queryByText('Baut M10')).not.toBeInTheDocument()
   })
@@ -59,9 +59,9 @@ describe('OpnameDetailPage', () => {
     const post = vi.spyOn(api, 'post')
     render()
 
-    await userEvent.click(await screen.findByRole('button', { name: 'Kirim untuk Review' }))
-    expect(screen.getByText(/Isi semua dulu sebelum mengirim/)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Ya, kirim' })).toBeDisabled()
+    await userEvent.click(await screen.findByRole('button', { name: 'Send for Review' }))
+    expect(screen.getByText(/Fill all of them before sending/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Yes, send' })).toBeDisabled()
     expect(post).not.toHaveBeenCalled()
   })
 
@@ -69,8 +69,8 @@ describe('OpnameDetailPage', () => {
     mockApi(['opname.view', 'opname.review', 'opname.approve'], opname({ status: 'PENDING_REVIEW', accurate_itemadj_id: 99 }))
     render()
 
-    expect(await screen.findByText('Penyesuaian stok')).toBeInTheDocument()
-    expect(screen.getByText(/berasal dari/)).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Selesaikan Review' })).not.toBeInTheDocument()
+    expect(await screen.findByText('Stock adjustment')).toBeInTheDocument()
+    expect(screen.getByText(/comes from/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Finish Review' })).not.toBeInTheDocument()
   })
 })

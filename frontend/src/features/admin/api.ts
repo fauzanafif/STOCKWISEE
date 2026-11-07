@@ -15,6 +15,8 @@ export interface AdminUserRow {
   site: { id: number; code: string; name: string } | null
   roles: { slug: string; name: string }[]
   last_login_at: string | null
+  /** when they last pressed Log out; closing the browser does not count */
+  last_logout_at?: string | null
   created_at: string | null
 }
 
@@ -64,7 +66,7 @@ export function useCreateUser() {
   return useMutation({
     mutationFn: async (body: UserPayload) => (await api.post<{ data: AdminUserRow }>('/api/users', body)).data.data,
     onSuccess: () => qc.invalidateQueries({ queryKey: ['admin'] }),
-    meta: { successMessage: 'Pengguna berhasil dibuat.' },
+    meta: { successMessage: 'User created.' },
   })
 }
 
@@ -74,7 +76,7 @@ export function useUpdateUser() {
     mutationFn: async ({ id, body }: { id: number; body: UserPayload }) =>
       (await api.put<{ data: AdminUserRow }>(`/api/users/${id}`, body)).data.data,
     onSuccess: () => qc.invalidateQueries({ queryKey: ['admin'] }),
-    meta: { successMessage: 'Pengguna berhasil diperbarui.' },
+    meta: { successMessage: 'User updated.' },
   })
 }
 
@@ -82,7 +84,7 @@ export function useResetUserPassword() {
   return useMutation({
     mutationFn: async ({ id, password }: { id: number; password: string }) =>
       (await api.post<{ message: string }>(`/api/users/${id}/password`, { password, password_confirmation: password })).data,
-    meta: { successMessage: 'Password berhasil direset. Semua sesi login pengguna ini sudah diakhiri.' },
+    meta: { successMessage: 'Password reset. All login sessions of this user have ended.' },
   })
 }
 
@@ -91,7 +93,7 @@ export function useDeleteUser() {
   return useMutation({
     mutationFn: async (id: number) => (await api.delete<{ message: string }>(`/api/users/${id}`)).data,
     onSuccess: () => qc.invalidateQueries({ queryKey: ['admin'] }),
-    meta: { successMessage: 'Pengguna dihapus.' },
+    meta: { successMessage: 'User deleted.' },
   })
 }
 
@@ -143,7 +145,7 @@ export function useCreateRole() {
   return useMutation({
     mutationFn: async (body: RolePayload) => (await api.post<{ data: RoleRow }>('/api/roles', body)).data.data,
     onSuccess: () => qc.invalidateQueries({ queryKey: ['admin'] }),
-    meta: { successMessage: 'Role berhasil dibuat.' },
+    meta: { successMessage: 'Role created.' },
   })
 }
 
@@ -153,7 +155,7 @@ export function useUpdateRole() {
     mutationFn: async ({ id, body }: { id: number; body: RolePayload }) =>
       (await api.put<{ data: RoleRow }>(`/api/roles/${id}`, body)).data.data,
     onSuccess: () => qc.invalidateQueries({ queryKey: ['admin'] }),
-    meta: { successMessage: 'Role berhasil diperbarui.' },
+    meta: { successMessage: 'Role updated.' },
   })
 }
 
@@ -162,7 +164,7 @@ export function useDeleteRole() {
   return useMutation({
     mutationFn: async (id: number) => (await api.delete<{ message: string }>(`/api/roles/${id}`)).data,
     onSuccess: () => qc.invalidateQueries({ queryKey: ['admin'] }),
-    meta: { successMessage: 'Role dihapus.' },
+    meta: { successMessage: 'Role deleted.' },
   })
 }
 
@@ -172,6 +174,6 @@ export function useChangeOwnPassword() {
   return useMutation({
     mutationFn: async (body: { current_password: string; password: string; password_confirmation: string }) =>
       (await api.post<{ message: string }>('/api/me/password', body)).data,
-    meta: { successMessage: 'Password berhasil diganti.' },
+    meta: { successMessage: 'Password changed.' },
   })
 }

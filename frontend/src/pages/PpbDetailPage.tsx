@@ -1,24 +1,19 @@
 import { Link, useParams } from 'react-router-dom'
+import { PpbReference } from '@/components/PpbReference'
 import { usePpb, PPB_STATUS, PPB_LINE_STATUS, ppbDivisi } from '@/features/ppb/api'
 import { PpbStatusBadges } from '@/components/PpbStatusBadges'
 import { PrintDocButton } from '@/components/PrintDocButton'
-import { Card, CardContent } from '@/components/ui/card'
 import { DocText } from '@/components/DocLink'
 import { BackLink } from '@/components/BackLink'
-import { PpbApprovalCard } from '@/components/PpbApproval'
+import { InBaseUom } from '@/components/UomEquivalent'
+import { PpbApprovalCard, ppbActivity } from '@/components/PpbApproval'
 import { DetailFallback } from '@/components/DetailFallback'
-
-function Field({ label, value, className }: { label: string; value?: string | number | null; className?: string }) {
-  return (
-    <div className={className}>
-      <div className="text-muted-foreground">{label}</div>
-      <div>{value ?? '—'}</div>
-    </div>
-  )
-}
+import { QtyProgress } from '@/components/QtyProgress'
+import { Activity, DocPage, DocSection, MetaList, SyncNote } from '@/components/doc/DocLayout'
+import { cn } from '@/lib/utils'
 
 function fmtDate(v: string | null) {
-  return v ? new Date(v).toLocaleDateString('id-ID') : '—'
+  return v ? new Date(v).toLocaleDateString('en-GB', { dateStyle: 'medium' }) : '—'
 }
 
 export function PpbDetailPage() {
@@ -26,77 +21,97 @@ export function PpbDetailPage() {
   const ppbId = Number(id)
   const { data: ppb, isLoading } = usePpb(ppbId)
 
-  if (isLoading || !ppb) return <div className="space-y-4"><BackLink to="/ppb" label="Daftar PPB" /><DetailFallback loading={isLoading} /></div>
+  if (isLoading || !ppb) return <div className="space-y-4"><BackLink to="/ppb" label="Purchase Request List" /><DetailFallback loading={isLoading} /></div>
+
+  // the whole PPB document (all its lines); this page's line is highlighted
+  const items = (ppb.document_items?.length ?? 0) > 1 ? ppb.document_items! : null
+  const activity = ppbActivity(ppb)
 
   return (
-    <div className="max-w-3xl space-y-4">
-      <BackLink to="/ppb" label="Daftar PPB" />
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0 space-y-1">
-          <h1 className="break-all font-mono text-lg font-semibold">{ppb.no_ppb ?? '—'}</h1>
-          <p className="text-sm text-muted-foreground">{fmtDate(ppb.tgl_ppb)}</p>
-          <PpbStatusBadges ppb={ppb} withHint />
-        </div>
-        <div className="shrink-0">
-          <PrintDocButton url={`/api/ppb/${ppb.id}/print`} docType="ppb" />
-        </div>
-      </div>
-
+    <DocPage
+      back={{ to: '/ppb', label: 'Purchase Request List' }}
+      kind="Purchase Request"
+      number={ppb.no_ppb ?? '—'}
+      status={<PpbStatusBadges ppb={ppb} />}
+      subtitle={[fmtDate(ppb.tgl_ppb), ppbDivisi(ppb.divisi), ppb.peminta].filter((x) => x && x !== '—').join(' · ')}
+      actions={<PrintDocButton url={`/api/ppb/${ppb.id}/print`} docType="ppb" />}
+      aside={<>
+        <DocSection title="Information">
+          <MetaList items={[
+            { label: 'Purchase Request Date', value: fmtDate(ppb.tgl_ppb) },
+            { label: 'Division', value: ppbDivisi(ppb.divisi) },
+            { label: 'Requester', value: ppb.peminta },
+            { label: 'Item status', value: [ppb.is_amend ? 'Amend' : null, ppb.line_status ? PPB_LINE_STATUS[ppb.line_status]?.label ?? ppb.line_status : null].filter(Boolean).join(' + ') || null },
+            { label: 'Documents in Accurate', value: ppb.status ? PPB_STATUS[ppb.status]?.label ?? ppb.status : null },
+          ]} />
+          <div className="mt-3 border-t pt-3"><PpbStatusBadges ppb={ppb} withHint /></div>
+        </DocSection>
+        {activity.length > 0 && <DocSection title="Activity"><Activity items={activity} /></DocSection>}
+        <SyncNote at={ppb.accurate_synced_at} />
+      </>}
+    >
       <PpbApprovalCard ppb={ppb} />
 
-      <Card>
-        <CardContent className="grid grid-cols-2 gap-y-2 p-4 text-sm sm:grid-cols-3">
-          <Field label="Tgl PPB" value={fmtDate(ppb.tgl_ppb)} />
-          <Field label="Status barang" value={[ppb.is_amend ? 'Amend' : null, ppb.line_status ? PPB_LINE_STATUS[ppb.line_status]?.label ?? ppb.line_status : null].filter(Boolean).join(' + ') || null} />
-          <Field label="Dokumen PPB di Accurate" value={ppb.status ? PPB_STATUS[ppb.status]?.label ?? ppb.status : null} />
-          <Field label="Divisi" value={ppbDivisi(ppb.divisi)} />
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardContent className="grid grid-cols-2 gap-y-2 p-4 text-sm sm:grid-cols-3">
-          <Field label="Kode Barang" value={ppb.kode_barang} />
-          <Field label="Deskripsi Barang" value={ppb.deskripsi_barang} className="col-span-2 sm:col-span-1" />
-          <Field label="Kuantitas" value={ppb.kuantitas != null ? `${ppb.kuantitas} ${ppb.satuan ?? ''}` : null} />
-          <Field label="Qty Dipesan" value={ppb.qty_dipesan} />
-          <Field label="Qty Diterima" value={ppb.qty_diterima} />
-          <Field label="Peminta" value={ppb.peminta} />
-          <div className="col-span-2 sm:col-span-3">
-            <div className="text-muted-foreground">Keterangan</div>
-            <div className="whitespace-pre-wrap"><DocText text={ppb.keterangan} /></div>
+      <DocSection title="Item">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <div className="text-base font-medium leading-snug">{ppb.deskripsi_barang ?? '—'}</div>
+            <div className="mt-0.5 text-[13px] text-muted-foreground">{ppb.kode_barang ?? '—'}</div>
+          </div>
+          <dl className="grid shrink-0 grid-cols-3 gap-4 text-right sm:gap-6">
+            <div><dt className="text-xs text-muted-foreground">Requested</dt><dd className="text-lg font-semibold tabular-nums">{ppb.kuantitas ?? '—'} <span className="text-xs font-normal text-muted-foreground">{ppb.satuan ?? ''}</span><InBaseUom qty={ppb.kuantitas} ratio={ppb.unit_ratio} base={ppb.base_satuan} /></dd></div>
+            <div><dt className="text-xs text-muted-foreground">Ordered</dt><dd className="text-lg font-semibold tabular-nums">{ppb.qty_dipesan ?? 0}</dd></div>
+            <div><dt className="text-xs text-muted-foreground">Received</dt><dd className="text-lg font-semibold tabular-nums">{ppb.qty_diterima ?? 0}</dd></div>
+          </dl>
+        </div>
+        <div className="mt-4 space-y-3 border-t pt-3">
+          <div>
+            <div className="text-xs text-muted-foreground">Remarks</div>
+            <div className="mt-0.5 whitespace-pre-wrap"><DocText text={ppb.keterangan} /></div>
           </div>
           {ppb.catatan_baris && (
-            <div className="col-span-2 sm:col-span-3">
-              <div className="text-muted-foreground">Catatan Baris</div>
-              <div className="whitespace-pre-wrap">{ppb.catatan_baris}</div>
+            <div>
+              <div className="text-xs text-muted-foreground">Row notes</div>
+              <div className="mt-0.5 whitespace-pre-wrap">{ppb.catatan_baris}</div>
             </div>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </DocSection>
+
+      {/* the approval covers every line of the document: all of them, this one marked */}
+      {items && (
+        <DocSection title="Purchase Request document content" count={items.length} flush>
+          <ul className="divide-y">
+            {items.map((it, i) => (
+              <li key={it.id} className={cn('flex items-start gap-3 px-4 py-2.5', it.id === ppb.id && 'bg-primary/5')}>
+                <span className="w-5 shrink-0 pt-0.5 text-right text-xs text-muted-foreground">{i + 1}</span>
+                <span className="min-w-0 flex-1">
+                  {it.id === ppb.id || !it.id ? <span className="block">{it.deskripsi_barang ?? '-'}</span>
+                    : <Link to={`/ppb/${it.id}`} className="block hover:text-primary hover:underline">{it.deskripsi_barang ?? '-'}</Link>}
+                  <span className="block text-xs text-muted-foreground">
+                    <span className="">{it.kode_barang ?? '-'}</span>{it.peminta ? ` · ${it.peminta}` : ''}{it.catatan_baris ? ` · ${it.catatan_baris}` : ''}
+                  </span>
+                </span>
+                <span className="hidden shrink-0 sm:block"><PpbReference r={it.reference} /></span>
+                <span className="shrink-0 whitespace-nowrap font-medium tabular-nums">{it.kuantitas ?? '-'} {it.satuan ?? ''}</span>
+              </li>
+            ))}
+          </ul>
+        </DocSection>
+      )}
 
       {(ppb.purchased_via?.length ?? 0) > 0 && (
-        <Card>
-          <CardContent className="space-y-1 p-4 text-sm">
-            <div className="font-medium">Dipesan via PO</div>
+        <DocSection title="Ordered via PO" count={ppb.purchased_via!.length} flush>
+          <ul className="divide-y">
             {ppb.purchased_via!.map((p) => (
-              <div key={p.purchase_order_id} className="flex items-center justify-between">
-                <Link to={`/purchase-orders/${p.purchase_order_id}`} className="font-mono text-xs text-primary hover:underline">
-                  {p.number ?? '—'}
-                </Link>
-                <span className="text-xs text-muted-foreground">
-                  {p.qty_received}/{p.qty} diterima
-                </span>
-              </div>
+              <li key={p.purchase_order_id} className="flex items-center justify-between gap-3 px-4 py-2.5">
+                <Link to={`/purchase-orders/${p.purchase_order_id}`} className=" text-primary hover:underline">{p.number ?? '—'}</Link>
+                <QtyProgress total={p.qty} done={p.qty_received} className="w-28" />
+              </li>
             ))}
-          </CardContent>
-        </Card>
+          </ul>
+        </DocSection>
       )}
-
-      {ppb.accurate_synced_at && (
-        <p className="text-xs text-muted-foreground">
-          Terakhir sync dari Accurate: {new Date(ppb.accurate_synced_at).toLocaleString('id-ID')}
-        </p>
-      )}
-    </div>
+    </DocPage>
   )
 }

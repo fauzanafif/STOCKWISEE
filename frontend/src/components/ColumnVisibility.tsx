@@ -42,7 +42,7 @@ export function visibleColumns<T>(columns: Column<T>[], hiddenCols: Set<string>,
 
 /** "Kolom" button + checkbox dropdown to hide/show columns — also drives what's sent to export/cetak (see ExportBar's `columns` prop). */
 export function ColumnMenu<T>({
-  columns, hiddenCols, onToggle, alwaysVisible = [], hint = 'Kolom tersembunyi tidak ikut di export/cetak.',
+  columns, hiddenCols, onToggle, alwaysVisible = [], hint = 'Hidden columns are left out of export/print.',
 }: {
   columns: Column<T>[]
   hiddenCols: Set<string>
@@ -57,7 +57,7 @@ export function ColumnMenu<T>({
   return (
     <div className="relative">
       <Button size="sm" variant="outline" onClick={() => setOpen((v) => !v)}>
-        <Columns3 className="size-4" /> Kolom
+        <Columns3 className="size-4" /> Columns
       </Button>
       {open && (
         <>

@@ -108,7 +108,7 @@ export function useCreateStockCard() {
       qc.invalidateQueries({ queryKey: ['stock-cards'] })
       qc.invalidateQueries({ queryKey: ['stock-card-projects'] })
     },
-    meta: { successMessage: 'Kartu stock dibuat.' },
+    meta: { successMessage: 'Stock card created.' },
   })
 }
 
@@ -126,7 +126,7 @@ export function useStockCardMutations(id: number) {
     update: useMutation({
       mutationFn: async (body: StockCardHeader) => (await api.put<{ data: StockCard }>(card, body)).data.data,
       onSuccess: apply,
-      meta: { successMessage: 'Data kartu disimpan.' },
+      meta: { successMessage: 'Card data saved.' },
     }),
     remove: useMutation({
       mutationFn: async () => api.delete(card),
@@ -134,7 +134,7 @@ export function useStockCardMutations(id: number) {
         qc.invalidateQueries({ queryKey: ['stock-cards'] })
         qc.invalidateQueries({ queryKey: ['stock-card-projects'] })
       },
-      meta: { successMessage: 'Kartu stock dihapus.' },
+      meta: { successMessage: 'Stock card deleted.' },
     }),
     addEntry: useMutation({
       mutationFn: async (body: StockCardEntryInput) => (await api.post<{ data: StockCard }>(`${card}/entries`, body)).data.data,
@@ -190,7 +190,7 @@ export function useSaveStockCardProject(id?: number) {
       ? await api.put<{ data: StockCardProject }>(`/api/stock-card-projects/${id}`, body)
       : await api.post<{ data: StockCardProject }>('/api/stock-card-projects', body)).data.data,
     onSuccess: () => qc.invalidateQueries({ queryKey: ['stock-card-projects'] }),
-    meta: { successMessage: id ? 'Proyek disimpan.' : 'Proyek dibuat.' },
+    meta: { successMessage: id ? 'Project saved.' : 'Project created.' },
   })
 }
 
@@ -199,7 +199,7 @@ export function useDeleteStockCardProject(id: number) {
   return useMutation({
     mutationFn: async () => api.delete(`/api/stock-card-projects/${id}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['stock-card-projects'] }),
-    meta: { successMessage: 'Proyek dihapus.' },
+    meta: { successMessage: 'Project deleted.' },
   })
 }
 
@@ -261,7 +261,7 @@ export function useStockCardShareLinkMutations(projectId: number) {
     remove: useMutation({
       mutationFn: async (id: number) => api.delete(`/api/stock-card-share-links/${id}`),
       onSuccess: done,
- meta: { successMessage: 'Link dihapus tidak bisa dibuka lagi.' },
+ meta: { successMessage: 'A deleted link can no longer be opened.' },
     }),
   }
 }

@@ -44,17 +44,17 @@ describe('SyncPage', () => {
     renderWithProviders(<SyncPage />)
 
     // default tab: Riwayat Sync (SyncStatusCard's own status line proves it rendered)
-    expect(await screen.findByText('Sync terakhir')).toBeInTheDocument()
+    expect(await screen.findByText('Last sync')).toBeInTheDocument()
 
-    await userEvent.click(screen.getByRole('button', { name: 'Log Agen' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Agent Log' }))
     expect(await screen.findByText('gbak restore failed (exit 1)')).toBeInTheDocument()
-    expect(screen.getByText('Gagal 7 hari terakhir')).toBeInTheDocument()
+    expect(screen.getByText('Failed in the last 7 days')).toBeInTheDocument()
     expect(screen.getByText('1 run')).toBeInTheDocument()
-    expect(screen.getByText(/Gagal · 30 menit lalu/)).toBeInTheDocument()
+    expect(screen.getByText(/Failed · 30 minutes ago/)).toBeInTheDocument()
 
     await userEvent.click(screen.getByRole('button', { name: /Event Detail/ }))
     expect(screen.getByText('Candidate backup: Y')).toBeInTheDocument()
-    await userEvent.selectOptions(screen.getByDisplayValue('Semua level'), 'ERROR')
+    await userEvent.selectOptions(screen.getByDisplayValue('All levels'), 'ERROR')
     expect(screen.queryByText('Candidate backup: Y')).not.toBeInTheDocument()
     expect(screen.getByText('Sync failed for X')).toBeInTheDocument()
   })
@@ -83,16 +83,16 @@ describe('SyncPage single "Sinkron Sekarang" button', () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true)
     renderWithProviders(<SyncPage />)
 
-    await userEvent.click(await screen.findByRole('button', { name: /Sinkron Sekarang/ }))
+    await userEvent.click(await screen.findByRole('button', { name: /Sync Now/ }))
     await waitFor(() => expect(post).toHaveBeenCalledWith('/api/agent-runs', { mode: 'full' }))
-    expect(await screen.findByText(/Job terakhir/)).toBeInTheDocument()
+    expect(await screen.findByText(/Last job/)).toBeInTheDocument()
   })
 
   it('hides the button without trigger permission', async () => {
     mockRunApi(['sync.accurate.view'])
     renderWithProviders(<SyncPage />)
 
-    await screen.findByText(/Job terakhir/)
-    expect(screen.queryByRole('button', { name: /Sinkron Sekarang/ })).not.toBeInTheDocument()
+    await screen.findByText(/Last job/)
+    expect(screen.queryByRole('button', { name: /Sync Now/ })).not.toBeInTheDocument()
   })
 })

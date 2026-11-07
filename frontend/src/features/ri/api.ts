@@ -23,6 +23,9 @@ export interface Ri {
   deskripsi_barang: string | null
   kuantitas: number | null
   satuan: string | null
+  /** stock took kuantitas × unit_ratio of base_satuan */
+  unit_ratio?: number
+  base_satuan?: string | null
   harga_satuan: number | null
   /** from the Accurate Department of the line (format since Sept 2026), else ITEMRESERVED3 */
   pemeriksa: string | null
@@ -45,7 +48,7 @@ export interface Ri {
   /** documents of the RI (surat jalan / invoice, slots doc1..doc3, photo or PDF), on its detail */
   documents?: { slot: string; file_name: string | null; mime: string | null }[]
   /** every line of the same RI document, on its detail */
-  lines?: { id: number; kode_barang: string | null; deskripsi_barang: string | null; kuantitas: number | null; satuan: string | null; harga_satuan: number | null; no_seri: string | null; no_po: string | null; no_ppb: string | null; photos?: string[] }[]
+  lines?: { id: number; kode_barang: string | null; deskripsi_barang: string | null; kuantitas: number | null; satuan: string | null; unit_ratio?: number; base_satuan?: string | null; harga_satuan: number | null; no_seri: string | null; no_po: string | null; no_ppb: string | null; photos?: string[] }[]
   created_at: string
   updated_at: string
 }
@@ -53,7 +56,7 @@ export interface Ri {
 export type RiSource = 'PO' | 'BEKAS' | 'MANUAL'
 
 export const RI_SOURCE: Record<RiSource | 'ACCURATE', string> = {
-  PO: 'Dari PO', BEKAS: 'Pengembalian bekas', MANUAL: 'Manual', ACCURATE: 'Accurate (tanpa PO)',
+  PO: 'From PO', BEKAS: 'Pengembalian bekas', MANUAL: 'Manual', ACCURATE: 'Accurate (tanpa PO)',
 }
 
 export function useRiList(params: {
@@ -94,7 +97,8 @@ export interface RiCreatePayload {
   kuantitas: number
   satuan?: string | null
   harga_satuan?: number | null
-  no_seri?: string | null
+  /** one per unit, all or none */
+  serials?: string[]
   pemeriksa?: string | null
   tgl_ri?: string | null
   keterangan?: string | null
@@ -141,14 +145,14 @@ export function useRi(id: number | null) {
  */
 export function riJenis(code: string | null | undefined): string {
   switch ((code ?? '').toUpperCase()) {
-    case 'NA': return 'Pembelian'
-    case 'ATK': return 'Pembelian ATK'
+    case 'NA': return 'Purchase'
+    case 'ATK': return 'Office Supplies Purchase'
     case 'NV': return 'Non-vendor (pengembalian)'
     default: return code || '—'
   }
 }
 
-/** A STOCKWISE PO line still waiting for goods — the "Dari PO" picker of a manual RI. */
+/** A STOCKWISE PO line still waiting for goods — the "From PO" picker of a manual RI. */
 export interface RiPoLine {
   id: number
   po_id: number
@@ -193,7 +197,11 @@ export interface RiPoOrder {
   date: string | null
   vendor: string | null
   status: string
-  lines: { id: number; kode_barang: string | null; deskripsi: string; satuan: string | null; no_ppb: string | null; vendor?: string | null; qty: number; received: number; remaining: number; unit_price: number }[]
+  lines: { id: number; kode_barang: string | null; deskripsi: string; satuan: string | null; no_ppb: string | null; vendor?: string | null; qty: number; received: number; remaining: number; unit_price: number
+    /** one of this line's unit makes this many of the item's own unit in stock */
+    unit_ratio: number; base_unit: string | null
+    /** no ratio to the item's own unit yet: it cannot be received until there is one */
+    unit_problem: string | null }[]
 }
 
 export function useRiPoOrders(search: string, enabled: boolean) {
@@ -213,7 +221,7 @@ export interface RiFromPoPayload {
   tgl_ri?: string | null
   keterangan?: string | null
   /** each item received with its own proof photos (1 to 3) */
-  lines: { purchase_order_item_id: number; qty: number; no_seri?: string | null; photos: string[] }[]
+  lines: { purchase_order_item_id: number; qty: number; serials?: string[]; photos: string[] }[]
   documents?: { data: string; name: string }[]
   allow_duplicate?: boolean
 }
@@ -224,6 +232,49 @@ export function useCreateRiFromPo() {
     mutationFn: async (payload: RiFromPoPayload) => (await api.post<{ data: Ri }>('/api/ri/from-po', payload)).data.data,
     onSuccess: () => Promise.all([qc.invalidateQueries({ queryKey: ['ri'] }), qc.invalidateQueries({ queryKey: ['purchase-orders'] }), qc.invalidateQueries({ queryKey: ['item-requests'] })]),
   })
+}
+
+/** A failed file request answers with a Blob: its JSON message is read back so it can be shown. */
+async function saveXlsx(request: Promise<{ data: unknown; headers?: unknown }>, fallbackName: string) {
+  let res: { data: unknown; headers?: unknown }
+  try {
+    res = await request
+  } catch (e) {
+    const body = (e as { response?: { data?: unknown } }).response?.data
+    if (body instanceof Blob) {
+      let message: string | undefined
+      try { message = (JSON.parse(await body.text()) as { message?: string }).message } catch { /* not JSON: the generic error stays */ }
+      if (message) throw new Error(message)
+    }
+    throw e
+  }
+  const disposition = (res.headers as Record<string, string> | undefined)?.['content-disposition'] ?? ''
+  const name = /filename="?([^";]+)"?/.exec(disposition)?.[1] ?? fallbackName
+  const url = URL.createObjectURL(res.data as Blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = name
+  a.click()
+  setTimeout(() => URL.revokeObjectURL(url), 60_000)
+}
+
+export interface RiSerialTemplateLine { key: number; kode?: string | null; deskripsi?: string | null; satuan?: string | null; qty: number; serials?: string[] }
+
+/** An Excel with one row per unit, to fill in. */
+export function downloadRiSerialTemplate(name: string, lines: RiSerialTemplateLine[]) {
+  return saveXlsx(api.post('/api/ri/serials/template', { name, lines }, { responseType: 'blob' }), 'serial-ri.xlsx')
+}
+
+/** The serial numbers recorded on an RI. */
+export function exportRiSerials(riId: number) {
+  return saveXlsx(api.get(`/api/ri/${riId}/serials-export`, { responseType: 'blob' }), 'serial-ri.xlsx')
+}
+
+/** What a filled Excel holds, per line. The server checks the file; nothing is saved until the RI is. */
+export async function importRiSerials(file: File) {
+  const form = new FormData()
+  form.append('file', file)
+  return (await api.post<{ data: { key: number; serials: string[] }[] }>('/api/ri/serials/import', form)).data.data
 }
 
 export function useRiPoLines(search: string, enabled: boolean) {

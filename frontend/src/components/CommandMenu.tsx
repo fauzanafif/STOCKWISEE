@@ -43,10 +43,10 @@ export function CommandMenu({ groups, open, onOpenChange }: { groups: NavGroup[]
 
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/30 p-4 pt-[12vh]" onMouseDown={() => onOpenChange(false)}>
-      <div className="w-full max-w-lg overflow-hidden rounded-lg border bg-card shadow-2xl" role="dialog" aria-modal="true" aria-label="Cari menu" onMouseDown={(e) => e.stopPropagation()}>
+      <div className="w-full max-w-lg overflow-hidden rounded-lg border bg-card shadow-2xl" role="dialog" aria-modal="true" aria-label="Search menu" onMouseDown={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-2 border-b px-3">
           <Search className="size-4 shrink-0 text-muted-foreground" />
-          <input ref={input} value={q} placeholder="Cari menu, mis. NPBG, barang keluar, approval…"
+          <input ref={input} value={q} placeholder="Search menu, e.g. Delivery Order, items out, approval…"
             className="h-12 w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
             onChange={(e) => { setQ(e.target.value); setAt(0) }}
             onKeyDown={(e) => {
@@ -58,14 +58,12 @@ export function CommandMenu({ groups, open, onOpenChange }: { groups: NavGroup[]
           <kbd className="hidden rounded border bg-muted px-1.5 text-[10px] text-muted-foreground sm:block">ESC</kbd>
         </div>
         <ul className="max-h-80 overflow-y-auto p-1">
-          {items.length === 0 && <li className="px-3 py-6 text-center text-sm text-muted-foreground">Menu tidak ditemukan.</li>}
+          {items.length === 0 && <li className="px-3 py-6 text-center text-sm text-muted-foreground">Menu not found.</li>}
           {items.map((i, idx) => {
-            const Icon = i.icon
             return (
               <li key={i.to}>
                 <button type="button" onMouseEnter={() => setAt(idx)} onClick={() => go(i.to)}
                   className={cn('flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm', idx === at ? 'bg-primary/10 text-primary' : 'text-foreground')}>
-                  <Icon className="size-4 shrink-0 opacity-70" />
                   <span className="flex-1">{i.label}</span>
                   {i.group && <span className="text-xs text-muted-foreground">{i.group}</span>}
                   {idx === at && <CornerDownLeft className="size-3.5 opacity-60" />}

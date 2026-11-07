@@ -23,9 +23,9 @@ export function filledLines(lines: DraftLine[]) {
 
 export function linesError(lines: DraftLine[]): string | null {
   const filled = filledLines(lines)
-  if (filled.length === 0) return 'Isi minimal satu barang.'
+  if (filled.length === 0) return 'Fill in at least one item.'
   const bad = filled.findIndex((l) => !l.deskripsi_barang.trim() || !(Number(l.qty) > 0))
-  return bad >= 0 ? `Barang ke-${bad + 1}: isi nama barang dan jumlah (lebih dari 0).` : null
+  return bad >= 0 ? `Item ${bad + 1}: fill in the item name and quantity (more than 0).` : null
 }
 
 export const toPayloadLines = (lines: DraftLine[]) => filledLines(lines).map((l) => ({
@@ -62,35 +62,35 @@ export function RequestLinesEditor({ lines, onChange }: { lines: DraftLine[]; on
   return (
     <div ref={root} className="overflow-hidden rounded-lg border bg-card">
       <div className="flex items-center justify-between border-b bg-muted/40 px-3 py-2">
-        <span className="text-sm font-semibold">Barang yang diminta</span>
-        <span className="text-xs text-muted-foreground">{count} barang</span>
+        <span className="text-sm font-semibold">Requested items</span>
+        <span className="text-xs text-muted-foreground">{count} items</span>
       </div>
       <datalist id="rq-units">{UNITS.map((u) => <option key={u} value={u} />)}</datalist>
 
       {/* header (wider screens) */}
-      <div className="hidden grid-cols-[2rem_minmax(0,1.4fr)_6rem_6.5rem_minmax(0,0.8fr)_7.75rem_2.25rem] gap-2 border-b px-3 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground sm:grid">
-        <span>#</span><span>Nama barang *</span><span className="text-right">Jumlah *</span><span>Satuan</span><span>Catatan</span><span title="Opsional, maksimal 3 per barang">Gambar (maks 3)</span><span />
+      <div className="hidden grid-cols-[2rem_minmax(0,1.4fr)_6rem_6.5rem_minmax(0,0.8fr)_7.75rem_2.25rem] gap-2 border-b px-3 py-2 text-xs font-medium text-muted-foreground sm:grid">
+        <span>#</span><span>Item name *</span><span className="text-right">Quantity *</span><span>Unit</span><span>Notes</span><span title="Optional, maximum 3 per item">Images (max 3)</span><span />
       </div>
 
       <ul className="divide-y">
         {lines.map((l, i) => (
           <li key={l.key} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_2.25rem] gap-2 px-3 py-2.5 sm:grid-cols-[2rem_minmax(0,1.4fr)_6rem_6.5rem_minmax(0,0.8fr)_7.75rem_2.25rem] sm:items-center">
             <span className="hidden text-sm tabular-nums text-muted-foreground sm:block">{i + 1}</span>
-            <Input data-name aria-label={`Nama barang ${i + 1}`} className="col-span-3 sm:col-span-1" placeholder={i === 0 ? 'mis. mata gerinda potong besi 4 inch' : 'Nama barang'}
+            <Input data-name aria-label={`Item name ${i + 1}`} className="col-span-3 sm:col-span-1" placeholder={i === 0 ? 'e.g. 4 inch iron cutting wheel' : 'Item name'}
               value={l.deskripsi_barang} maxLength={400} onKeyDown={onEnter(i)} onChange={(e) => set(l.key, 'deskripsi_barang', e.target.value)} />
-            <Input aria-label={`Jumlah ${i + 1}`} className="text-right tabular-nums" type="number" inputMode="decimal" min={0} step="any" placeholder="Jumlah"
+            <Input aria-label={`Quantity ${i + 1}`} className="text-right tabular-nums" type="number" inputMode="decimal" min={0} step="any" placeholder="Quantity"
               value={l.qty} onKeyDown={onEnter(i)} onChange={(e) => set(l.key, 'qty', e.target.value)} />
-            <Input aria-label={`Satuan ${i + 1}`} list="rq-units" placeholder="PCS" value={l.satuan} maxLength={30}
+            <Input aria-label={`Unit ${i + 1}`} list="rq-units" placeholder="PCS" value={l.satuan} maxLength={30}
               onKeyDown={onEnter(i)} onChange={(e) => set(l.key, 'satuan', e.target.value.toUpperCase())} />
-            <Input aria-label={`Catatan ${i + 1}`} className="order-last col-span-3 sm:order-none sm:col-span-1" placeholder="Catatan (opsional)" value={l.note}
+            <Input aria-label={`Notes ${i + 1}`} className="order-last col-span-3 sm:order-none sm:col-span-1" placeholder="Notes (optional)" value={l.note}
               maxLength={255} onKeyDown={onEnter(i)} onChange={(e) => set(l.key, 'note', e.target.value)} />
             {/* the images of this item, on its own row: rightmost (on a phone under the note) */}
             <div className="order-last col-span-3 flex items-center gap-2 sm:order-none sm:col-span-1">
-              <span className="text-xs text-muted-foreground sm:hidden">Gambar (maks 3)</span>
-              <LineImagesInput value={l.images} onChange={(v) => set(l.key, 'images', v)} label={l.deskripsi_barang || `barang ${i + 1}`} />
+              <span className="text-xs text-muted-foreground sm:hidden">Images (max 3)</span>
+              <LineImagesInput value={l.images} onChange={(v) => set(l.key, 'images', v)} label={l.deskripsi_barang || `items ${i + 1}`} />
             </div>
             <button type="button" className="flex size-9 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-              aria-label={`Hapus barang ${i + 1}`} title="Hapus baris" onClick={() => remove(l.key)}>
+              aria-label={`Delete item ${i + 1}`} title="Delete row" onClick={() => remove(l.key)}>
               <Trash2 className="size-4" />
             </button>
           </li>
@@ -100,9 +100,9 @@ export function RequestLinesEditor({ lines, onChange }: { lines: DraftLine[]; on
       <div className="flex items-center justify-between border-t px-3 py-2">
         <button type="button" onClick={add} disabled={lines.length >= MAX}
           className="inline-flex items-center gap-1.5 rounded-md px-1 py-1 text-sm font-medium text-primary hover:underline disabled:opacity-50">
-          <Plus className="size-4" /> Tambah baris
+          <Plus className="size-4" /> Add row
         </button>
-        <span className="hidden text-xs text-muted-foreground sm:inline">Tekan Enter untuk lanjut ke baris berikutnya</span>
+
       </div>
     </div>
   )

@@ -160,8 +160,8 @@ class DatasetExporter
         return response()->streamDownload(function () use ($headers, $rows, $title, $logo) {
             $esc = fn ($v) => htmlspecialchars((string) $v, ENT_QUOTES);
             echo '<!doctype html><html lang="id"><head><meta charset="utf-8"><title>'.$esc($title).'</title>';
-            echo '<style>@media print{@page{size:A4 landscape;margin:8mm}}';
-            echo '*{box-sizing:border-box}body{font:12px/1.4 Arial,sans-serif;color:#111;margin:0}';
+            echo '<style>@media print{@page{size:A4 portrait;margin:8mm}}';
+            echo '*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}body{font:12px/1.4 Arial,sans-serif;color:#111;margin:0}';
             // Letterhead: logo top-left, title + company name centered across the
             // full page width — the first thing anyone sees on paper, same look
             // whether this came from "Cetak" or a downloaded PDF.

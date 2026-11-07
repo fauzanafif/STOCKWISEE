@@ -16,7 +16,7 @@ export function ChangePasswordModal({ onClose }: { onClose: () => void }) {
   function submit() {
     setErr(null)
     if (password !== confirm) {
-      setErr('Konfirmasi password baru tidak sama.')
+      setErr('The new password confirmation does not match.')
       return
     }
     change.mutate(
@@ -29,29 +29,29 @@ export function ChangePasswordModal({ onClose }: { onClose: () => void }) {
     <Modal
       open
       onClose={onClose}
-      title="Ganti Password"
-      description="Sesi login di perangkat lain akan diakhiri setelah password diganti."
+      title="Change Password"
+      description="Login sessions on other devices will end after the password changes."
       footer={
         <>
-          <Button variant="outline" size="sm" onClick={onClose}>Batal</Button>
-          <Button size="sm" disabled={change.isPending || !current || password.length < 8} onClick={submit}>Simpan</Button>
+          <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
+          <Button size="sm" disabled={change.isPending || !current || password.length < 8} onClick={submit}>Save</Button>
         </>
       }
     >
       <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); submit() }}>
         <div className="space-y-1">
-          <Label htmlFor="cp-current">Password saat ini</Label>
+          <Label htmlFor="cp-current">Current password</Label>
           <PasswordInput id="cp-current" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} />
         </div>
         <div className="space-y-1">
-          <Label htmlFor="cp-new">Password baru</Label>
+          <Label htmlFor="cp-new">New password</Label>
           <PasswordInput id="cp-new" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} />
         </div>
         <div className="space-y-1">
-          <Label htmlFor="cp-confirm">Ulangi password baru</Label>
+          <Label htmlFor="cp-confirm">Repeat new password</Label>
           <PasswordInput id="cp-confirm" autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
         </div>
-        <p className="text-xs text-muted-foreground">Minimal 8 karakter, berisi huruf dan angka.</p>
+        <p className="text-xs text-muted-foreground">Minimum 8 characters, with letters and numbers.</p>
         {err && <p className="whitespace-pre-line text-sm text-destructive">{err}</p>}
         <button type="submit" className="hidden" />
       </form>

@@ -23,9 +23,9 @@ const SAVE_DELAY = 900
 type SaveState = 'idle' | 'dirty' | 'saving' | 'saved' | 'error'
 
 function SaveBadge({ state, error, hint }: { state: SaveState; error?: string | null; hint?: string | null }) {
-  if (state === 'saving') return <span className="inline-flex items-center gap-1 text-xs text-muted-foreground"><Loader2 className="size-3 animate-spin" /> Menyimpan…</span>
-  if (state === 'saved') return <span className="inline-flex items-center gap-1 text-xs text-emerald-600"><Check className="size-3" /> Tersimpan</span>
-  if (state === 'error') return <span className="text-xs text-destructive">{error ?? 'Gagal menyimpan'}</span>
+  if (state === 'saving') return <span className="inline-flex items-center gap-1 text-xs text-muted-foreground"><Loader2 className="size-3 animate-spin" /> Saving…</span>
+  if (state === 'saved') return <span className="inline-flex items-center gap-1 text-xs text-emerald-600"><Check className="size-3" /> Saved</span>
+  if (state === 'error') return <span className="text-xs text-destructive">{error ?? 'Failed to save'}</span>
   if (hint) return <span className="text-xs text-amber-700">{hint}</span>
   return null
 }
@@ -60,12 +60,12 @@ function Attachments({ row, canEdit, canDelete, onChanged }: { row: StockCardRow
       }
     }
     setProgress(null)
-    if (failed && list.length > 1) window.alert(`${failed} dari ${list.length} file gagal diupload (hanya foto atau PDF).`)
+    if (failed && list.length > 1) window.alert(`${failed} of ${list.length} files failed to upload (photos or PDF only).`)
     onChanged()
   }
 
   async function remove(id: number) {
-    if (!(await confirmDialog('Hapus lampiran ini?'))) return
+    if (!(await confirmDialog('Delete this attachment?'))) return
     await deleteEntryFile(scope, id)
     onChanged()
   }
@@ -76,10 +76,10 @@ function Attachments({ row, canEdit, canDelete, onChanged }: { row: StockCardRow
       {canEdit && (
         progress
           ? <span className={cn(iconBtn, 'text-primary')}><Loader2 className="size-3.5 animate-spin" />{progress}</span>
-          : <button type="button" onClick={() => picker.current?.click()} className={iconBtn} title="Upload foto / file (bisa beberapa sekaligus)" aria-label="Upload lampiran"><Upload className="size-4" /></button>
+          : <button type="button" onClick={() => picker.current?.click()} className={iconBtn} title="Upload photos / files (several at once)" aria-label="Upload attachment"><Upload className="size-4" /></button>
       )}
       {files.length > 0 && (
-        <button type="button" onClick={() => setOpen(true)} className={cn(iconBtn, 'border-primary/40 font-semibold text-primary')} title="Lihat lampiran" aria-label={`${files.length} lampiran`}>
+        <button type="button" onClick={() => setOpen(true)} className={cn(iconBtn, 'border-primary/40 font-semibold text-primary')} title="View attachment" aria-label={`${files.length} attachments`}>
           <Paperclip className="size-3.5" />{files.length}
         </button>
       )}
@@ -87,21 +87,21 @@ function Attachments({ row, canEdit, canDelete, onChanged }: { row: StockCardRow
         onChange={(e) => { const list = Array.from(e.target.files ?? []); e.target.value = ''; if (list.length) void upload(list) }} />
 
       {open && (
-        <Modal open onClose={() => setOpen(false)} title={`Lampiran (${files.length})`} description={[row.date.split('-').reverse().join('/'), row.doc_no, row.description].filter(Boolean).join(' · ')}
+        <Modal open onClose={() => setOpen(false)} title={`Attachments (${files.length})`} description={[row.date.split('-').reverse().join('/'), row.doc_no, row.description].filter(Boolean).join(' · ')}
           footer={canEdit ? (
             <Button className="h-11 w-full sm:w-auto" disabled={!!progress} onClick={() => picker.current?.click()}>
-              {progress ? <Loader2 className="size-4 animate-spin" /> : <Upload className="size-4" />} {progress ? `Mengupload ${progress}` : 'Tambah foto / file'}
+              {progress ? <Loader2 className="size-4 animate-spin" /> : <Upload className="size-4" />} {progress ? `Uploading ${progress}` : 'Add photo / file'}
             </Button>
           ) : undefined}>
-          {files.length === 0 ? <p className="py-4 text-center text-sm text-muted-foreground">Belum ada lampiran.</p> : (
+          {files.length === 0 ? <p className="py-4 text-center text-sm text-muted-foreground">No attachments yet.</p> : (
             <ul className="divide-y">
               {files.map((f, i) => (
                 <li key={f.id} className="flex items-center gap-3 py-2">
                   {f.mime === 'application/pdf' ? <FileText className="size-5 shrink-0 text-red-600" /> : <ImageIcon className="size-5 shrink-0 text-primary" />}
-                  <span className="min-w-0 flex-1 truncate text-sm">{f.file_name || `Lampiran ${i + 1}`}</span>
-                  <Button variant="outline" size="sm" onClick={() => void openEntryFile(scope, f.id)}>Lihat</Button>
+                  <span className="min-w-0 flex-1 truncate text-sm">{f.file_name || `Attachments ${i + 1}`}</span>
+                  <Button variant="outline" size="sm" onClick={() => void openEntryFile(scope, f.id)}>View</Button>
                   {canDelete && (
-                    <button type="button" className="rounded p-2 text-muted-foreground hover:text-destructive" aria-label="Hapus lampiran" onClick={() => void remove(f.id)}>
+                    <button type="button" className="rounded p-2 text-muted-foreground hover:text-destructive" aria-label="Delete attachment" onClick={() => void remove(f.id)}>
                       <Trash2 className="size-4" />
                     </button>
                   )}
@@ -131,9 +131,9 @@ const toInput = (f: EntryForm): StockCardEntryInput => ({
 })
 /** Why a line can't be saved yet (null = ok). */
 function invalid(f: EntryForm): string | null {
-  if (!f.entry_date) return 'Isi tanggal'
+  if (!f.entry_date) return 'Fill in the date'
   const i = toInput(f)
-  if (!((i.qty_in ?? 0) > 0) && !((i.qty_out ?? 0) > 0)) return 'Isi Masuk atau Keluar'
+  if (!((i.qty_in ?? 0) > 0) && !((i.qty_out ?? 0) > 0)) return 'Fill in In or Out'
   return null
 }
 const same = (a: EntryForm, b: EntryForm) => JSON.stringify(a) === JSON.stringify(b)
@@ -234,18 +234,18 @@ function EntryTableRow({ row, rows, cardId, canEdit, canDelete, onFiles }: {
 
   return (
     <tr ref={box} onBlur={leaveRow} id={isNew ? 'sc-new-line' : undefined} className={cn('group align-top', isNew ? 'bg-primary/5' : 'bg-card')}>
-      <td className="overflow-hidden border px-1 py-1">{input('entry_date', { type: 'date', 'aria-label': 'Tanggal', className: cn(cellInput, 'min-w-0 px-1 text-[13px] md:text-sm') })}</td>
-      <td className="overflow-hidden border px-1 py-1">{input('doc_no', { placeholder: isNew ? 'No. bukti' : '', 'aria-label': 'No. bukti', className: cn(cellInput, 'min-w-0 truncate max-md:text-base') })}</td>
+      <td className="overflow-hidden border px-1 py-1">{input('entry_date', { type: 'date', 'aria-label': 'Date', className: cn(cellInput, 'min-w-0 px-1 text-[13px] md:text-sm') })}</td>
+      <td className="overflow-hidden border px-1 py-1">{input('doc_no', { placeholder: isNew ? 'Proof no.' : '', 'aria-label': 'Proof no.', className: cn(cellInput, 'min-w-0 truncate max-md:text-base') })}</td>
       <td className="border px-1 py-1">
-        {input('description', { placeholder: isNew ? 'Ketik transaksi baru di sini…' : '', 'aria-label': 'Keterangan', className: cn(cellInput, 'max-md:text-base') })}
+        {input('description', { placeholder: isNew ? 'Type a new transaction here…' : '', 'aria-label': 'Remarks', className: cn(cellInput, 'max-md:text-base') })}
         <div className="px-2"><SaveBadge state={ed.state} error={ed.error} hint={ed.hint} /></div>
       </td>
-      <td className="border px-1 py-1">{input('qty_in', { inputMode: 'decimal', 'aria-label': 'Masuk', className: cn(cellInput, 'min-w-0 text-right tabular-nums max-md:text-base') })}</td>
-      <td className="border px-1 py-1">{input('qty_out', { inputMode: 'decimal', 'aria-label': 'Keluar', className: cn(cellInput, 'min-w-0 text-right tabular-nums max-md:text-base') })}</td>
+      <td className="border px-1 py-1">{input('qty_in', { inputMode: 'decimal', 'aria-label': 'In', className: cn(cellInput, 'min-w-0 text-right tabular-nums max-md:text-base') })}</td>
+      <td className="border px-1 py-1">{input('qty_out', { inputMode: 'decimal', 'aria-label': 'Out', className: cn(cellInput, 'min-w-0 text-right tabular-nums max-md:text-base') })}</td>
       <td className="border px-1 py-1">
         {canEdit ? (
-          <input data-sc-input value={sisaShown} inputMode="decimal" aria-label="Sisa" placeholder={blank ? nf.format(before) : ''}
-            title={`Ketik sisa: Masuk / Keluar dihitung dari sisa sebelumnya (${nf.format(before)})`}
+          <input data-sc-input value={sisaShown} inputMode="decimal" aria-label="Balance" placeholder={blank ? nf.format(before) : ''}
+            title={`Type the balance: In / Out is calculated from the previous balance (${nf.format(before)})`}
             onFocus={() => setSisaText(sisaShown)} onBlur={() => setSisaText(null)}
             onChange={(e) => typeSisa(e.target.value)} onKeyDown={enter}
             className={cn(cellInput, 'min-w-0 text-right font-semibold tabular-nums placeholder:font-normal max-md:text-base', computed != null && computed < 0 && !blank && 'text-destructive')} />
@@ -259,8 +259,8 @@ function EntryTableRow({ row, rows, cardId, canEdit, canDelete, onFiles }: {
       {canDelete && (
         <td className="border px-1 py-1 text-center">
           {row && (
-            <button type="button" className="rounded p-2 text-muted-foreground hover:bg-muted hover:text-destructive" aria-label="Hapus baris"
-              onClick={async () => { if ((await confirmDialog('Hapus transaksi ini?'))) m.removeEntry.mutate(row.id) }}>
+            <button type="button" className="rounded p-2 text-muted-foreground hover:bg-muted hover:text-destructive" aria-label="Delete row"
+              onClick={async () => { if ((await confirmDialog('Delete this transaction?'))) m.removeEntry.mutate(row.id) }}>
               <Trash2 className="size-4" />
             </button>
           )}
@@ -335,35 +335,35 @@ function HeaderInline({ card, canEdit }: { card: StockCard; canEdit: boolean }) 
       <div className="text-sm md:text-center">
         {canEdit && !shared ? (
           <label className="block">
-            <span className="text-xs text-muted-foreground md:hidden">Proyek</span>
+            <span className="text-xs text-muted-foreground md:hidden">Project</span>
             <select value={form.project_id ?? ''} onChange={(e) => change('project_id', e.target.value ? Number(e.target.value) : null, true)}
               className="h-11 w-full rounded-md border bg-card px-2 text-base md:h-9 md:w-auto md:text-sm">
- <option value="">pilih proyek</option>
-              {(projects.data?.data ?? []).map((p) => <option key={p.id} value={p.id}>Proyek: {p.name}{p.code ? ` (${p.code})` : ''}</option>)}
+ <option value="">select project</option>
+              {(projects.data?.data ?? []).map((p) => <option key={p.id} value={p.id}>Project: {p.name}{p.code ? ` (${p.code})` : ''}</option>)}
             </select>
           </label>
         ) : (
-          card.project && <span className="text-muted-foreground">Proyek: <b className="text-foreground">{card.project.name}</b></span>
+          card.project && <span className="text-muted-foreground">Project: <b className="text-foreground">{card.project.name}</b></span>
         )}
       </div>
       <div className="grid gap-x-8 text-sm md:grid-cols-2">
         <div>
-          {row('Nama Barang', <span className="px-2 py-1.5 font-medium">{card.item.description}</span>, true)}
-          {row('Nomor Kartu', text('card_number', 'mis. EAE.0291'))}
- {row('Satuan', <span className="px-2 py-1.5 font-medium">{card.item.unit ?? ''}</span>, true)}
+          {row('Item Name', <span className="px-2 py-1.5 font-medium">{card.item.description}</span>, true)}
+          {row('Card Number', text('card_number', 'e.g. EAE.0291'))}
+ {row('Unit', <span className="px-2 py-1.5 font-medium">{card.item.unit ?? ''}</span>, true)}
         </div>
         <div>
-          {row('Kode Barang', <span className="px-2 py-1.5 font-mono font-medium">{card.item.code}</span>, true)}
+          {row('Item Code', <span className="px-2 py-1.5 font-medium">{card.item.code}</span>, true)}
           <div className="grid grid-cols-2 gap-x-3 md:block">
-            {row('Letak Gudang', text('location_warehouse', 'mis. GUDANG 1'))}
-            {row('Letak Rak', text('location_rack', 'mis. RAK A.11'))}
+            {row('Warehouse Location', text('location_warehouse', 'e.g. WAREHOUSE 1'))}
+            {row('Rack Location', text('location_rack', 'e.g. RACK A.11'))}
           </div>
-          <div className="md:hidden">{row('Penanggung Jawab', text('person_in_charge', 'nama'))}</div>
+          <div className="md:hidden">{row('Person in Charge', text('person_in_charge', 'name'))}</div>
         </div>
       </div>
       <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-        <div className="w-full md:hidden">{row('Direktur (TTD)', text('director_name', 'nama direktur'))}</div>
-        <SaveBadge state={state} error={error} hint={state === 'dirty' ? (!form.project_id ? 'Pilih proyek' : !form.card_number.trim() ? 'Isi nomor kartu' : null) : null} />
+        <div className="w-full md:hidden">{row('Director (Signature)', text('director_name', 'director name'))}</div>
+        <SaveBadge state={state} error={error} hint={state === 'dirty' ? (!form.project_id ? 'Select project' : !form.card_number.trim() ? 'Fill in the card number' : null) : null} />
       </div>
     </div>
   )
@@ -396,7 +396,7 @@ function SignName({ card, field }: { card: StockCard; field: 'person_in_charge' 
 
   return (
     <div className="mx-auto mt-1 w-48">
-      <input value={value} placeholder={field === 'director_name' ? '( nama direktur )' : '( nama penanggung jawab )'} onChange={(e) => { setValue(e.target.value); setState('dirty') }}
+      <input value={value} placeholder={field === 'director_name' ? '( director name )' : '( person in charge )'} onChange={(e) => { setValue(e.target.value); setState('dirty') }}
         onBlur={() => void save()} onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
         className={cn(cellInput, 'h-7 text-center text-xs')} />
       <SaveBadge state={state === 'dirty' ? 'idle' : state} error={error} />
@@ -417,8 +417,8 @@ export function StockCardPage() {
   const [pdfBusy, setPdfBusy] = useState<'print' | 'download' | null>(null)
   const [infoOpen, setInfoOpen] = useState(false)
 
-  if (isLoading) return <p className="text-muted-foreground">Memuat kartu stock…</p>
-  if (error || !card) return <p className="text-destructive">{error ? apiErrorMessage(error) : 'Kartu stock tidak ditemukan.'}</p>
+  if (isLoading) return <p className="text-muted-foreground">Loading stock card…</p>
+  if (error || !card) return <p className="text-destructive">{error ? apiErrorMessage(error) : 'Stock card not found.'}</p>
   const canEdit = !!card.can_edit
   const canDelete = !!card.can_delete
   const files = () => void refetch()
@@ -436,33 +436,33 @@ export function StockCardPage() {
     }
   }
   const removeCard = async () => {
-    if ((await confirmDialog(`Hapus kartu ${card.card_number} beserta semua transaksinya?`))) m.remove.mutate(undefined, { onSuccess: () => navigate(card.project ? back : routes.home) })
+    if ((await confirmDialog(`Delete card ${card.card_number} with all its transactions?`))) m.remove.mutate(undefined, { onSuccess: () => navigate(card.project ? back : routes.home) })
   }
   const stats: [string, number, string][] = [
-    ['Masuk', card.total_masuk, 'text-emerald-700'],
-    ['Keluar', card.total_keluar, 'text-red-700'],
-    ['Sisa', card.sisa, card.sisa < 0 ? 'text-destructive' : 'text-foreground'],
+    ['In', card.total_masuk, 'text-emerald-700'],
+    ['Out', card.total_keluar, 'text-red-700'],
+    ['Balance', card.sisa, card.sisa < 0 ? 'text-destructive' : 'text-foreground'],
   ]
 
   return (
     <div className="space-y-4 pb-24 md:pb-0">
       <div className="flex items-center justify-between gap-2">
-        <BackLink to={back} label={card.project ? card.project.name : 'Kartu tanpa proyek'} className="min-w-0" />
+        <BackLink keep to={back} label={card.project ? card.project.name : 'Card without project'} className="min-w-0" />
         <div className="hidden flex-wrap gap-2 md:flex">
           <Button variant="outline" onClick={() => void pdf('print')} disabled={pdfBusy !== null}>
-            {pdfBusy === 'print' ? <Loader2 className="size-4 animate-spin" /> : <Printer className="size-4" />} Cetak
+            {pdfBusy === 'print' ? <Loader2 className="size-4 animate-spin" /> : <Printer className="size-4" />} Print
           </Button>
           <Button variant="outline" onClick={() => void pdf('download')} disabled={pdfBusy !== null}>
             {pdfBusy === 'download' ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />} PDF
           </Button>
-          {canDelete && <Button variant="outline" className="text-destructive" onClick={removeCard}><Trash2 className="size-4" /> Hapus kartu</Button>}
+          {canDelete && <Button variant="outline" className="text-destructive" onClick={removeCard}><Trash2 className="size-4" /> Delete card</Button>}
         </div>
         <div className="flex items-center gap-2 md:hidden">
           {pdfBusy && <Loader2 className="size-4 animate-spin text-muted-foreground" />}
           <ActionMenu actions={[
-            { label: 'Cetak kartu', icon: <Printer className="size-4" />, onClick: () => void pdf('print'), disabled: !!pdfBusy },
+            { label: 'Print card', icon: <Printer className="size-4" />, onClick: () => void pdf('print'), disabled: !!pdfBusy },
             { label: 'Download PDF', icon: <Download className="size-4" />, onClick: () => void pdf('download'), disabled: !!pdfBusy },
-            ...(canDelete ? [{ label: 'Hapus kartu', icon: <Trash2 className="size-4" />, onClick: removeCard, danger: true }] : []),
+            ...(canDelete ? [{ label: 'Delete card', icon: <Trash2 className="size-4" />, onClick: removeCard, danger: true }] : []),
           ]} />
         </div>
       </div>
@@ -472,7 +472,7 @@ export function StockCardPage() {
         <div>
           <div className="text-base font-semibold leading-snug">{card.item.description}</div>
           <div className="mt-1 text-xs text-muted-foreground">
-            <span className="font-mono">{card.item.code}</span> · Kartu <span className="font-mono">{card.card_number}</span>{unit && ` · ${unit}`}
+            <span className="">{card.item.code}</span> · Card <span className="">{card.card_number}</span>{unit && ` · ${unit}`}
           </div>
         </div>
         <div className="grid grid-cols-3 divide-x rounded-lg bg-muted/50 py-2 text-center">
@@ -484,9 +484,9 @@ export function StockCardPage() {
           ))}
         </div>
         <button type="button" onClick={() => setInfoOpen((o) => !o)} className="flex w-full items-center justify-between border-t pt-3 text-sm">
-          <span className="font-medium">Info kartu</span>
+          <span className="font-medium">Card info</span>
           <span className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
-            <span className="truncate">{infoOpen ? 'Tutup' : [card.location_rack, card.person_in_charge].filter(Boolean).join(' · ') || 'Lokasi, penanggung jawab'}</span>
+            <span className="truncate">{infoOpen ? 'Close' : [card.location_rack, card.person_in_charge].filter(Boolean).join(' · ') || 'Location, person in charge'}</span>
             <ChevronDown className={cn('size-4 shrink-0 transition-transform', infoOpen && 'rotate-180')} />
           </span>
         </button>
@@ -497,12 +497,12 @@ export function StockCardPage() {
 
  {/* the card as on paper, every cell typed in place on a phone too (table scrolls sideways) */}
       <div className="space-y-4 md:rounded-lg md:border md:bg-card md:p-6">
-        <h2 className="hidden text-center text-xl font-bold tracking-wide md:block">KARTU STOCK</h2>
+        <h2 className="hidden text-center text-xl font-bold md:block">KARTU STOCK</h2>
         <div className="hidden md:block"><HeaderInline key={card.id} card={card} canEdit={canEdit} /></div>
 
         <div className="hidden grid-cols-3 gap-2 text-center md:grid">
           {stats.map(([l, v]) => (
-            <div key={l} className={cn('rounded-md border p-2', l === 'Sisa' && 'border-primary/40 bg-primary/5')}>
+            <div key={l} className={cn('rounded-md border p-2', l === 'Balance' && 'border-primary/40 bg-primary/5')}>
               <div className="text-xs text-muted-foreground">{l}</div>
               <div className="text-lg font-semibold tabular-nums">{nf.format(v)}</div>
             </div>
@@ -524,7 +524,7 @@ export function StockCardPage() {
             </colgroup>
             <thead>
               <tr className="bg-muted text-left">
-                {['Tgl', 'No. Bukti', 'Keterangan', 'Masuk', 'Keluar', 'Sisa', 'Lampiran', ...(canDelete ? [''] : [])].map((h, i) => (
+                {['Date', 'Proof No.', 'Remarks', 'In', 'Out', 'Balance', 'Attachments', ...(canDelete ? [''] : [])].map((h, i) => (
                   <th key={i} className={cn('border px-2 py-1.5 font-semibold', i >= 3 && i <= 5 && 'text-right')}>{h}</th>
                 ))}
               </tr>
@@ -533,20 +533,14 @@ export function StockCardPage() {
               {card.rows.map((r) => <EntryTableRow key={r.id} row={r} rows={card.rows} cardId={card.id} canEdit={canEdit} canDelete={canDelete} onFiles={files} />)}
               {canEdit && <EntryTableRow key={`new-${card.rows.length}`} row={null} rows={card.rows} cardId={card.id} canEdit canDelete={canDelete} onFiles={files} />}
               {card.rows.length === 0 && !canEdit && (
-                <tr><td colSpan={7} className="border px-2 py-4 text-center text-muted-foreground">Belum ada transaksi.</td></tr>
+                <tr><td colSpan={7} className="border px-2 py-4 text-center text-muted-foreground">No transactions yet.</td></tr>
               )}
             </tbody>
           </table>
         </div>
-        {canEdit && (
-          <p className="px-1 text-xs text-muted-foreground">
- Ketik langsung di tabel tersimpan otomatis. Baris biru = transaksi baru: isi tanggal, keterangan dan Masuk / Keluar atau langsung ketik Sisa, Masuk / Keluar terhitung sendiri lalu Enter.
-            <span className="md:hidden"> Geser tabel ke kanan untuk lampiran (ikon upload: foto / file, bisa beberapa) dan hapus.</span>
-          </p>
-        )}
 
         <div className="hidden grid-cols-2 gap-8 pt-4 text-center text-sm md:grid">
-          {([['Penanggung Jawab', 'person_in_charge'], ['Direktur', 'director_name']] as const).map(([role, field]) => (
+          {([['Person in Charge', 'person_in_charge'], ['Director', 'director_name']] as const).map(([role, field]) => (
             <div key={role} className="space-y-14">
               <div className="font-medium">{role}</div>
               <div>
@@ -560,7 +554,7 @@ export function StockCardPage() {
         </div>
       </div>
       {card.item.accurate_qty != null && (
-        <p className="px-1 text-xs text-muted-foreground">Info: stok {card.item.code} di Accurate saat ini {nf.format(card.item.accurate_qty)} {unit} (kartu ini diisi manual, terpisah dari Accurate).</p>
+        <p className="px-1 text-xs text-muted-foreground">Info: stock {card.item.code} currently in Accurate {nf.format(card.item.accurate_qty)} {unit} (this card is filled by hand, separate from Accurate).</p>
       )}
 
       {canEdit && card.rows.length > 4 && (
@@ -569,7 +563,7 @@ export function StockCardPage() {
             const el = document.getElementById('sc-new-line')
             el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
             setTimeout(() => el?.querySelector<HTMLInputElement>('input[data-sc-input]:not([type=date])')?.focus(), 350)
-          }}><Plus className="size-5" /> Tulis transaksi baru</Button>
+          }}><Plus className="size-5" /> Write a new transaction</Button>
         </MobileBottomBar>
       )}
     </div>

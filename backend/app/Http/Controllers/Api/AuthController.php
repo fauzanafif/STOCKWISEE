@@ -122,6 +122,7 @@ class AuthController extends Controller
     public function logout(Request $request): JsonResponse
     {
         $request->user()->currentAccessToken()->delete();
+        $request->user()->forceFill(['last_logout_at' => now()])->save();
 
         return response()->json(['message' => 'Logged out.']);
     }

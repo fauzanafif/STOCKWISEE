@@ -1,4 +1,5 @@
 import axios, { AxiosError } from 'axios'
+import { englishLabels } from '@/lib/serverText'
 
 /**
  * Axios instance for the STOCKWISE API.
@@ -33,6 +34,11 @@ export function setToken(token: string | null) {
 
 /** Fired when the API rejects the current token (401) so the app can log out. */
 export const AUTH_EXPIRED_EVENT = 'stockwise:auth-expired'
+
+api.interceptors.response.use((res) => {
+  if (res.data && typeof res.data === 'object' && !(res.data instanceof Blob)) englishLabels(res.data)
+  return res
+})
 
 api.interceptors.request.use((config) => {
   const token = getToken()

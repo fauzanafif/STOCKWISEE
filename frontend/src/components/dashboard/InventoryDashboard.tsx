@@ -30,7 +30,7 @@ import { cn } from '@/lib/utils'
 // whether it's a badge, a chart segment, or a stacked-bar layer.
 const STATUS_COLORS: Record<string, string> = { AMAN: '#10b981', TIDAK_AMAN: '#ef4444', BEP: '#94a3b8' }
 /** BEP = "Stok Habis": stock AND safety stock zero — not a shortage, never "perlu dibeli". */
-const STATUS_LABELS: Record<string, string> = { AMAN: 'Aman', TIDAK_AMAN: 'Tidak Aman', BEP: 'Stok Habis (BEP)' }
+const STATUS_LABELS: Record<string, string> = { AMAN: 'Safe', TIDAK_AMAN: 'Unsafe', BEP: 'Out of Stock (BEP)' }
 
 function fmt(n: number): string {
   return Math.round(n).toLocaleString('id-ID')
@@ -83,16 +83,16 @@ type Kpis = InventoryDashboardData['kpis']
  */
 // Business rule: BEP (stok habis, tidak dipakai) counts as AMAN — only TIDAK_AMAN needs action.
 const KPI_DEFS: Array<{ key: string; label: string; hint: (k: Kpis) => string; value: (k: Kpis) => number; icon: React.ReactNode; tone: 'neutral' | 'good' | 'bad' | 'muted' }> = [
-  { key: 'total_barang', label: 'Total Barang', hint: () => 'Barang aktif yang dianalisa', value: (k) => k.total_barang, icon: <Package className="size-4" />, tone: 'neutral' },
+  { key: 'total_barang', label: 'Total Items', hint: () => 'Active items analysed', value: (k) => k.total_barang, icon: <Package className="size-4" />, tone: 'neutral' },
   {
-    key: 'aman', label: 'Aman', value: (k) => k.barang_aman + k.stok_habis,
-    hint: (k) => `Termasuk ${fmt(k.stok_habis)} stok habis (BEP)`, icon: <CheckCircle2 className="size-4" />, tone: 'good',
+    key: 'aman', label: 'Safe', value: (k) => k.barang_aman + k.stok_habis,
+    hint: (k) => `Included ${fmt(k.stok_habis)} out of stock (BEP)`, icon: <CheckCircle2 className="size-4" />, tone: 'good',
   },
-  { key: 'perlu_dibeli', label: 'Perlu Dibeli', hint: () => 'Stok di bawah safety stock', value: (k) => k.perlu_dibeli, icon: <ShoppingCart className="size-4" />, tone: 'bad' },
-  { key: 'total_kekurangan', label: 'Total Kekurangan', hint: () => 'Jumlah unit kurang dari safety stock', value: (k) => k.total_kekurangan, icon: <AlertTriangle className="size-4" />, tone: 'bad' },
+  { key: 'perlu_dibeli', label: 'Need to Buy', hint: () => 'Stock below safety stock', value: (k) => k.perlu_dibeli, icon: <ShoppingCart className="size-4" />, tone: 'bad' },
+  { key: 'total_kekurangan', label: 'Total Shortage', hint: () => 'Units short of safety stock', value: (k) => k.total_kekurangan, icon: <AlertTriangle className="size-4" />, tone: 'bad' },
   {
-    key: 'stok_habis', label: 'Stok Habis (BEP)', value: (k) => k.stok_habis,
-    hint: () => 'Bagian dari Aman: stok & safety stock nol, tidak perlu dibeli', icon: <PackageX className="size-4" />, tone: 'muted',
+    key: 'stok_habis', label: 'Out of Stock (BEP)', value: (k) => k.stok_habis,
+    hint: () => 'Part of Safe: zero stock & safety stock, no need to buy', icon: <PackageX className="size-4" />, tone: 'muted',
   },
 ]
 
@@ -125,8 +125,8 @@ function KpiCards({ kpis }: { kpis: Kpis }) {
 }
 
 function HealthScoreBar({ score }: { score: { value: number; category: string } }) {
-  const color = score.category === 'Sehat' ? 'bg-emerald-500' : score.category === 'Perlu Perhatian' ? 'bg-amber-500' : 'bg-red-500'
-  const textColor = score.category === 'Sehat' ? 'text-emerald-600' : score.category === 'Perlu Perhatian' ? 'text-amber-600' : 'text-red-600'
+  const color = score.category === 'Sehat' ? 'bg-emerald-500' : score.category === 'Needs Attention' ? 'bg-amber-500' : 'bg-red-500'
+  const textColor = score.category === 'Sehat' ? 'text-emerald-600' : score.category === 'Needs Attention' ? 'text-amber-600' : 'text-red-600'
 
   return (
     <Card>
@@ -147,7 +147,7 @@ function HealthScoreBar({ score }: { score: { value: number; category: string } 
 
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
-  return <h2 className="pt-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">{children}</h2>
+  return <h2 className="pt-2 text-sm font-semibold text-muted-foreground">{children}</h2>
 }
 
 // ---------------------------------------------------------------- page section
@@ -207,24 +207,24 @@ export function InventoryDashboard() {
       {/* FILTER: main filters always visible, the rest behind "Filter lanjutan" */}
       <div className="space-y-2 print:hidden">
         <div className="grid gap-2 sm:grid-cols-2 lg:flex lg:flex-wrap lg:items-center">
-          <Input placeholder="Cari kode / nama barang…" className="sm:col-span-2 lg:w-72" value={search} onChange={(e) => setSearch(e.target.value)} />
+          <Input placeholder="Search item code / name…" className="sm:col-span-2 lg:w-72" value={search} onChange={(e) => setSearch(e.target.value)} />
           <div className="lg:w-56">
             <Select value={induk} onChange={(e) => setInduk(e.target.value)}>
-              <option value="">Semua kategori</option>
+              <option value="">All categories</option>
               {indukOptions.map((v) => <option key={v} value={v}>{v}</option>)}
             </Select>
           </div>
           <div className="lg:w-48">
             <Select value={status} onChange={(e) => setStatus(e.target.value)}>
-              <option value="">Semua status</option>
-              <option value="AMAN">Aman</option>
-              <option value="TIDAK_AMAN">Tidak Aman</option>
-              <option value="BEP">Stok Habis (BEP)</option>
+              <option value="">All statuses</option>
+              <option value="AMAN">Safe</option>
+              <option value="TIDAK_AMAN">Unsafe</option>
+              <option value="BEP">Out of Stock (BEP)</option>
             </Select>
           </div>
           <div className="flex gap-2">
             <Button variant="outline" className="h-10 flex-1 lg:flex-none" onClick={() => setShowAdvanced((v) => !v)}>
-              <SlidersHorizontal className="size-4" /> Filter lanjutan
+              <SlidersHorizontal className="size-4" /> Advanced filter
               {advancedCount > 0 && <span className="rounded-full bg-primary px-1.5 text-xs text-primary-foreground">{advancedCount}</span>}
               <ChevronDown className={cn('size-4 transition-transform', showAdvanced && 'rotate-180')} />
             </Button>
@@ -239,46 +239,46 @@ export function InventoryDashboard() {
         {showAdvanced && (
           <div className="grid gap-2 rounded-lg border bg-muted/30 p-3 sm:grid-cols-2 lg:grid-cols-4">
             <Select value={unitId} onChange={(e) => setUnitId(e.target.value)}>
-              <option value="">Semua satuan (UoM)</option>
+              <option value="">All units (UoM)</option>
               {(units ?? []).map((u) => <option key={u.id} value={u.id}>{u.code}</option>)}
             </Select>
             {multiWarehouse && (
               <Select value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)}>
-                <option value="">Semua gudang</option>
+                <option value="">All warehouses</option>
                 {(warehouses ?? []).map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
               </Select>
             )}
             <Select value={needsBlueprint} onChange={(e) => setNeedsBlueprint(e.target.value)}>
-              <option value="">Blueprint: semua</option>
-              <option value="1">Perlu blueprint</option>
-              <option value="0">Tidak perlu blueprint</option>
+              <option value="">Blueprint: all</option>
+              <option value="1">Needs blueprint</option>
+              <option value="0">No blueprint needed</option>
             </Select>
             <Select value={hasNpbg} onChange={(e) => setHasNpbg(e.target.value)}>
-              <option value="">NPBG: semua</option>
-              <option value="1">Pernah dipakai (ada NPBG)</option>
-              <option value="0">Belum pernah dipakai</option>
+              <option value="">Delivery Order: all</option>
+              <option value="1">Used before (has Delivery Order)</option>
+              <option value="0">Never used</option>
             </Select>
             <div className="flex gap-2">
-              <Input type="number" min={0} placeholder="Lead time min (hari)" value={leadTimeMin} onChange={(e) => setLeadTimeMin(e.target.value)} />
+              <Input type="number" min={0} placeholder="Min lead time (days)" value={leadTimeMin} onChange={(e) => setLeadTimeMin(e.target.value)} />
               <Input type="number" min={0} placeholder="maks" value={leadTimeMax} onChange={(e) => setLeadTimeMax(e.target.value)} />
             </div>
             <div className="flex gap-2">
-              <Input type="number" placeholder="Selisih min" value={selisihMin} onChange={(e) => setSelisihMin(e.target.value)} />
+              <Input type="number" placeholder="Min difference" value={selisihMin} onChange={(e) => setSelisihMin(e.target.value)} />
               <Input type="number" placeholder="maks" value={selisihMax} onChange={(e) => setSelisihMax(e.target.value)} />
             </div>
-            <Input type="number" min={0} placeholder="Ambang lead time tinggi (hari)" value={highLeadTime} onChange={(e) => setHighLeadTime(e.target.value)} />
+            <Input type="number" min={0} placeholder="High lead time threshold (days)" value={highLeadTime} onChange={(e) => setHighLeadTime(e.target.value)} />
           </div>
         )}
       </div>
 
-      {isLoading && <p className="text-sm text-muted-foreground">Memuat data inventory…</p>}
-      {isError && <p className="text-sm text-destructive">{apiErrorMessage(error, 'Gagal memuat dashboard inventory.')}</p>}
+      {isLoading && <p className="text-sm text-muted-foreground">Loading inventory data…</p>}
+      {isError && <p className="text-sm text-destructive">{apiErrorMessage(error, 'Failed to load the inventory dashboard.')}</p>}
 
       {data && data.kpis.total_barang === 0 && (
         <Card>
           <CardContent className="flex flex-col items-center gap-2 py-10 text-center text-sm text-muted-foreground">
             <Info className="size-6" />
-            {data.notes[0] ?? 'Tidak ada barang yang cocok dengan filter saat ini.'}
+            {data.notes[0] ?? 'No items match the current filter.'}
           </CardContent>
         </Card>
       )}
@@ -290,7 +290,7 @@ export function InventoryDashboard() {
 
           {/* STATUS + TOP DEFICIT */}
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <ChartCard title="Status Inventory" empty={data.charts.status_distribution.every((d) => d.value === 0)}>
+            <ChartCard title="Inventory Status" empty={data.charts.status_distribution.every((d) => d.value === 0)}>
               <ResponsiveContainer width="100%" height={220}>
                 <PieChart>
                   <Pie
@@ -313,14 +313,14 @@ export function InventoryDashboard() {
               />
             </ChartCard>
 
-            <ChartCard title="Top 10 Kekurangan Stok" subtitle="Unit yang kurang dari safety stock" empty={data.charts.top_deficit.length === 0}>
+            <ChartCard title="Top 10 Stock Shortages" subtitle="Units short of safety stock" empty={data.charts.top_deficit.length === 0}>
               <ResponsiveContainer width="100%" height={260}>
                 <BarChart data={data.charts.top_deficit} layout="vertical" margin={{ left: 8, right: 32 }}>
                   <CartesianGrid strokeDasharray="3 3" horizontal={false} />
                   <XAxis type="number" tick={{ fontSize: 10 }} allowDecimals={false} />
                   <YAxis type="category" dataKey="description" width={150} tick={{ fontSize: 10 }} tickFormatter={(v: string) => truncate(v)} />
                   <Tooltip formatter={tooltipNumber} labelFormatter={(_, p) => p?.[0]?.payload?.description ?? ''} />
-                  <Bar dataKey="deficit" name="Kurang" fill="#ef4444" radius={[0, 3, 3, 0]}>
+                  <Bar dataKey="deficit" name="Short" fill="#ef4444" radius={[0, 3, 3, 0]}>
                     <LabelList dataKey="deficit" position="right" formatter={stackLabel} className="fill-foreground text-[10px]" />
                   </Bar>
                 </BarChart>
@@ -333,12 +333,12 @@ export function InventoryDashboard() {
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="flex items-center gap-2 text-base">
-                  <ShoppingCart className="size-4" /> Yang Perlu Segera Dibeli
+                  <ShoppingCart className="size-4" /> To Purchase Soon
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 {data.priority_items.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">Tidak ada barang prioritas saat ini.</p>
+                  <p className="text-sm text-muted-foreground">No priority items at the moment.</p>
                 ) : (
                   <div className="divide-y">
                     {data.priority_items.map((it) => (
@@ -350,7 +350,7 @@ export function InventoryDashboard() {
                         <div className="min-w-0">
                           <div className="truncate font-medium">{it.description}</div>
                           <div className="text-xs text-muted-foreground">
-                            <span className="font-mono">{it.code}</span> · kurang {fmt(it.deficit)} · lead time {it.lead_time_days} hari
+                            <span className="">{it.code}</span> · short {fmt(it.deficit)} · lead time {it.lead_time_days} days
                           </div>
                         </div>
                         <PriorityBadge level={it.priority_level} />
@@ -364,12 +364,12 @@ export function InventoryDashboard() {
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="flex items-center gap-2 text-base">
-                  <Info className="size-4" /> Catatan Otomatis
+                  <Info className="size-4" /> Automatic Notes
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 {data.notes.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">Tidak ada catatan.</p>
+                  <p className="text-sm text-muted-foreground">No notes.</p>
                 ) : (
                   <ul className="space-y-2 text-sm">
                     {data.notes.map((n, i) => (
@@ -385,7 +385,7 @@ export function InventoryDashboard() {
           </div>
 
           {/* PER CATEGORY — horizontal so long category names stay readable */}
-          <ChartCard title="Kondisi per Kategori" subtitle="Diurutkan dari kategori dengan barang Tidak Aman terbanyak" empty={perCategory.length === 0}>
+          <ChartCard title="Condition per Category" subtitle="Sorted by categories with the most Unsafe items" empty={perCategory.length === 0}>
             <ResponsiveContainer width="100%" height={Math.max(220, perCategory.length * 30 + 60)}>
               <BarChart data={perCategory} layout="vertical" margin={{ left: 8, right: 16 }}>
                 <CartesianGrid strokeDasharray="3 3" horizontal={false} />
@@ -404,15 +404,15 @@ export function InventoryDashboard() {
               </BarChart>
             </ResponsiveContainer>
             <ValueLegend items={[
-              { name: 'Tidak Aman', value: perCategory.reduce((s, d) => s + d.TIDAK_AMAN, 0), color: STATUS_COLORS.TIDAK_AMAN },
-              { name: 'Aman', value: perCategory.reduce((s, d) => s + d.AMAN, 0), color: STATUS_COLORS.AMAN },
-              { name: 'Stok Habis (BEP)', value: perCategory.reduce((s, d) => s + d.BEP, 0), color: STATUS_COLORS.BEP },
+              { name: 'Unsafe', value: perCategory.reduce((s, d) => s + d.TIDAK_AMAN, 0), color: STATUS_COLORS.TIDAK_AMAN },
+              { name: 'Safe', value: perCategory.reduce((s, d) => s + d.AMAN, 0), color: STATUS_COLORS.AMAN },
+              { name: 'Out of Stock (BEP)', value: perCategory.reduce((s, d) => s + d.BEP, 0), color: STATUS_COLORS.BEP },
             ]} />
           </ChartCard>
 
           {/* per-warehouse charts only make sense with more than one warehouse */}
           {multiWarehouse && data.charts.per_warehouse.length > 1 && (
-            <ChartCard title="Kondisi per Gudang" empty={false}>
+            <ChartCard title="Condition per Warehouse" empty={false}>
               <ResponsiveContainer width="100%" height={260}>
                 <BarChart data={data.charts.per_warehouse}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} />
@@ -431,20 +431,20 @@ export function InventoryDashboard() {
                 </BarChart>
               </ResponsiveContainer>
               <ValueLegend items={[
-                { name: 'Tidak Aman', value: data.charts.per_warehouse.reduce((s, d) => s + d.TIDAK_AMAN, 0), color: STATUS_COLORS.TIDAK_AMAN },
-                { name: 'Aman', value: data.charts.per_warehouse.reduce((s, d) => s + d.AMAN, 0), color: STATUS_COLORS.AMAN },
-                { name: 'Stok Habis (BEP)', value: data.charts.per_warehouse.reduce((s, d) => s + d.BEP, 0), color: STATUS_COLORS.BEP },
+                { name: 'Unsafe', value: data.charts.per_warehouse.reduce((s, d) => s + d.TIDAK_AMAN, 0), color: STATUS_COLORS.TIDAK_AMAN },
+                { name: 'Safe', value: data.charts.per_warehouse.reduce((s, d) => s + d.AMAN, 0), color: STATUS_COLORS.AMAN },
+                { name: 'Out of Stock (BEP)', value: data.charts.per_warehouse.reduce((s, d) => s + d.BEP, 0), color: STATUS_COLORS.BEP },
               ]} />
             </ChartCard>
           )}
 
           {/* USAGE (NPBG) */}
-          <SectionTitle>Pemakaian Barang (NPBG)</SectionTitle>
+          <SectionTitle>Item Usage (Delivery Order)</SectionTitle>
           <ChartCard
-            title="Barang Keluar per Bulan"
+            title="Items Out per Month"
             subtitle={(() => {
               const last = data.charts.npbg_per_month[data.charts.npbg_per_month.length - 1]
-              return last ? `Bulan terakhir (${last.name}): ${fmt(last.qty)} qty keluar · ${fmt(last.count)} NPBG` : undefined
+              return last ? `Last month (${last.name}): ${fmt(last.qty)} qty out · ${fmt(last.count)} Delivery Order` : undefined
             })()}
             empty={data.charts.npbg_per_month.length === 0}
           >
@@ -454,21 +454,21 @@ export function InventoryDashboard() {
                 <XAxis dataKey="name" tick={{ fontSize: 10 }} />
                 <YAxis tick={{ fontSize: 10 }} allowDecimals={false} tickFormatter={(v: number) => fmt(v)} />
                 <Tooltip formatter={tooltipNumber} />
-                <Line type="monotone" dataKey="qty" name="Qty keluar" stroke="#0ea5e9" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
-                <Line type="monotone" dataKey="count" name="Jumlah NPBG" stroke="#8b5cf6" strokeWidth={2} dot={{ r: 2 }} />
+                <Line type="monotone" dataKey="qty" name="Qty out" stroke="#0ea5e9" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
+                <Line type="monotone" dataKey="count" name="Delivery Order Count" stroke="#8b5cf6" strokeWidth={2} dot={{ r: 2 }} />
               </LineChart>
             </ResponsiveContainer>
             <ValueLegend
               showPercent={false}
               items={[
-                { name: 'Total Qty keluar', value: data.charts.npbg_per_month.reduce((s, d) => s + d.qty, 0), color: '#0ea5e9' },
-                { name: 'Total NPBG', value: data.charts.npbg_per_month.reduce((s, d) => s + d.count, 0), color: '#8b5cf6' },
+                { name: 'Total Qty out', value: data.charts.npbg_per_month.reduce((s, d) => s + d.qty, 0), color: '#0ea5e9' },
+                { name: 'Total Delivery Order', value: data.charts.npbg_per_month.reduce((s, d) => s + d.count, 0), color: '#8b5cf6' },
               ]}
             />
           </ChartCard>
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <ChartCard title="Barang Paling Sering Dipakai" subtitle="Top 10 berdasarkan frekuensi NPBG" empty={data.charts.npbg_top_usage.length === 0}>
+            <ChartCard title="Most Used Items" subtitle="Top 10 by Delivery Order frequency" empty={data.charts.npbg_top_usage.length === 0}>
               <ResponsiveContainer width="100%" height={280}>
                 <BarChart data={data.charts.npbg_top_usage} layout="vertical" margin={{ left: 8, right: 32 }}>
                   <CartesianGrid strokeDasharray="3 3" horizontal={false} />
@@ -482,14 +482,14 @@ export function InventoryDashboard() {
               </ResponsiveContainer>
             </ChartCard>
 
-            <ChartCard title="Divisi Pemakai Terbanyak" subtitle="Top 10 berdasarkan jumlah NPBG" empty={data.charts.npbg_top_divisi.length === 0}>
+            <ChartCard title="Top Using Divisions" subtitle="Top 10 by Delivery Order count" empty={data.charts.npbg_top_divisi.length === 0}>
               <ResponsiveContainer width="100%" height={280}>
                 <BarChart data={data.charts.npbg_top_divisi} layout="vertical" margin={{ left: 8, right: 32 }}>
                   <CartesianGrid strokeDasharray="3 3" horizontal={false} />
                   <XAxis type="number" tick={{ fontSize: 10 }} allowDecimals={false} />
                   <YAxis type="category" dataKey="name" width={130} tick={{ fontSize: 10 }} tickFormatter={(v: string) => truncate(v, 20)} />
                   <Tooltip formatter={tooltipNumber} />
-                  <Bar dataKey="count" name="Jumlah NPBG" fill="#f59e0b" radius={[0, 3, 3, 0]}>
+                  <Bar dataKey="count" name="Delivery Order Count" fill="#f59e0b" radius={[0, 3, 3, 0]}>
                     <LabelList dataKey="count" position="right" formatter={stackLabel} className="fill-foreground text-[10px]" />
                   </Bar>
                 </BarChart>

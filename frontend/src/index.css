@@ -4,29 +4,29 @@
 
 @layer base {
   :root {
-    /* ERP neutral palette: gray canvas, white surfaces, one blue for action, soft borders */
-    --background: 220 14% 96%;
-    --foreground: 222 22% 15%;
+    /* one quiet system: near-white canvas, white surfaces, hairlines, a single blue for action */
+    --background: 220 33% 97%;
+    --foreground: 222 39% 15%;
     --card: 0 0% 100%;
-    --card-foreground: 222 22% 15%;
-    --primary: 211 88% 42%;
+    --card-foreground: 222 39% 15%;
+    --primary: 221 83% 48%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 220 14% 95%;
-    --secondary-foreground: 222 22% 20%;
-    --muted: 220 14% 95%;
-    --muted-foreground: 220 9% 42%;
-    --accent: 220 14% 94%;
-    --accent-foreground: 222 22% 15%;
-    --destructive: 0 70% 48%;
+    --secondary: 216 16% 95%;
+    --secondary-foreground: 220 20% 20%;
+    --muted: 220 30% 96%;
+    --muted-foreground: 215 16% 42%;
+    --accent: 220 40% 95%;
+    --accent-foreground: 220 20% 16%;
+    --destructive: 0 66% 44%;
     --destructive-foreground: 0 0% 100%;
-    --success: 152 60% 34%;
-    --warning: 36 92% 42%;
-    --border: 220 13% 89%;
-    --input: 220 12% 84%;
-    --ring: 211 88% 50%;
+    --success: 152 55% 30%;
+    --warning: 34 90% 36%;
+    --border: 220 22% 90%;
+    --input: 216 12% 82%;
+    --ring: 221 83% 53%;
     --radius: 0.5rem;
     --sidebar: 0 0% 100%;
-    --sidebar-foreground: 220 9% 30%;
+    --sidebar-foreground: 220 12% 26%;
   }
 
   .dark {
@@ -57,6 +57,13 @@
     border-color: hsl(var(--border));
   }
 
+  html { font-size: 14px; }
+  /* comfortable on a phone; 16px inputs keep iOS from zooming on focus */
+  @media (max-width: 767px) {
+    html { font-size: 15px; }
+    input, select, textarea { font-size: 16px !important; }
+  }
+
   body {
     background-color: hsl(var(--background));
     color: hsl(var(--foreground));
@@ -66,7 +73,9 @@
 
   /* one table header style everywhere — DataTable, tracking sheets and the hand-built tables alike */
   thead th {
-    @apply text-xs font-semibold uppercase tracking-wide text-muted-foreground;
+    @apply text-xs font-semibold text-slate-600;
+    text-transform: none !important;
+    letter-spacing: 0 !important;
   }
 
   /* every native <select> gets the same chevron as the Select component (which turns this off with bg-none) */
@@ -95,9 +104,16 @@
 
 @layer components {
   .card-surface {
-    @apply rounded-lg border bg-card print:break-inside-avoid;
+    @apply rounded-lg border bg-card shadow-[0_1px_2px_rgb(15_23_42/0.05)] print:break-inside-avoid;
   }
 }
+
+/* inside a form popup: denser rows, so more of the form fits */
+[data-form-panel] :is(.space-y-4, .space-y-5, .space-y-6) > :not([hidden]) ~ :not([hidden]) { margin-top: 0.75rem; }
+[data-form-panel] :is(.gap-4, .gap-5) { gap: 0.75rem; }
+[data-form-panel] .space-y-1\.5 > :not([hidden]) ~ :not([hidden]) { margin-top: 0.25rem; }
+
+
 
 @media print {
   /* Also respected by the "Download PDF" export (same selectors, read from the
@@ -122,3 +138,9 @@
 .sw-thumb { animation: sw-thumb .9s ease-out both }
 .sw-timer { animation-name: sw-timer; animation-timing-function: linear; animation-fill-mode: forwards }
 @media (prefers-reduced-motion: reduce) { .sw-card, .sw-pop, .sw-wobble, .sw-sink, .sw-thumb { animation: none } }
+
+/* phone: a form reads in one column */
+@media (max-width: 639px) {
+  [data-form-panel] .grid { grid-template-columns: minmax(0, 1fr) !important; }
+  [data-form-panel] .grid > * { grid-column: auto !important; }
+}

@@ -13,7 +13,7 @@ export function QtyProgress({ total, done, unit, className }: { total: number | 
   const partial = d > 0 && !full
   const pct = t > 0 ? Math.min(100, Math.round((d / t) * 100)) : 0
   return (
-    <div className={cn('min-w-20', className)} title={`${fmt(d)} dari ${fmt(t)}${unit ? ` ${unit}` : ''}${partial ? ` · sisa ${fmt(Math.round((t - d) * 100) / 100)}` : ''}`}>
+    <div className={cn('min-w-20', className)} title={`${fmt(d)} from ${fmt(t)}${unit ? ` ${unit}` : ''}${partial ? ` · balance ${fmt(Math.round((t - d) * 100) / 100)}` : ''}`}>
       <div className="flex items-baseline gap-1 whitespace-nowrap tabular-nums">
         <span className="text-muted-foreground">{fmt(t)}</span>/<span className={cn('font-semibold', full ? 'text-emerald-700' : partial ? 'text-amber-700' : 'text-muted-foreground')}>{fmt(d)}</span>
         {unit && <span className="text-xs text-muted-foreground">{unit}</span>}

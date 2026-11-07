@@ -39,6 +39,9 @@ class RiResource extends JsonResource
             'deskripsi_barang' => $this->deskripsi_barang,
             'kuantitas' => $this->kuantitas,
             'satuan' => $this->satuan,
+            // stock took kuantitas × unit_ratio of base_satuan
+            'unit_ratio' => (float) ($this->unit_ratio ?? 1),
+            'base_satuan' => $this->base_satuan,
             'harga_satuan' => $this->harga_satuan,
             'pemeriksa' => $this->pemeriksa,
             // template "RI [A5]"
@@ -60,7 +63,7 @@ class RiResource extends JsonResource
                 ->orderBy('slot')->get(['slot', 'file_name', 'mime'])),
             // every line of the same RI document (detail)
             'lines' => $this->when($request->routeIs('api.ri.show') && $this->no_ri, function () {
-                $rows = Ri::where('no_ri', $this->no_ri)->orderBy('id')->get(['id', 'kode_barang', 'deskripsi_barang', 'kuantitas', 'satuan', 'harga_satuan', 'no_seri', 'no_po', 'no_ppb', 'vendor']);
+                $rows = Ri::where('no_ri', $this->no_ri)->orderBy('id')->get(['id', 'kode_barang', 'deskripsi_barang', 'kuantitas', 'satuan', 'unit_ratio', 'base_satuan', 'harga_satuan', 'no_seri', 'no_po', 'no_ppb', 'vendor']);
                 // each item's own proof photos
                 $photos = \App\Models\TrackingPhoto::where('entity', 'ri')->whereIn('entity_id', $rows->pluck('id'))->orderBy('slot')->get(['entity_id', 'slot'])->groupBy('entity_id');
 

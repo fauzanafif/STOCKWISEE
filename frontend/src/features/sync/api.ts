@@ -8,22 +8,22 @@ export const TRIGGER_SYNC_MUTATION_KEY = ['trigger-sync']
 
 /** Stable step keys written by AccurateSyncService::run() — translated here, not on the backend, so wording can change without touching sync logic. */
 export const SYNC_STEP_LABELS: Record<string, string> = {
-  staging: 'Menghubungkan ke Accurate & menyalin data staging',
-  items: 'Sinkronisasi Master Barang',
-  npbg: 'Sinkronisasi NPBG',
-  npbg_renumber: 'Menyamakan nomor NPBG yang berubah ke modul tracking',
-  stpp: 'Membuat STPP dari NPBG',
-  ppb: 'Sinkronisasi PPB',
-  po: 'Sinkronisasi Purchase Order',
-  ppb_status: 'Menghitung status PPB dari PO',
-  ppb_approval: 'Memeriksa approval PPB sebelum PO',
-  ri: 'Sinkronisasi RI',
-  ri_renumber: 'Menyamakan nomor RI yang berubah ke modul tracking',
-  used_returns: 'Membuat Pengembalian Bekas dari RI',
-  lend_borrow: 'Membuat Peminjaman & Pinjam Luar dari NPBG/RI',
-  tyres: 'Membuat tracking Ban Luar dari NPBG/RI',
-  stock_opname: 'Sinkronisasi Stock Opname',
-  stockwise_purge: 'Menghapus data buatan STOCKWISE (data murni Accurate)',
+  staging: 'Connecting to Accurate & copying staging data',
+  items: 'Item Master Sync',
+  npbg: 'NPBG Sync',
+  npbg_renumber: 'Aligning changed NPBG numbers to the tracking modules',
+  stpp: 'Creating STPP from NPBG',
+  ppb: 'PPB Sync',
+  po: 'Purchase Order Sync',
+  ppb_status: 'Calculating PPB status from PO',
+  ppb_approval: 'Checking PPB approval before PO',
+  ri: 'RI Sync',
+  ri_renumber: 'Aligning changed RI numbers to the tracking modules',
+  used_returns: 'Creating Used Item Returns from RI',
+  lend_borrow: 'Creating Lend & Borrow from NPBG/RI',
+  tyres: 'Creating Outer Tyre tracking from NPBG/RI',
+  stock_opname: 'Physical Inventory Sync',
+  stockwise_purge: 'Removing STOCKWISE-made data (pure Accurate data)',
 }
 
 export const SYNC_STEP_ORDER = ['staging', 'items', 'npbg', 'npbg_renumber', 'stpp', 'ppb', 'po', 'ppb_status', 'ri', 'ri_renumber', 'used_returns', 'lend_borrow', 'tyres', 'stock_opname', 'stockwise_purge']
@@ -177,26 +177,26 @@ export function announceSyncResult(data: SyncBatchRow) {
     // The raw error_message is a backend exception string (SQL errors,
     // connection failures, etc.) — not something a warehouse/purchasing
     // user should see raw. Point them at Sync History instead of dumping it.
-    toast.error('Sinkronisasi Accurate gagal. Coba lagi sebentar lagi, atau buka Sync & Histori Accurate untuk detailnya.')
+    toast.error('Accurate sync failed. Try again shortly, or open Accurate Sync & History for details.')
     return
   }
 
   // Only mention what actually happened — a wall of "Baru 0, Diperbarui 0,
   // Dilewati 29238" for a routine no-op sync reads as noise, not information.
   const changes = [
-    data.inserted_records > 0 && `${data.inserted_records} data baru`,
-    data.updated_records > 0 && `${data.updated_records} diperbarui`,
-    data.deleted_records > 0 && `${data.deleted_records} dihapus`,
+    data.inserted_records > 0 && `${data.inserted_records} new records`,
+    data.updated_records > 0 && `${data.updated_records} updated`,
+    data.deleted_records > 0 && `${data.deleted_records} deleted`,
   ].filter(Boolean)
 
   if (data.status === 'PARTIAL') {
     toast.warning(
-      `Sinkronisasi selesai dengan ${data.error_records} error` +
-        (changes.length ? ` (${changes.join(', ')})` : '') + '. Buka Sync & Histori Accurate untuk detailnya.'
+      `Sync finished with ${data.error_records} error` +
+        (changes.length ? ` (${changes.join(', ')})` : '') + '. Open Accurate Sync & History for details.'
     )
   } else if (changes.length === 0) {
-    toast.success('Sinkronisasi selesai — semua data sudah sesuai dengan Accurate, tidak ada perubahan.')
+    toast.success('Sync finished — all data matches Accurate, no changes.')
   } else {
-    toast.success(`Sinkronisasi selesai — ${changes.join(', ')}.`)
+    toast.success(`Sync finished — ${changes.join(', ')}.`)
   }
 }

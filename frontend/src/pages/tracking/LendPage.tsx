@@ -38,7 +38,7 @@ const fromRow = (r: LendRow): Form => ({
   return_note: r.return_note ?? '',
 })
 const same = (a: Form, b: Form) => JSON.stringify(a) === JSON.stringify(b)
-const invalid = (f: Form) => (!f.description_raw.trim() ? 'Isi Deskripsi Barang' : Number(f.qty.replace(',', '.')) > 0 ? null : 'Kuantitas harus > 0')
+const invalid = (f: Form) => (!f.description_raw.trim() ? 'Fill in Item Description' : Number(f.qty.replace(',', '.')) > 0 ? null : 'Kuantitas harus > 0')
 const t = (v: string) => v.trim() || null
 const toBody = (f: Form) => ({
   out_date: f.out_date || null, description_raw: t(f.description_raw), qty: Number(f.qty.replace(',', '.')), unit_raw: t(f.unit_raw),
@@ -63,23 +63,23 @@ function LendTableRow({ row, canEdit, canDelete, note }: { row: LendRow | null; 
   const editable = canEdit && !lock
 
   async function remove() {
-    if (!row || !(await confirmDialog(`Hapus baris Lend "${row.description}"?`))) return
+    if (!row || !(await confirmDialog(`Delete Lend row "${row.description}"?`))) return
     try { await del.mutateAsync(row.id) } catch (e) { window.alert(apiErrorMessage(e)) }
   }
 
   return (
- <tr {...ed.rowProps} className={rowClass(isNew)} title={fromAccurate ? 'Dari NPBG Accurate hanya Keperluan & Est. Pinjam diisi di sini' : undefined}>
+ <tr {...ed.rowProps} className={rowClass(isNew)} title={fromAccurate ? 'From an Accurate NPBG; only Purpose & Est. Loan are filled here' : undefined}>
       <Td className="px-2 py-2 text-right tabular-nums text-muted-foreground">{row?.no ?? ''}</Td>
-      <Td>{ed.input('out_date', { type: 'date', 'aria-label': 'Tgl Pinjam', className: 'min-w-[8rem]', locked: lock })}</Td>
-      <Td className="min-w-[15rem]" title={row?.item_code ? `Kode barang ${row.item_code}` : undefined}>
-        {ed.area('description_raw', { placeholder: isNew ? 'Ketik barang yang dipinjamkan…' : '', locked: lock })}
+      <Td>{ed.input('out_date', { type: 'date', 'aria-label': 'Loan Date', className: 'min-w-[8rem]', locked: lock })}</Td>
+      <Td className="min-w-[15rem]" title={row?.item_code ? `Item code ${row.item_code}` : undefined}>
+        {ed.area('description_raw', { placeholder: isNew ? 'Type the lent item…' : '', locked: lock })}
         <div className="px-2"><InlineSaveBadge state={ed.state} error={ed.error} hint={ed.hint} /></div>
       </Td>
-      <Td>{ed.input('qty', { inputMode: 'decimal', 'aria-label': 'Kuantitas', className: 'min-w-[4rem] text-right tabular-nums', locked: lock })}</Td>
+      <Td>{ed.input('qty', { inputMode: 'decimal', 'aria-label': 'Quantity', className: 'min-w-[4rem] text-right tabular-nums', locked: lock })}</Td>
       <Td className="min-w-[5rem]">{ed.list('unit_raw', ['PCS', 'UNIT', 'SET', 'BH', 'KG', 'M'], { locked: lock })}</Td>
-      <Td className="min-w-[9rem]">{ed.input('requester_name', { 'aria-label': 'Peminta', locked: lock })}</Td>
+      <Td className="min-w-[9rem]">{ed.input('requester_name', { 'aria-label': 'Requester', locked: lock })}</Td>
       <Td className="min-w-[8rem]">{ed.select('purpose', PURPOSES)}</Td>
-      <Td>{ed.input('est_days', { type: 'number', min: 1, 'aria-label': 'Est. Pinjam (hari)', className: 'min-w-[5rem] text-right' })}</Td>
+      <Td>{ed.input('est_days', { type: 'number', min: 1, 'aria-label': 'Est. Loan (days)', className: 'min-w-[5rem] text-right' })}</Td>
       <Td className="min-w-[12rem]">
         {editable ? (
           <DocNumberInput compact type="npbg" value={ed.form.out_doc_no} onChange={(v) => ed.change('out_doc_no', v)}
@@ -87,7 +87,7 @@ function LendTableRow({ row, canEdit, canDelete, note }: { row: LendRow | null; 
               ...s, out_date: d.date ?? s.out_date, condition_out: s.condition_out || (d.note ?? ''),
               description_raw: s.description_raw || (d.lines[0]?.description ?? ''), unit_raw: d.lines[0]?.unit ?? s.unit_raw,
             }))} />
- ) : <span className="block whitespace-nowrap px-2 py-1.5 font-mono text-xs">{row?.out_doc_no ?? ''}</span>}
+ ) : <span className="block whitespace-nowrap px-2 py-1.5 text-[13px]">{row?.out_doc_no ?? ''}</span>}
       </Td>
       <Td className="min-w-[12rem]">{ed.area('condition_out', { locked: lock })}</Td>
       <Td className="whitespace-nowrap px-2 py-2 text-center">{row && <LoanStatusBadge kind="lend" status={row.status} />}</Td>
@@ -95,11 +95,11 @@ function LendTableRow({ row, canEdit, canDelete, note }: { row: LendRow | null; 
         {editable ? (
           <DocNumberInput compact type="ri" value={ed.form.return_doc_no} onChange={(v) => ed.change('return_doc_no', v)}
             onPick={(d) => ed.setForm((s) => ({ ...s, return_date: d.date ?? s.return_date, return_note: s.return_note || (d.note ?? '') }))} />
- ) : <span className="block whitespace-nowrap px-2 py-1.5 font-mono text-xs">{row?.return_doc_no ?? ''}</span>}
-        </div>{row && <CompactPhotoSlot entity={ENTITY} entityId={row.id} slot="in" label="Tanda Kembali" photo={row.photos?.in} canEdit={canEdit} onChanged={refresh} />}</div>
+ ) : <span className="block whitespace-nowrap px-2 py-1.5 text-[13px]">{row?.return_doc_no ?? ''}</span>}
+        </div>{row && <CompactPhotoSlot entity={ENTITY} entityId={row.id} slot="in" label="Return Mark" photo={row.photos?.in} canEdit={canEdit} onChanged={refresh} />}</div>
       </Td>
       <Td>
-        {ed.input('return_date', { type: 'date', 'aria-label': 'Tgl Kembali', className: 'min-w-[8rem]', locked: lock })}
+        {ed.input('return_date', { type: 'date', 'aria-label': 'Return Date', className: 'min-w-[8rem]', locked: lock })}
         {row?.condition_in && <div className="px-2 text-[11px] font-medium text-amber-700">{row.condition_in}</div>}
       </Td>
       <Td className="min-w-[12rem]">{ed.area('return_note', { locked: lock })}</Td>
@@ -114,8 +114,8 @@ function LendTableRow({ row, canEdit, canDelete, note }: { row: LendRow | null; 
   )
 }
 
-const headers = ['No', 'Tgl Pinjam', 'Deskripsi Barang', 'Kuantitas', 'Satuan', 'Peminta', 'Keperluan', 'Est. Pinjam (hari)', 'Tanda Keluar (No. NPBG)',
-  'Keterangan Keluar', 'Status', 'Tanda Kembali', 'Tgl Kembali', 'Keterangan Kembali']
+const headers = ['No', 'Loan Date', 'Item Description', 'Quantity', 'Unit', 'Requester', 'Purpose', 'Est. Loan (days)', 'Out Mark (NPBG No.)',
+  'Out Remarks', 'Status', 'Return Mark', 'Return Date', 'Return Remarks']
 
 export function LendPage() {
   const { hasPermission } = useAuth()
@@ -123,10 +123,10 @@ export function LendPage() {
   const canCreate = hasPermission('lend.create')
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       <PageHeader
-        title="Peminjaman (Lend)"
- subtitle="Sesuai Excel Tracking Borrow & Lend sheet Lend: barang SIG yang dipinjamkan. Ketik langsung di tabel, tersimpan otomatis."
+        title="Lending (Lend)"
+ subtitle="As in the Borrow & Lend Tracking Excel, Lend sheet: SIG items on loan. Type directly in the table; it saves automatically."
         icon={<Handshake className="size-5" />}
       />
       <InlineSheet<LendRow>
@@ -137,10 +137,10 @@ export function LendPage() {
         notesEntity={ENTITY}
         statuses={['ON_LOAN', 'OVERDUE', 'RETURNED', 'PARTIAL_RETURN', 'INCOMPLETE']}
         statusLabels={LEND_STATUS_LABELS}
-        searchPlaceholder="Cari barang, peminta, NPBG, RI, keterangan…"
+        searchPlaceholder="Search item, requester, NPBG, RI, remarks…"
         exportDataset="lend"
         exportPermission="lend.view"
-        hint={<>Status: Est. Pinjam / Tanda Keluar → <b>SEDANG DIPINJAM</b>, Tanda / Tgl Kembali → <b>KEMBALI</b>.</>}
+        hint={<>Status: Est. Loan / Out Mark → <b>SEDANG DIPINJAM</b>, Mark / Return Date → <b>KEMBALI</b>.</>}
         renderRow={(r, note) => <LendTableRow row={r} canEdit={canEdit} canDelete={canEdit} note={note} />}
         newRow={canCreate ? <LendTableRow key="new" row={null} canEdit canDelete={false} /> : null}
       />

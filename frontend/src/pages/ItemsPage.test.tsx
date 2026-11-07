@@ -48,10 +48,10 @@ describe('ItemsPage', () => {
     // the table cell (the shared mock also feeds the UOM <select>, which then lists BAN.001 too)
     expect(screen.getByText('BAN.001', { selector: 'span' })).toBeInTheDocument()
     // status badge in the row (the <option> also says "Tidak Aman")
-    expect(screen.getAllByText('Tidak Aman').length).toBeGreaterThanOrEqual(2)
+    expect(screen.getAllByText('Unsafe').length).toBeGreaterThanOrEqual(2)
     expect(screen.getByText('HIGH')).toBeInTheDocument()
 
-    await userEvent.type(screen.getByPlaceholderText('Cari kode / deskripsi…'), 'BAN')
+    await userEvent.type(screen.getByPlaceholderText('Search code / description…'), 'BAN')
 
     await waitFor(() =>
       expect(get).toHaveBeenCalledWith('/api/items', expect.objectContaining({

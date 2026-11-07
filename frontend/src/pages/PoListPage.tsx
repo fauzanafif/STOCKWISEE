@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { DateRangeFilter } from '@/components/DateRangeFilter'
 import { PpbApprovalBadge } from '@/components/PpbApproval'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { usePoDivisiOptions, usePoList, useVendors, type PoListRow } from '@/features/purchasing/api'
@@ -7,7 +8,6 @@ import { useAuth } from '@/auth/AuthContext'
 import { PoFormModal } from '@/components/PoFormModal'
 import { ExportBar } from '@/components/export/ExportBar'
 import { PageHeader } from '@/components/PageHeader'
-import { AccurateDataNote } from '@/components/AccurateDataNote'
 import { ColumnMenu, useHiddenColumns, visibleColumns } from '@/components/ColumnVisibility'
 import { DataTable, type Column } from '@/components/DataTable'
 import { DocCell, DocText } from '@/components/DocLink'
@@ -21,7 +21,7 @@ import { useRemembered } from '@/lib/listMemory'
 import { FilterBar } from '@/components/FilterBar'
 import { QtyProgress } from '@/components/QtyProgress'
 
-const fmtDate = (v: string | null | undefined) => (v ? new Date(v).toLocaleDateString('id-ID') : '—')
+const fmtDate = (v: string | null | undefined) => (v ? new Date(v).toLocaleDateString('en-GB') : '—')
 const ALWAYS_VISIBLE = ['number']
 
 /**
@@ -34,11 +34,11 @@ const ALWAYS_VISIBLE = ['number']
 const columns: Column<PoListRow>[] = [
   {
     key: 'number',
-    header: 'Nomor PO',
+    header: 'PO Number',
     cell: (r) => (
       <DocCell date={fmtDate(r.po_date)}>
         <span className="inline-flex items-center gap-1.5">
-          <Link to={`/purchase-orders/${r.po_id}`} onClick={(e) => e.stopPropagation()} className="font-mono text-xs font-medium text-primary hover:underline">
+          <Link to={`/purchase-orders/${r.po_id}`} onClick={(e) => e.stopPropagation()} className="text-[13px] font-medium text-primary hover:underline">
             {r.po_number}
           </Link>
           {r.is_manual && <Badge variant="neutral">Manual</Badge>}
@@ -49,38 +49,38 @@ const columns: Column<PoListRow>[] = [
   { key: 'vendor', header: 'Vendor', cell: (r) => <span className="whitespace-nowrap">{r.vendor_name ?? '—'}</span> },
   {
     key: 'barang',
-    header: 'Barang',
+    header: 'Item',
     className: 'max-w-[260px]',
     cell: (r) => (
       <div className="leading-tight">
-        <div className="truncate font-mono text-xs text-muted-foreground">{r.item_code ?? '—'}</div>
+        <div className="truncate text-[13px] text-muted-foreground">{r.item_code ?? '—'}</div>
         <div className="truncate" title={r.description ?? undefined}>{r.description ?? '—'}</div>
       </div>
     ),
   },
   { key: 'qty', header: 'Qty', className: 'text-right', cell: (r) => <span className="whitespace-nowrap tabular-nums">{r.qty} {r.unit ?? ''}</span> },
   // ordered / received so far (RI): a partial delivery reads "10/5"
-  { key: 'diterima', header: 'Dipesan/Diterima', cell: (r) => <QtyProgress total={r.qty} done={r.received} unit={r.unit} /> },
+  { key: 'diterima', header: 'Ordered/Received', cell: (r) => <QtyProgress total={r.qty} done={r.received} unit={r.unit} /> },
   { key: 'status', header: 'Status', cell: (r) => <RequestStatusBadge status={r.status} /> },
   {
     key: 'ppb',
-    header: 'PPB',
+    header: 'Purchase Request',
     cell: (r) => (
       <DocCell date={fmtDate(r.ppb_date)}>
-        <DocText text={r.ppb_no} className="font-mono text-xs" />
+        <DocText text={r.ppb_no} className="text-[13px]" />
         {r.ppb_approval?.po_without_approval && <span className="mt-0.5 block"><PpbApprovalBadge approval={r.ppb_approval} /></span>}
       </DocCell>
     ),
   },
   {
     key: 'ri',
-    header: 'RI',
-    cell: (r) => <DocCell date={fmtDate(r.ri_date)}><DocText text={r.ri_no} className="font-mono text-xs" /></DocCell>,
+    header: 'Receipt',
+    cell: (r) => <DocCell date={fmtDate(r.ri_date)}><DocText text={r.ri_no} className="text-[13px]" /></DocCell>,
   },
-  { key: 'divisi', header: 'Divisi', cell: (r) => <span className="whitespace-nowrap">{r.divisi ?? '—'}</span> },
+  { key: 'divisi', header: 'Division', cell: (r) => <span className="whitespace-nowrap">{r.divisi ?? '—'}</span> },
   {
     key: 'keterangan',
-    header: 'Keterangan',
+    header: 'Remarks',
     className: 'max-w-[220px]',
     cell: (r) => <span className="block truncate" title={r.keterangan ?? undefined}>{r.keterangan ?? '—'}</span>,
   },
@@ -134,36 +134,30 @@ export function PoListPage() {
     <div className="space-y-4">
       <PageHeader
         title="Purchase Order"
-        subtitle="Pesanan pembelian barang ke vendor"
+        subtitle="Purchase orders to vendors"
         icon={<ShoppingCart className="size-5" />}
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <ExportBar dataset="purchase-orders" filters={activeFilters} filenameBase="purchase-order" viewPermission="po.view" columns={visibleKeys} />
             {hasPermission('po.create') && (
-              <Button size="sm" variant="outline" asChild>
-                <Link to="/purchase-orders/draft">Draft PO</Link>
-              </Button>
-            )}
-            {hasPermission('po.create') && (
               <Button size="sm" onClick={() => setFormOpen(true)}>
                 <Plus className="size-4" />
-                Tambah PO
+                Add PO
               </Button>
             )}
           </div>
         }
       />
-      <AccurateDataNote className="-mt-2" />
 
       <FilterBar className="grid gap-2 sm:grid-cols-2 lg:flex lg:flex-wrap lg:items-end" end={<>
-        {data && <span className="text-xs text-muted-foreground">{data.meta.total.toLocaleString('id-ID')} barang</span>}
+        {data && <span className="text-xs text-muted-foreground">{data.meta.total.toLocaleString('id-ID')} items</span>}
         <ColumnMenu columns={columns} hiddenCols={hiddenCols} onToggle={toggleCol} alwaysVisible={ALWAYS_VISIBLE} />
       </>}>
         <div className="relative sm:col-span-2 lg:w-80">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="Cari no. PO, vendor, barang, no. PPB / RI, divisi, keterangan…"
-            title="Bisa beberapa kata sekaligus, mis. “sinar kabel” semua kata harus cocok, ke kolom mana saja"
+            placeholder="Search PO no., vendor, item, Purchase Request / Receipt no., division, remarks…"
+            title="Several words at once, e.g. “sinar kabel”; every word must match, in any column"
             className="pl-9"
             value={search}
             onChange={(e) => resetPage(setSearch)(e.target.value)}
@@ -171,7 +165,7 @@ export function PoListPage() {
         </div>
         <div className="lg:w-44">
           <Select value={status} onChange={(e) => resetPage(setStatus)(e.target.value)} aria-label="Status">
-            <option value="">Semua status</option>
+            <option value="">All statuses</option>
             {['MENUNGGU_PO', 'PENDING', 'DIBELI', 'PARTIAL_RECEIVED', 'RECEIVED', 'CLOSED'].map((s) => (
               <option key={s} value={s}>{statusLabel(s)}</option>
             ))}
@@ -179,33 +173,26 @@ export function PoListPage() {
         </div>
         <div className="lg:w-48">
           <Select value={vendorId} onChange={(e) => resetPage(setVendorId)(e.target.value)} aria-label="Vendor">
-            <option value="">Semua vendor</option>
+            <option value="">All vendors</option>
             {vendors?.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
           </Select>
         </div>
         <div className="lg:w-44">
-          <Select value={divisi} onChange={(e) => resetPage(setDivisi)(e.target.value)} aria-label="Divisi">
-            <option value="">Semua divisi</option>
+          <Select value={divisi} onChange={(e) => resetPage(setDivisi)(e.target.value)} aria-label="Division">
+            <option value="">All divisions</option>
             {divisiOptions?.map((d) => <option key={d} value={d}>{d}</option>)}
           </Select>
         </div>
         <div className="lg:w-36">
-          <Select value={source} onChange={(e) => resetPage(setSource)(e.target.value)} aria-label="Sumber">
-            <option value="">Semua sumber</option>
+          <Select value={source} onChange={(e) => resetPage(setSource)(e.target.value)} aria-label="Source">
+            <option value="">All sources</option>
             <option value="accurate">Accurate</option>
             <option value="internal">Internal</option>
           </Select>
         </div>
-        <label className="space-y-1 text-xs text-muted-foreground">
-          Dari tanggal
-          <Input type="date" value={dateFrom} max={dateTo || undefined} onChange={(e) => resetPage(setDateFrom)(e.target.value)} />
-        </label>
-        <label className="space-y-1 text-xs text-muted-foreground">
-          Sampai tanggal
-          <Input type="date" value={dateTo} min={dateFrom || undefined} onChange={(e) => resetPage(setDateTo)(e.target.value)} />
-        </label>
+        <DateRangeFilter className="lg:w-72" from={dateFrom} to={dateTo} onFrom={resetPage(setDateFrom)} onTo={resetPage(setDateTo)} />
         {hasFilters && (
-          <Button variant="ghost" size="sm" className="h-10" onClick={clearFilters}>
+          <Button variant="ghost" size="sm" className="h-9" onClick={clearFilters}>
             <X className="size-4" /> Reset filter
           </Button>
         )}
@@ -219,7 +206,7 @@ export function PoListPage() {
         rowKey={(r) => r.id}
         isLoading={isLoading}
         onRowClick={(r) => navigate(`/purchase-orders/${r.po_id}`)}
-        emptyText={hasFilters ? 'Tidak ada barang PO untuk filter ini.' : 'Belum ada data PO.'}
+        emptyText={hasFilters ? 'No PO items for this filter.' : 'No PO data yet.'}
       />
 
       <PoFormModal open={formOpen} onClose={() => setFormOpen(false)} />

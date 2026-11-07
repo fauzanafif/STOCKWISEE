@@ -62,7 +62,7 @@ export function KpiGroup({ title, icon, items, className }: { title: string; ico
   if (items.length === 0) return null
   return (
     <div className={cn('card-surface flex flex-col p-3', className)}>
-      <div className="flex items-center gap-1.5 px-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+      <div className="flex items-center gap-1.5 px-1 text-xs font-semibold text-muted-foreground">
         {icon}
         {title}
       </div>

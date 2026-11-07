@@ -7,11 +7,14 @@ import { cn } from '@/lib/utils'
 /** When the Sync Agent pulls Accurate data (Task Scheduler on the server) — one place to keep it right. */
 export const SYNC_SCHEDULE = '12:10 & 20:40'
 
+/** the status dot of the chip (full class names: Tailwind keeps only what it can read) */
+const DOT: Record<string, string> = { SUCCESS: 'bg-emerald-500', PARTIAL: 'bg-amber-500', FAILED: 'bg-red-500', RUNNING: 'bg-primary' }
+
 const LABEL: Record<string, { text: string; tone: string }> = {
-  SUCCESS: { text: 'berhasil', tone: 'text-emerald-600' },
-  PARTIAL: { text: 'sebagian', tone: 'text-amber-600' },
-  FAILED: { text: 'gagal', tone: 'text-red-600' },
-  RUNNING: { text: 'sedang berjalan', tone: 'text-primary' },
+  SUCCESS: { text: 'successful', tone: 'text-emerald-600' },
+  PARTIAL: { text: 'partial', tone: 'text-amber-600' },
+  FAILED: { text: 'failed', tone: 'text-red-600' },
+  RUNNING: { text: 'in progress', tone: 'text-primary' },
 }
 
 /**
@@ -25,24 +28,17 @@ export function AccurateDataNote({ className }: { className?: string }) {
   const { data: sync } = useSyncStatus(canView)
   const s = sync ? LABEL[sync.status] : undefined
 
-  return (
-    <div className={cn('flex items-start gap-2 text-xs text-muted-foreground', className)}>
-      <CloudCog className="mt-px size-3.5 shrink-0" />
-      <span className="min-w-0">
-        Data dari Accurate (hanya-baca), diperbarui otomatis jam {SYNC_SCHEDULE}
-        {sync && (
-          <>
-            {' · '}terakhir {new Date(sync.finished_at ?? sync.started_at).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })}
-            {s && <span className={cn('font-medium', s.tone)}> ({s.text})</span>}
-          </>
-        )}
-        {canView && (
-          <>
-            {' · '}
-            <Link to="/sync/history" className="font-medium text-primary hover:underline">Lihat sync</Link>
-          </>
-        )}
-      </span>
-    </div>
+  const at = sync ? new Date(sync.finished_at ?? sync.started_at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : null
+  const tip = `Data dari Accurate (hanya-baca), diperbarui otomatis jam ${SYNC_SCHEDULE}${at ? ` · terakhir ${at}${s ? ` (${s.text})` : ''}` : ''}`
+  const chip = (
+    <>
+      <CloudCog className="size-3.5 shrink-0" />
+      <span>Accurate{at ? ` · ${at}` : ''}</span>
+      {s && <span className={cn('size-1.5 rounded-full', DOT[sync!.status])} aria-label={s.text} />}
+    </>
   )
+  const cls = cn('inline-flex w-fit items-center gap-1.5 rounded-md border bg-card px-2 py-0.5 text-xs text-muted-foreground', className)
+  return canView
+    ? <Link to="/sync" title={`${tip} — click to see the sync`} className={cn(cls, 'transition-colors hover:border-primary/40 hover:text-foreground')}>{chip}</Link>
+    : <span title={tip} className={cls}>{chip}</span>
 }

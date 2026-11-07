@@ -10,11 +10,11 @@ class Unit extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['code', 'name', 'is_active'];
+    protected $fillable = ['code', 'name', 'is_active', 'uom_category_id', 'is_reference', 'ratio', 'rounding'];
 
     protected function casts(): array
     {
-        return ['is_active' => 'boolean'];
+        return ['is_active' => 'boolean', 'is_reference' => 'boolean'];
     }
 
     public function items(): HasMany

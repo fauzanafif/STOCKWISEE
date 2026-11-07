@@ -1,20 +1,22 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
+import { showBlob } from '@/components/ui/lightbox'
 
 /** request: DRAFT / DITUGASKAN / MENUNGGU_REVIEW / SELESAI / DIBATALKAN; a recipient's part: DITUGASKAN / DISERAHKAN(_TERLAMBAT) / REVISI / SELESAI */
-export type IrStatus = 'DRAFT' | 'DITUGASKAN' | 'MENUNGGU_REVIEW' | 'DISERAHKAN' | 'DISERAHKAN_TERLAMBAT' | 'REVISI' | 'SELESAI' | 'DIBATALKAN'
+export type IrStatus = 'DRAFT' | 'DITUGASKAN' | 'MENUNGGU_REVIEW' | 'DISERAHKAN' | 'DISERAHKAN_TERLAMBAT' | 'ON_REVIEW' | 'REVISI' | 'SELESAI' | 'DIBATALKAN'
 export type IrPriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT'
 export type IrScope = 'mine' | 'tasks' | 'review' | 'done' | 'all'
 
 export const IR_STATUS: Record<IrStatus, { label: string; variant: 'default' | 'neutral' | 'success' | 'warning' | 'danger' }> = {
   DRAFT: { label: 'Draft', variant: 'neutral' },
-  DITUGASKAN: { label: 'Ditugaskan', variant: 'default' },
-  MENUNGGU_REVIEW: { label: 'Perlu ditinjau', variant: 'warning' },
-  DISERAHKAN: { label: 'Diserahkan', variant: 'success' },
-  DISERAHKAN_TERLAMBAT: { label: 'Diserahkan terlambat', variant: 'warning' },
-  REVISI: { label: 'Perlu revisi', variant: 'danger' },
-  SELESAI: { label: 'Selesai', variant: 'success' },
-  DIBATALKAN: { label: 'Dibatalkan', variant: 'neutral' },
+  DITUGASKAN: { label: 'Assigned', variant: 'default' },
+  MENUNGGU_REVIEW: { label: 'Submitted', variant: 'warning' },
+  DISERAHKAN: { label: 'Submitted', variant: 'success' },
+  DISERAHKAN_TERLAMBAT: { label: 'Submitted (late)', variant: 'warning' },
+  ON_REVIEW: { label: 'On Review', variant: 'default' },
+  REVISI: { label: 'Needs revision', variant: 'danger' },
+  SELESAI: { label: 'Done', variant: 'success' },
+  DIBATALKAN: { label: 'Cancelled', variant: 'neutral' },
 }
 
 export const IR_PRIORITY: Record<IrPriority, { label: string; cls: string }> = {
@@ -25,10 +27,10 @@ export const IR_PRIORITY: Record<IrPriority, { label: string; cls: string }> = {
 }
 
 export const IR_SCOPES: Record<Exclude<IrScope, 'all'>, { label: string; path: string; empty: string }> = {
-  mine: { label: 'Permintaan Saya', path: '/important-requests/saya', empty: 'Anda belum membuat request.' },
-  tasks: { label: 'Tugas Saya', path: '/important-requests/tugas', empty: 'Belum ada tugas untuk Anda.' },
-  review: { label: 'Perlu Persetujuan', path: '/important-requests/persetujuan', empty: 'Tidak ada hasil yang menunggu persetujuan Anda.' },
-  done: { label: 'Selesai', path: '/important-requests/selesai', empty: 'Belum ada request selesai.' },
+  mine: { label: 'My Requests', path: '/important-requests/saya', empty: 'You have not made a request.' },
+  tasks: { label: 'My Tasks', path: '/important-requests/tugas', empty: 'No tasks for you yet.' },
+  review: { label: 'Needs Approval', path: '/important-requests/persetujuan', empty: 'No results are waiting for your approval.' },
+  done: { label: 'Done', path: '/important-requests/selesai', empty: 'No completed or cancelled requests yet.' },
 }
 
 export interface IrRow {
@@ -114,7 +116,7 @@ export interface IrDetail extends IrRow {
   me: {
     is_creator: boolean
     assignee: { id: number; status: IrStatus; status_label: string; submitted_at: string | null; late: boolean } | null
-    can_edit: boolean; can_send: boolean; can_delete: boolean; can_cancel: boolean; can_reopen: boolean; can_comment: boolean
+    can_edit: boolean; can_send: boolean; can_delete: boolean; can_cancel: boolean; can_reopen: boolean; can_comment: boolean; discussion_closed?: boolean
     max_mb: number
   }
 }
@@ -174,8 +176,10 @@ export function useIrSummary(enabled = true) {
   })
 }
 
-export function useIrList(params: { scope: IrScope; status?: string; priority?: string; overdue?: boolean; search?: string; sort?: string; page?: number }) {
+/** part (Tugas Saya only, like Classroom's to-do tabs): todo = to hand in · late = missing · handed = handed in / approved */
+export function useIrList(params: { scope: IrScope; part?: 'todo' | 'late' | 'handed' | 'open'; status?: string; priority?: string; overdue?: boolean; search?: string; sort?: string; page?: number }, enabled = true) {
   return useQuery({
+    enabled,
     queryKey: [...KEY, 'list', params],
     placeholderData: keepPreviousData,
     queryFn: async () => (await api.get<{ data: IrRow[]; meta: { page: number; last_page: number; total: number } }>('/api/important-requests', {
@@ -209,11 +213,12 @@ export function useIrComments(id: number, page: number) {
   })
 }
 
-export function useIrActivities(id: number, enabled: boolean) {
+export function useIrActivities(id: number, page: number, enabled: boolean) {
   return useQuery({
-    queryKey: [...KEY, id, 'activities'],
+    queryKey: [...KEY, id, 'activities', page],
     enabled,
-    queryFn: async () => (await api.get<{ data: { id: number; action: string; user: string; meta: Record<string, unknown> | null; created_at: string }[] }>(`/api/important-requests/${id}/activities`)).data.data,
+    placeholderData: keepPreviousData,
+    queryFn: async () => (await api.get<{ data: { id: number; action: string; user: string; meta: Record<string, unknown> | null; created_at: string }[]; meta: { page: number; last_page: number } }>(`/api/important-requests/${id}/activities`, { params: { page } })).data,
   })
 }
 
@@ -280,10 +285,12 @@ export async function uploadIrFile(file: File, onProgress?: (p: number) => void)
 /** A file of a request, fetched with the session: opened (preview) or saved. */
 export async function openIrFile(requestId: number, f: IrFile, preview: boolean) {
   const res = await api.get(`/api/important-requests/${requestId}/attachments/${f.id}`, { params: { inline: preview ? 1 : undefined }, responseType: 'blob' })
-  const url = URL.createObjectURL(res.data as Blob)
   if (preview) {
-    window.open(url, '_blank', 'noopener')
-  } else {
+    showBlob(res.data as Blob, { alt: f.name, name: f.name })
+    return
+  }
+  const url = URL.createObjectURL(res.data as Blob)
+  {
     const a = document.createElement('a')
     a.href = url
     a.download = f.name

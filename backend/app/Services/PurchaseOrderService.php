@@ -66,6 +66,7 @@ class PurchaseOrderService
                     'description_raw' => $line['description_raw'],
                     'qty' => $line['qty'],
                     'unit_id' => $line['unit_id'] ?? null,
+                    ...$this->frozenRatio($line),
                     'unit_price' => $line['unit_price'],
                     'line_total' => $lineTotal,
                 ]);
@@ -260,6 +261,20 @@ class PurchaseOrderService
         $line->update(['qty_received' => $got, 'line_status' => $got + 0.0001 >= (float) $line->qty ? 'RECEIVED' : 'PARTIAL_RECEIVED']);
         $open = $po->items()->whereColumn('qty_received', '<', 'qty')->exists();
         $po->update(['status' => $open ? 'PARTIAL_RECEIVED' : 'RECEIVED']);
+    }
+
+    /** A line's ratio as it is ordered; with none yet it stays open, and its Receipt asks for one. */
+    private function frozenRatio(array $line): array
+    {
+        $item = ! empty($line['item_id']) ? \App\Models\Item::find($line['item_id']) : null;
+        $unit = ! empty($line['unit_id']) ? \App\Models\Unit::find($line['unit_id']) : null;
+        try {
+            $ratio = app(UomConverter::class)->documentRatio($item, $unit);
+        } catch (ValidationException) {
+            return [];
+        }
+
+        return $item && $unit ? ['unit_ratio' => $ratio, 'base_unit' => UomConverter::isOne($ratio) ? null : $item->unit?->code] : [];
     }
 
     private function log(PurchaseOrder $po, string $action, User $user, ?string $note): void

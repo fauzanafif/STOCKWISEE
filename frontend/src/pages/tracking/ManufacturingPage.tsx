@@ -28,7 +28,7 @@ type Kind = 'ASSEMBLY' | 'JASA'
 const SHEETS: Record<Kind, { code: 'MA' | 'MJ'; title: string; products: string[]; processes: string[]; locations: string[] }> = {
   ASSEMBLY: {
     code: 'MA',
-    title: 'Manufaktur & Assembly',
+    title: 'Manufacturing & Assembly',
     products: ['CRADLE CARBON STEEL 3x2', 'CRADLE CARBON STEEL 4x4', 'CRADLE VGL', 'CRADLE MANIFOLD 3x2', 'CRADLE MANIFOLD 4x4',
       'CRADLE MANIFOLD C2H2 4x4', 'MANIFOLD CRADLE 2x2', 'MANIFOLD CRADLE 3x2', 'MANIFOLD CRADLE 4x4', 'MANIFOLD CRADLE C2H2 4x4'],
     processes: ['CRA(1) - PEMBUATAN RANGKA', 'CRA(2) - PEMASANGAN KOMPONEN', 'ADD(1) - PENGECATAN CRADLE', 'MAN(1) - PEMBUATAN MANIFOLD',
@@ -37,7 +37,7 @@ const SHEETS: Record<Kind, { code: 'MA' | 'MJ'; title: string; products: string[
   },
   JASA: {
     code: 'MJ',
-    title: 'Manufaktur & Jasa Lain-Lain',
+    title: 'Manufacturing & Other Services',
     products: ['PIPA TEMBAGA 8mm x 2mm x 96cm', 'PENGUKUR TEKANAN TABUNG C2H2', 'SIKU CARBON STEEL - 40 x 40 x 4mm / P = 65cm',
       'PLAT STRIP CARBON STEEL - 40cm x 4mm / P = 90cm', '(VULKANISIR) BAN LUAR NYLON - GAJAH TUNGGAL / 7.50-16 TT / GT SUPER 88N',
       '(VULKANISIR) BAN LUAR STEEL - GITI / 11.00-R20 TT / GAZ892', '(REFURBISHED) PRINTER - EPSON / L3210'],
@@ -48,12 +48,12 @@ const SHEETS: Record<Kind, { code: 'MA' | 'MJ'; title: string; products: string[
   },
 }
 
-/** Excel column "Status Hasil Pengerjaan". */
+/** Excel column "Work Result Status". */
 const STATUS: Record<string, { label: string; variant: 'neutral' | 'default' | 'success' | 'warning'; hint: string }> = {
-  REQUESTED: { label: 'REQUESTED', variant: 'neutral', hint: 'Hasil produk, no. seri & proses sudah diisi' },
- ON_GOING: { label: 'ON-GOING', variant: 'default', hint: 'No. NPBG sudah ada material keluar, sedang dikerjakan' },
-  COMPLETED: { label: 'COMPLETED', variant: 'success', hint: 'Nama file / foto hasil, tgl selesai & no. RI lengkap' },
-  INCOMPLETE: { label: 'Belum lengkap', variant: 'warning', hint: 'Hasil produk / no. seri / proses belum diisi' },
+  REQUESTED: { label: 'REQUESTED', variant: 'neutral', hint: 'Product result, serial no. & process filled' },
+ ON_GOING: { label: 'ON-GOING', variant: 'default', hint: 'NPBG No. exists; material is out, in progress' },
+  COMPLETED: { label: 'COMPLETED', variant: 'success', hint: 'File name / result photo, finish date & RI no. complete' },
+  INCOMPLETE: { label: 'Incomplete', variant: 'warning', hint: 'Product result / serial no. / process not filled' },
 }
 const STATUS_LABELS = Object.fromEntries(Object.entries(STATUS).map(([k, v]) => [k, v.label]))
 
@@ -62,7 +62,7 @@ function StatusBadge({ status }: { status: string }) {
   return <Badge variant={s.variant} title={s.hint}>{s.label}</Badge>
 }
 
-const fmtDate = (v: string | null | undefined) => (v ? new Date(v).toLocaleDateString('id-ID') : '—')
+const fmtDate = (v: string | null | undefined) => (v ? new Date(v).toLocaleDateString('en-GB') : '—')
 
 /** NPBG to the workshop itself (MAINTENANCE (SDA) / GUDANG) = work done at SIG; otherwise the vendor. */
 const lokasiFrom = (party: string | null) => (!party || /MAINTENANCE|GUDANG/i.test(party) ? 'SIG' : party)
@@ -141,18 +141,18 @@ function PhotoCell({ row, canEdit, onChanged }: { row: ManufacturingLine; canEdi
   return (
     <div className="flex items-center gap-1" title={err ?? undefined}>
       {row.has_photo && (
-        <button type="button" onClick={() => void open()} className={`${btn} border-primary/40 text-primary`} title="Lihat Foto Hasil" aria-label="Lihat Foto Hasil">
+        <button type="button" onClick={() => void open()} className={`${btn} border-primary/40 text-primary`} title="View Result Photo" aria-label="View Result Photo">
           <ImageIcon className="size-3.5" />
         </button>
       )}
       {canEdit && (busy
         ? <span className={btn}><Loader2 className="size-3.5 animate-spin" /></span>
-        : <button type="button" onClick={() => input.current?.click()} className={btn} title={row.has_photo ? 'Ganti Foto Hasil' : 'Unggah Foto Hasil'} aria-label="Unggah Foto Hasil">
+        : <button type="button" onClick={() => input.current?.click()} className={btn} title={row.has_photo ? 'Change Result Photo' : 'Upload Result Photo'} aria-label="Upload Result Photo">
             <Camera className="size-3.5" />
           </button>)}
       <input ref={input} type="file" accept="image/*" capture="environment" className="hidden"
         onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void upload(f) }} />
-      {!row.has_photo && row.file_name && <span className="text-[11px] text-muted-foreground" title={`"${row.file_name}" ada di folder DATA BUKTI (Excel)`}>folder Excel</span>}
+      {!row.has_photo && row.file_name && <span className="text-[11px] text-muted-foreground" title={`"${row.file_name}" is in the DATA BUKTI folder (Excel)`}>Excel folder</span>}
       {err && <span className="text-xs text-destructive">!</span>}
     </div>
   )
@@ -189,7 +189,7 @@ function UnitRow({ kind, row, canEdit, note, opts }: { kind: Kind; row: Manufact
   }
   const ed = useSheetRow<ManufacturingLine, Form>({
     row, fromRow, emptyForm: emptyFor(kind), isSame: same, canEdit,
-    invalid: (f) => (!f.product_name.trim() ? 'Isi Hasil Produk' : kind === 'JASA' && !f.row_location.trim() ? 'Isi Lokasi (vendor)' : null),
+    invalid: (f) => (!f.product_name.trim() ? 'Fill in Product Result' : kind === 'JASA' && !f.row_location.trim() ? 'Fill in Location (vendor)' : null),
     save: async (f) => {
       const body = toBody(f) // Item No left empty on a new row = next on the sheet
       const r = row
@@ -218,7 +218,7 @@ function UnitRow({ kind, row, canEdit, note, opts }: { kind: Kind; row: Manufact
     }
   }
   async function remove() {
-    if (!row || !(await confirmDialog(`Hapus ${row.number} ${row.sub_no} item ${row.item_no ?? ''}?`))) return
+    if (!row || !(await confirmDialog(`Delete ${row.number} ${row.sub_no} item ${row.item_no ?? ''}?`))) return
     try {
       const order = (await api.delete<{ data: ManufacturingRow }>(`/api/manufacturing-subs/${row.line_id}`)).data.data
       // the last unit gone: the No. MA / MJ itself goes too
@@ -231,16 +231,16 @@ function UnitRow({ kind, row, canEdit, note, opts }: { kind: Kind; row: Manufact
 
   const cells: Record<string, ReactNode> = {
     no: <Td key="no" className="px-2 py-2 text-right tabular-nums text-muted-foreground">{row?.no ?? ''}</Td>,
-    date: <Td key="date">{ed.input('row_date', { type: 'date', 'aria-label': 'Tanggal', className: 'min-w-[8rem]' })}</Td>,
-    number: <Td key="number" className="whitespace-nowrap px-2 py-2 font-mono text-xs font-medium">{row?.number ?? <span className="text-muted-foreground">otomatis</span>}</Td>,
-    sub: <Td key="sub" className="whitespace-nowrap px-2 py-2 font-mono text-xs">{row?.sub_no ?? 'SUB-01'}</Td>,
-    loc: <Td key="loc" className="min-w-[10rem]">{opt('location', 'row_location', kind === 'JASA' ? 'Vendor / bengkel' : 'SIG')}</Td>,
+    date: <Td key="date">{ed.input('row_date', { type: 'date', 'aria-label': 'Date', className: 'min-w-[8rem]' })}</Td>,
+    number: <Td key="number" className="whitespace-nowrap px-2 py-2 text-[13px] font-medium">{row?.number ?? <span className="text-muted-foreground">automatic</span>}</Td>,
+    sub: <Td key="sub" className="whitespace-nowrap px-2 py-2 text-[13px]">{row?.sub_no ?? 'SUB-01'}</Td>,
+    loc: <Td key="loc" className="min-w-[10rem]">{opt('location', 'row_location', kind === 'JASA' ? 'Vendor / workshop' : 'SIG')}</Td>,
     product: (
       <Td key="product" className="min-w-[16rem]">
         <div className="flex items-center gap-1">
-          <div className="min-w-0 flex-1">{opt('product', 'product_name', isNew ? 'Ketik hasil produk…' : '')}</div>
+          <div className="min-w-0 flex-1">{opt('product', 'product_name', isNew ? 'Type the product result…' : '')}</div>
           {row?.item_code && (
-            <Link to={`/items?search=${encodeURIComponent(row.item_code)}`} className="shrink-0 rounded p-1 text-primary hover:bg-muted" title={`Buka barang Accurate ${row.item_code}`}>
+            <Link to={`/items?search=${encodeURIComponent(row.item_code)}`} className="shrink-0 rounded p-1 text-primary hover:bg-muted" title={`Open Accurate item ${row.item_code}`}>
               <ExternalLink className="size-3.5" />
             </Link>
           )}
@@ -253,7 +253,7 @@ function UnitRow({ kind, row, canEdit, note, opts }: { kind: Kind; row: Manufact
         <div className="flex items-center gap-1">
           <div className="min-w-0 flex-1">{opt('serial', 'serial_no_raw', kind === 'JASA' ? '-' : 'SIG-58')}</div>
           {row?.serial_link && (
-            <Link to={row.serial_link} className="shrink-0 rounded p-1 text-primary hover:bg-muted" title="Buka riwayat no. seri ini">
+            <Link to={row.serial_link} className="shrink-0 rounded p-1 text-primary hover:bg-muted" title="Open this serial no. history">
               <ExternalLink className="size-3.5" />
             </Link>
           )}
@@ -270,7 +270,7 @@ function UnitRow({ kind, row, canEdit, note, opts }: { kind: Kind; row: Manufact
   return (
     <tr {...ed.rowProps} className={rowClass(isNew)}>
       {head.map((k) => cells[k])}
-      <Td className="min-w-[15rem]">{ed.area('note_start', { placeholder: isNew ? 'mis. UNTUK FABRIKASI / PERAKITAN CRADLE 3X2 …' : '' })}</Td>
+      <Td className="min-w-[15rem]">{ed.area('note_start', { placeholder: isNew ? 'e.g. FOR FABRICATION / CRADLE ASSEMBLY 3X2 …' : '' })}</Td>
       <Td className="whitespace-nowrap px-2 py-2 text-center">{row && <StatusBadge status={row.status} />}</Td>
       <Td className="min-w-[12rem]">
         {canEdit ? (
@@ -281,25 +281,25 @@ function UnitRow({ kind, row, canEdit, note, opts }: { kind: Kind; row: Manufact
               row_location: kind === 'JASA' && !s.row_location ? lokasiFrom(d.party) : s.row_location,
               serial_no_raw: (!s.serial_no_raw || s.serial_no_raw === '-') && d.serials?.[0] ? d.serials[0] : s.serial_no_raw,
             }))} />
-        ) : <span className="block whitespace-nowrap px-2 py-1.5 font-mono text-xs">{row?.npbg_no ?? '—'}</span>}
+        ) : <span className="block whitespace-nowrap px-2 py-1.5 text-[13px]">{row?.npbg_no ?? '—'}</span>}
       </Td>
       <Td className="min-w-[13rem]">{ed.list('file_name', row?.helper_file_name ? [row.helper_file_name] : [], { placeholder: row?.helper_file_name ?? '', className: 'text-xs' })}</Td>
       <Td>{row && <PhotoCell row={row} canEdit={canEdit} onChanged={refresh} />}</Td>
-      <Td>{ed.input('finish_date', { type: 'date', 'aria-label': 'Tgl Selesai Pengerjaan', className: 'min-w-[8rem]' })}</Td>
+      <Td>{ed.input('finish_date', { type: 'date', 'aria-label': 'Work Finish Date', className: 'min-w-[8rem]' })}</Td>
       <Td className="min-w-[12rem]">
         {canEdit ? (
           <DocNumberInput compact type="ri" value={ed.form.ri_no} onChange={(v) => ed.change('ri_no', v)}
             onPick={(d) => ed.setForm((s) => ({ ...s, finish_date: d.date ?? s.finish_date, note_end: s.note_end || (d.note ?? '') }))} />
-        ) : <span className="block whitespace-nowrap px-2 py-1.5 font-mono text-xs">{row?.ri_no ?? '—'}</span>}
+        ) : <span className="block whitespace-nowrap px-2 py-1.5 text-[13px]">{row?.ri_no ?? '—'}</span>}
       </Td>
       <Td className="min-w-[14rem]">{ed.area('note_end')}</Td>
       <Td className="px-2">{row && <NoteCell entity="manufacturing-lines" rowKey={row.line_id} note={note} />}</Td>
       {canEdit && (
         <Td className="text-center">
           {row && (
-            <RowActions onAdd={() => void addUnit(false)} addTitle={`Tambah unit ke ${row.number} ${row.sub_no}`}
+            <RowActions onAdd={() => void addUnit(false)} addTitle={`Add unit to ${row.number} ${row.sub_no}`}
               onDelete={row.status !== 'COMPLETED' ? () => void remove() : undefined}>
-              <button type="button" onClick={() => void addUnit(true)} title={`Sub berikutnya (NPBG baru) untuk ${row.number}`}
+              <button type="button" onClick={() => void addUnit(true)} title={`Next Sub (new NPBG) for ${row.number}`}
                 className="inline-flex items-center rounded px-1 py-1.5 text-[11px] font-medium text-muted-foreground hover:bg-muted hover:text-primary">
                 <Plus className="size-3" />Sub
               </button>
@@ -324,9 +324,9 @@ function headersFor(kind: Kind): string[] {
   const code = SHEETS[kind].code
   const no = kind === 'JASA' ? 'No. Manufaktur & Jasa' : 'No. Manufaktur & Assembly'
   const head = kind === 'JASA'
-    ? ['No', 'Tanggal', no, `Sub ${code}`, 'Item No', 'Lokasi', 'Hasil Produk', 'No. Seri', 'Proses']
-    : ['No', 'Tanggal', no, `Sub ${code}`, 'Lokasi', 'Hasil Produk', 'No. Seri', 'Item No', 'Proses']
-  return [...head, 'Keterangan Awal', 'Status Hasil Pengerjaan', 'No. NPBG', 'Nama File (#.ext)', 'Foto Hasil', 'Tgl Selesai Pengerjaan', 'No. RI', 'Keterangan Akhir']
+    ? ['No', 'Date', no, `Sub ${code}`, 'Item No', 'Location', 'Product Result', 'Serial No.', 'Process']
+    : ['No', 'Date', no, `Sub ${code}`, 'Location', 'Product Result', 'Serial No.', 'Item No', 'Process']
+  return [...head, 'Initial Remarks', 'Work Result Status', 'No. NPBG', 'File Name (#.ext)', 'Result Photo', 'Work Finish Date', 'No. RI', 'Final Remarks']
 }
 
 export function ManufacturingPage() {
@@ -339,10 +339,10 @@ export function ManufacturingPage() {
   const opts = useSheetOptions(kind)
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       <PageHeader
-        title="Manufaktur & Assembly"
- subtitle="Sesuai Excel Tracking Manufaktur & Assembly satu baris per unit. Ketik langsung di tabel, tersimpan otomatis."
+        title="Manufacturing & Assembly"
+ subtitle="As in the Manufacturing & Assembly Tracking Excel; one row per unit. Type directly in the table; it saves automatically."
         icon={<Boxes className="size-5" />}
       />
       <SheetTabs tabs={(Object.keys(SHEETS) as Kind[]).map((k) => [k, `${SHEETS[k].title} (${SHEETS[k].code})`] as const)} value={kind} onChange={setKind} />
@@ -356,16 +356,16 @@ export function ManufacturingPage() {
         notesEntity="manufacturing-lines"
         statuses={['REQUESTED', 'ON_GOING', 'COMPLETED', 'INCOMPLETE']}
         statusLabels={STATUS_LABELS}
-        searchPlaceholder="Cari no., produk, no. seri, proses, NPBG, RI…"
+        searchPlaceholder="Search no., product, serial no., process, NPBG, RI…"
         exportDataset="manufacturing"
         exportPermission="manufacturing.view"
         toolbarExtra={
           <div className="flex flex-wrap gap-x-4 text-xs text-muted-foreground">
-            <span>Hari ini: <b className="text-foreground">{fmtDate(head.today)}</b></span>
-            {head.next && <span>No. {sheet.code} berikutnya: <b className="font-mono text-foreground">{head.next}</b></span>}
+            <span>Today: <b className="text-foreground">{fmtDate(head.today)}</b></span>
+            {head.next && <span>No. {sheet.code} next: <b className=" text-foreground">{head.next}</b></span>}
           </div>
         }
-        hint={<>Status: produk + seri + proses → <b>REQUESTED</b>, No. NPBG → <b>ON-GOING</b>, foto + Tgl Selesai + No. RI → <b>COMPLETED</b>. + = unit, +Sub = Sub baru.</>}
+        hint={<>Status: product + serial + process → <b>REQUESTED</b>, NPBG No. → <b>ON-GOING</b>, photo + Finish Date + RI No. → <b>COMPLETED</b>. + = unit, +Sub = new Sub.</>}
         renderRow={(r, note) => <UnitRow kind={kind} row={r} canEdit={canEdit} note={note} opts={opts} />}
         newRow={canCreate ? <UnitRow key={`new-${kind}`} kind={kind} row={null} canEdit opts={opts} /> : null}
       />

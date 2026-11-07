@@ -29,11 +29,11 @@ export function HealthPage() {
           <CardTitle>STOCKWISE — Health Check</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          {isLoading && <p className="text-muted-foreground">Menghubungi backend…</p>}
+          {isLoading && <p className="text-muted-foreground">Contacting the backend…</p>}
 
           {isError && (
             <p className="text-destructive" role="alert">
-              Backend tidak terhubung: {(error as Error).message}
+              Backend not connected: {(error as Error).message}
             </p>
           )}
 
@@ -47,15 +47,15 @@ export function HealthPage() {
               <dd className={data.database === 'connected' ? 'text-primary' : 'text-destructive'}>
                 {data.database}
               </dd>
-              <dt className="text-muted-foreground">Versi</dt>
+              <dt className="text-muted-foreground">Version</dt>
               <dd>{data.version}</dd>
-              <dt className="text-muted-foreground">Waktu server</dt>
+              <dt className="text-muted-foreground">Server time</dt>
               <dd>{data.time}</dd>
             </dl>
           )}
 
           <Button onClick={() => refetch()} disabled={isFetching} className="w-full">
-            {isFetching ? 'Memuat…' : 'Cek ulang'}
+            {isFetching ? 'Loading…' : 'Recheck'}
           </Button>
         </CardContent>
       </Card>

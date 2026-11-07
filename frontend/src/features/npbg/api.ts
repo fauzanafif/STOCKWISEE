@@ -18,6 +18,9 @@ export interface Npbg {
   deskripsi: string | null
   kuantitas: number | null
   satuan: string | null
+  /** frozen on the document; stock takes kuantitas × unit_ratio of base_satuan */
+  unit_ratio?: number | null
+  base_satuan?: string | null
   /** from the Accurate Department of the line (format since Sept 2026), else ITEMRESERVED1 */
   peminta: string | null
   divisi: string | null
@@ -55,7 +58,7 @@ export function useResubmitNpbg(id: number) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async (body: { quantities?: Record<number, number>; note?: string | null }) => (await api.post<{ data: Npbg }>(`/api/npbg/${id}/resubmit`, body)).data.data,
-    meta: { successMessage: 'NPBG diajukan ulang ke approval.' },
+    meta: { successMessage: 'Delivery Order resubmitted to approval.' },
     onSuccess: () => Promise.all([qc.invalidateQueries({ queryKey: ['npbg'] }), qc.invalidateQueries({ queryKey: ['item-requests', 'approvals'] })]),
   })
 }
@@ -66,7 +69,7 @@ export function useDecideNpbg(id: number) {
     mutationFn: async (body: { action: 'APPROVE' | 'REJECT' | 'RETURN'; note?: string | null; quantities?: Record<number, number> }) => (await api.post<{ data: Npbg }>(`/api/npbg/${id}/approval`, body)).data.data,
     meta: { successMessage: false },
     onSuccess: (d, v) => {
-      toast.success(v.action === 'RETURN' ? 'NPBG dikembalikan ke admin untuk revisi.' : v.action === 'REJECT' ? 'NPBG ditolak.' : d.approval?.status === 'DISETUJUI' ? 'NPBG disetujui — barang dikeluarkan dari stok.' : 'Disetujui Manager — menunggu Direktur.')
+      toast.success(v.action === 'RETURN' ? 'NPBG returned to admin for revision.' : v.action === 'REJECT' ? 'NPBG rejected.' : d.approval?.status === 'DISETUJUI' ? 'NPBG approved; items issued from stock.' : 'Approved by Manager — waiting for Director.')
       return Promise.all([qc.invalidateQueries({ queryKey: ['npbg'] }), qc.invalidateQueries({ queryKey: ['item-requests', 'approvals'] })])
     },
   })
@@ -81,7 +84,7 @@ export function useSetKembaliBekas() {
     meta: { successMessage: false },
     // returned promise keeps the mutation pending until the list has the new tick (no flicker back)
     onSuccess: async (_d, { checked }) => {
-      toast.success(checked ? 'Masuk ke Tracking Pengembalian Bekas.' : 'Dikeluarkan dari Tracking Pengembalian Bekas.')
+      toast.success(checked ? 'Goes to Used Item Return Tracking.' : 'Removed from Used Item Return Tracking.')
       await Promise.all([
         qc.invalidateQueries({ queryKey: ['npbg'] }),
         qc.invalidateQueries({ queryKey: ['used-return-sheets/other'] }),
@@ -143,7 +146,7 @@ export function useUpdateNpbg(id: number) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async (body: NpbgEditableFields) => (await api.patch<{ data: Npbg }>(`/api/npbg/${id}`, body)).data.data,
-    meta: { successMessage: 'NPBG dibuat — menunggu approval Manager, lalu Direktur.' },
+    meta: { successMessage: 'Delivery Order created; waiting for Manager, then Director approval.' },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['npbg'] }),
   })
 }

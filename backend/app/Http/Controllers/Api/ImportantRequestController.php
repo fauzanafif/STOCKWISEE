@@ -35,9 +35,23 @@ class ImportantRequestController extends Controller
             'mine' => $q->where('created_by', $user->id),
             'tasks' => $q->where('status', '!=', 'DRAFT')->whereHas('assignees', fn ($a) => $a->where('user_id', $user->id)),
             'review' => $q->where('created_by', $user->id)->whereHas('submissions', fn ($s) => $s->where('status', 'MENUNGGU_REVIEW')),
-            'done' => $q->visibleTo($user)->where('status', 'SELESAI'),
+            // finished work, cancelled included: the closed forum and its history stay reachable from a list
+            'done' => $q->visibleTo($user)->whereIn('status', ['SELESAI', 'DIBATALKAN']),
             default => $q->visibleTo($user),
         };
+        // my part of a task, like Classroom's to-do tabs: todo (still to hand in, late ones too) | late (missing) | handed (handed in or approved)
+        if ($scope === 'tasks' && $request->filled('part')) {
+            $mine = fn (array $statuses) => fn ($a) => $a->where('user_id', $user->id)->whereIn('status', $statuses);
+            match ($request->string('part')->value()) {
+                'todo' => $q->whereNotIn('status', ImportantRequest::CLOSED)->whereHas('assignees', $mine(ImportantRequestService::TO_DO)),
+                'late' => $q->whereNotIn('status', ImportantRequest::CLOSED)->whereHas('assignees', $mine(ImportantRequestService::TO_DO))
+                    ->whereNotNull('deadline')->where('deadline', '<', now()),
+                'handed' => $q->whereHas('assignees', $mine([...ImportantRequestService::HANDED_IN, 'SELESAI'])),
+                // Tugas Saya in one list: every task still running for me (to do, late, handed in and waiting)
+                'open' => $q->whereNotIn('status', ImportantRequest::CLOSED)->whereHas('assignees', $mine([...ImportantRequestService::TO_DO, ...ImportantRequestService::HANDED_IN])),
+                default => null,
+            };
+        }
         $request->whenFilled('status', fn ($v) => $q->whereIn('status', explode(',', (string) $v)));
         $request->whenFilled('priority', fn ($v) => $q->where('priority', $v));
         if ($request->boolean('overdue')) {
@@ -47,7 +61,7 @@ class ImportantRequestController extends Controller
             $q->where(fn ($x) => $x->where('number', 'like', "%{$w}%")->orWhere('title', 'like', "%{$w}%"));
         }
         match ($request->string('sort', 'recent')->value()) {
-            'deadline' => $q->orderByRaw('deadline IS NULL')->orderBy('deadline'),
+            'deadline' => $q->orderByRaw('deadline IS NULL')->orderBy('deadline')->orderByDesc('id'),
             'priority' => $q->orderByRaw("CASE priority WHEN 'URGENT' THEN 0 WHEN 'HIGH' THEN 1 WHEN 'MEDIUM' THEN 2 ELSE 3 END")->orderBy('deadline'),
             default => $q->orderByDesc('updated_at'),
         };
@@ -121,6 +135,8 @@ class ImportantRequestController extends Controller
         $user = $request->user();
         $r = $importantRequest;
         abort_unless($this->service->canView($user, $r), 403, 'Request ini bukan untuk Anda.');
+        // the creator opening it = the results waiting for them are On Review
+        $this->service->startReview($user, $r);
         $r->load(['creator:id,name', 'assignees.user:id,name,username,position', 'submissions.user:id,name', 'submissions.reviewer:id,name',
             'attachments' => fn ($q) => $q->whereNull('deleted_at')->with('uploader:id,name')->orderBy('id')]);
         $unread = $this->unreadCounts($user, collect([$r->id]))[$r->id] ?? 0;
@@ -158,7 +174,8 @@ class ImportantRequestController extends Controller
                 'can_delete' => $creator && $r->status === 'DRAFT',
                 'can_cancel' => $creator && $open && $r->status !== 'DRAFT',
                 'can_reopen' => ! $open && ($creator || $user->hasPermission('important_request.view_all')),
-                'can_comment' => $r->status !== 'DRAFT',
+                'can_comment' => ImportantRequestService::discussionOpen($r),
+                'discussion_closed' => $r->status !== 'DRAFT' && ! ImportantRequestService::discussionOpen($r),
                 'max_mb' => (int) config('stockwise.important_request_max_mb', 20),
             ],
         ]]);
@@ -248,13 +265,15 @@ class ImportantRequestController extends Controller
             'user:id,name,username', 'attachments' => fn ($q) => $q->whereNull('deleted_at')->with('uploader:id,name'),
             'replies.user:id,name,username', 'replies.attachments' => fn ($q) => $q->whereNull('deleted_at')->with('uploader:id,name'),
         ])->orderByDesc('id')->paginate(20);
+        $open = ImportantRequestService::discussionOpen($importantRequest);
+        $admin = $user->hasPermission('important_request.view_all');
         $lastRead = DB::table('important_request_reads')->where(['important_request_id' => $importantRequest->id, 'user_id' => $user->id])->value('last_read_at');
         $row = fn (ImportantRequestComment $c) => [
             'id' => $c->id, 'parent_id' => $c->parent_id, 'kind' => $c->kind, 'user' => $c->user?->name, 'user_id' => $c->user_id,
             'body' => $c->deleted_at ? null : $c->body, 'deleted' => (bool) $c->deleted_at, 'edited' => (bool) $c->edited_at,
             'created_at' => $c->created_at, 'is_new' => $c->user_id !== $user->id && (! $lastRead || $c->created_at > $lastRead),
-            'can_edit' => $c->user_id === $user->id && $c->kind === 'COMMENT' && ! $c->deleted_at,
-            'can_delete' => ($c->user_id === $user->id || $user->hasPermission('important_request.view_all')) && $c->kind === 'COMMENT' && ! $c->deleted_at,
+            'can_edit' => $open && $c->user_id === $user->id && $c->kind === 'COMMENT' && ! $c->deleted_at,
+            'can_delete' => (($open && $c->user_id === $user->id) || $admin) && $c->kind === 'COMMENT' && ! $c->deleted_at,
             'files' => $c->deleted_at ? [] : $c->attachments->map(fn ($f) => $this->file($f))->values(),
         ];
 
@@ -440,7 +459,8 @@ class ImportantRequestController extends Controller
 
         return [
             'id' => $r->id, 'number' => $r->number, 'title' => $r->title, 'priority' => $r->priority,
-            'status' => $r->status, 'status_label' => ImportantRequestService::STATUS_LABELS[$r->status] ?? $r->status,
+            'status' => $r->status,
+            'status_label' => $r->status === 'MENUNGGU_REVIEW' && $a->contains('status', 'ON_REVIEW') ? 'On Review' : (ImportantRequestService::STATUS_LABELS[$r->status] ?? $r->status),
             'deadline' => $r->deadline, 'overdue' => $r->isOverdue(),
             'creator' => $r->creator?->name, 'created_by' => $r->created_by, 'created_at' => $r->created_at, 'updated_at' => $r->updated_at,
             'assignee_names' => $a->map(fn ($x) => $x->user?->name)->filter()->values(),

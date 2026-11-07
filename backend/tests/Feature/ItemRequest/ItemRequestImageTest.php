@@ -45,7 +45,7 @@ class ItemRequestImageTest extends TestCase
         $link = $this->postJson('/api/item-request-links', ['label' => 'Umum', 'form_type' => 'UMUM'])->assertCreated()->json('data');
         app('auth')->forgetGuards();
 
-        $sent = $this->postJson("/api/public/item-request/{$link['token']}", ['requester_name' => 'ANDI', 'images' => [self::PNG],
+        $sent = $this->postJson("/api/public/item-request/{$link['token']}", ['session' => $this->linkSession($link['token'], 'ANDI'), 'images' => [self::PNG],
             'lines' => [['deskripsi_barang' => 'lampu', 'qty' => 2]]])->assertCreated()->json('data');
         $this->getJson("/api/public/request-status?tokens={$sent['track_token']}")->assertJsonPath('data.0.images', ['img1']);
         $this->get("/api/public/request-status/image?token={$sent['track_token']}&slot=img1")->assertOk();

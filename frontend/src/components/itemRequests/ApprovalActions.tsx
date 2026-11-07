@@ -1,8 +1,9 @@
-import { useRef, useState } from 'react'
+import { useRef, useState, useCallback } from 'react'
+import { QrScanner } from '@/components/itemRequests/QrScanner'
 import { Link } from 'react-router-dom'
-import { Camera, CheckCircle2, HandHelping, Loader2, PackageCheck, RefreshCw, Undo2, XCircle } from 'lucide-react'
+import { Camera, CheckCircle2, HandHelping, Loader2, PackageCheck, RefreshCw, Undo2, XCircle, ScanLine } from 'lucide-react'
 import { apiErrorMessage } from '@/lib/api'
-import { STAGE_INFO, isBypass, useDecideRequest, useHandover, type Fulfillment, type ItemRequestStatus } from '@/features/itemRequests/api'
+import { STAGE_INFO, isBypass, useDecideRequest, useHandover, type Fulfillment, type ItemRequestStatus, type RequestProxy } from '@/features/itemRequests/api'
 import { photoToDataUrl } from '@/components/tracking/EvidencePhoto'
 import { SignaturePad } from '@/components/itemRequests/SignaturePad'
 import { Button } from '@/components/ui/button'
@@ -20,6 +21,7 @@ interface Target {
   requester_name: string | null
   can_approve: boolean
   can_handover: boolean
+  proxy?: RequestProxy | null
   can_fulfill?: boolean
   approve_as?: 'MANAGER' | 'DIREKTUR' | 'GUDANG' | null
   /** the NPBG waiting for its serah terima (detail and Approval page): its quantities are fixed in the dialog */
@@ -47,26 +49,26 @@ function readDraft(f: OpenFulfillment, d?: HandoverDraft): { handed: Record<numb
   for (const l of f.lines) {
     const raw = d?.qty[l.id]
     const v = raw === undefined ? l.qty : parse(raw)
-    if (!Number.isFinite(v) || v < 0 || v > l.qty) return { error: `Jumlah ${l.deskripsi ?? ''}: 0 sampai ${fmtQty(l.qty)}.` }
+    if (!Number.isFinite(v) || v < 0 || v > l.qty) return { error: `Quantity of ${l.deskripsi ?? ''}: 0 to ${fmtQty(l.qty)}.` }
     handed[l.id] = v
     if (v < l.qty) {
       // the NPBG was made from stock that is there: handing over less needs a reason
       const why = (d?.reason?.[l.id] ?? '').trim()
-      if (!why) return { error: `Isi alasan jumlah ${l.deskripsi ?? ''} dikurangi.` }
+      if (!why) return { error: `Fill in why the quantity of ${l.deskripsi ?? ''} is reduced.` }
       reasons[l.id] = why
       if (d?.drop[l.id]) drop.push(l.id)
     }
   }
-  if (Object.values(handed).every((v) => v <= 0)) return { error: 'Isi jumlah barang yang diserahkan.' }
+  if (Object.values(handed).every((v) => v <= 0)) return { error: 'Fill in the quantity handed over.' }
   return { handed, drop, reasons }
 }
 
 /**
- * Gudang fixes here how much of the prepared NPBG is handed over, before the serah terima
- * (less than prepared goes back to stock; its rest is either still owed or closed).
+ * What the serah terima hands over: the whole prepared NPBG (Gudang never hands over part of it).
+ * value / onChange are kept for the callers; there is nothing to change any more.
  */
-export function HandoverQty({ f, value, onChange, stock, images }: {
-  f: OpenFulfillment; value: HandoverDraft; onChange: (d: HandoverDraft) => void
+export function HandoverQty({ f, stock, images }: {
+  f: OpenFulfillment; value?: HandoverDraft; onChange?: (d: HandoverDraft) => void
   /** request line id → the item's stock (Master Produk; it drops when the serah terima is done) */
   stock?: Record<number, number | null | undefined>
   /** the requester's images per item: Gudang sees what was asked */
@@ -75,53 +77,26 @@ export function HandoverQty({ f, value, onChange, stock, images }: {
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
-        <thead className="whitespace-nowrap bg-muted/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
+        <thead className="whitespace-nowrap bg-muted/40 text-left text-xs text-muted-foreground">
           <tr>
-            <th className="px-4 py-2 font-medium">Barang</th>
-            {stock && <th className="px-3 py-2 text-right font-medium" title="Stok Master Produk, berkurang saat serah terima selesai">Stok</th>}
-            <th className="px-3 py-2 text-right font-medium">Disetujui</th>
-            <th className="px-4 py-2 text-right font-medium">Diserahkan</th>
-            {images && <th className="px-4 py-2 text-right font-medium">Gambar</th>}
+            <th className="px-4 py-2 font-medium">Item</th>
+            {stock && <th className="px-3 py-2 text-right font-medium" title="Product Master stock, reduced when handover finishes">Stock</th>}
+            <th className="px-4 py-2 text-right font-medium">Handed Over</th>
+            {images && <th className="px-4 py-2 text-right font-medium">Image</th>}
           </tr>
         </thead>
         <tbody className="divide-y">
           {f.lines.map((l) => {
-            // default: the approved NPBG quantity; it can only be lowered
-            const raw = value.qty[l.id] ?? String(l.qty)
-            const v = parse(raw)
-            const bad = !Number.isFinite(v) || v < 0 || v > l.qty
-            const short = !bad && v < l.qty ? Math.round((l.qty - v) * 100) / 100 : 0
+            // Gudang hands over the whole NPBG it prepared — never part of it (no quantity to change)
             return (
               <tr key={l.id} className="align-top">
                 <td className="px-4 py-2.5"><div className="font-medium">{l.deskripsi}</div></td>
                 {stock && (
-                  <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums" title="Stok Master Produk, berkurang saat serah terima selesai">
+                  <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums" title="Product Master stock, reduced when handover finishes">
                     {stock[l.line_id] != null ? <span className={(stock[l.line_id] ?? 0) > 0 ? 'text-emerald-700' : 'text-muted-foreground'}>{fmtQty(Number(stock[l.line_id]))} {l.satuan ?? ''}</span> : <span className="text-muted-foreground">?</span>}
                   </td>
                 )}
-                <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums">{fmtQty(l.qty)} {l.satuan ?? ''}</td>
-                <td className="px-4 py-2 text-right">
-                  <div className="flex items-center justify-end gap-1.5">
-                    <Input className={'h-8 w-24 text-right tabular-nums' + (bad ? ' border-destructive' : '')} inputMode="decimal" aria-label={`Diserahkan ${l.deskripsi ?? ''}`}
-                      value={raw} onChange={(e) => onChange({ ...value, qty: { ...value.qty, [l.id]: e.target.value } })} />
-                    <span className="w-12 text-left text-xs text-muted-foreground">{l.satuan ?? ''}</span>
-                  </div>
-                  {bad && <div className="mt-1 text-xs text-destructive">Maksimal {fmtQty(l.qty)}</div>}
-                  {short > 0 && (
-                    // less than the approved NPBG while the stock was there: why (required)
-                    <Input className={'ml-auto mt-1.5 h-8 w-full min-w-[12rem] max-w-xs text-xs' + (!(value.reason?.[l.id] ?? '').trim() ? ' border-amber-400' : '')}
-                      maxLength={200} placeholder={`Alasan dikurangi ${fmtQty(short)} (wajib)`} aria-label={`Alasan ${l.deskripsi ?? ''} dikurangi`}
-                      value={value.reason?.[l.id] ?? ''} onChange={(e) => onChange({ ...value, reason: { ...value.reason, [l.id]: e.target.value } })} />
-                  )}
-                  {short > 0 && (
-                    // the rest goes back to stock; still owed unless closed
-                    <label className="mt-1 inline-flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground">
-                      <input type="checkbox" className="size-3.5 accent-primary" checked={!!value.drop[l.id]}
-                        onChange={(e) => onChange({ ...value, drop: { ...value.drop, [l.id]: e.target.checked } })} />
-                      Sisa {fmtQty(short)} tidak dibutuhkan lagi
-                    </label>
-                  )}
-                </td>
+                <td className="whitespace-nowrap px-4 py-2.5 text-right tabular-nums"><b>{fmtQty(l.qty)}</b> <span className="text-xs text-muted-foreground">{l.satuan ?? ''}</span></td>
                 {/* the requester's images of this item, rightmost */}
                 {images && <td className="px-4 py-2.5"><LineImagesCell requestId={images.requestId} lineId={l.line_id} slots={images.byLine[l.line_id]} /></td>}
               </tr>
@@ -159,7 +134,7 @@ export function ApprovalActions({ req, onDone, onPrepare, handover }: {
 
   const send = (action: 'APPROVE' | 'REJECT' | 'RETURN') => {
     setErr(null)
-    if (action !== 'APPROVE' && !reason.trim()) return invalidTo(setErr, action === 'REJECT' ? 'Alasan penolakan wajib diisi.' : 'Catatan wajib diisi: tulis kenapa direvisi.')
+    if (action !== 'APPROVE' && !reason.trim()) return invalidTo(setErr, action === 'REJECT' ? 'The rejection reason is required.' : 'A note is required: write why it is revised.')
     decide.mutate({ action, note: action === 'APPROVE' ? (approveNote.trim() || null) : reason.trim() }, {
       onSuccess: () => { setMode(null); setReason(''); setApproveNote(''); onDone?.() },
       onError: (e) => setErr(apiErrorMessage(e)),
@@ -175,7 +150,7 @@ export function ApprovalActions({ req, onDone, onPrepare, handover }: {
     return (
       <>
         <div className="flex flex-col gap-1 sm:items-end">
-          <Button className="w-full sm:w-auto" disabled={!!draftError} onClick={() => setHanding(true)}><HandHelping className="size-4" /> Serah terima</Button>
+          <Button className="w-full sm:w-auto" disabled={!!draftError} onClick={() => setHanding(true)}><HandHelping className="size-4" /> Handover</Button>
           {draftError && <span className="text-xs text-destructive">{draftError}</span>}
         </div>
         {/* mounted only while open: every serah terima starts empty */}
@@ -188,29 +163,29 @@ export function ApprovalActions({ req, onDone, onPrepare, handover }: {
   // Gudang: goods in stock but no NPBG yet, give them from the stock first
   if (req.can_fulfill && req.status === 'DISIAPKAN') {
     return onPrepare
-      ? <Button className="w-full sm:w-auto" onClick={onPrepare}><PackageCheck className="size-4" /> Siapkan barang</Button>
-      : <Button asChild className="w-full sm:w-auto"><Link to={`/item-requests/${req.id}#siapkan`}><PackageCheck className="size-4" /> Siapkan barang</Link></Button>
+      ? <Button className="w-full sm:w-auto" onClick={onPrepare}><PackageCheck className="size-4" /> Prepare items</Button>
+      : <Button asChild className="w-full sm:w-auto"><Link to={`/item-requests/${req.id}#siapkan`}><PackageCheck className="size-4" /> Prepare items</Link></Button>
   }
 
   if (req.can_fulfill) {
     return onPrepare
-      ? <Button className="w-full sm:w-auto" onClick={onPrepare}><PackageCheck className="size-4" /> Siapkan barang</Button>
-      : <Button asChild className="w-full sm:w-auto"><Link to={`/item-requests/${req.id}#siapkan`}><PackageCheck className="size-4" /> Siapkan barang</Link></Button>
+      ? <Button className="w-full sm:w-auto" onClick={onPrepare}><PackageCheck className="size-4" /> Prepare items</Button>
+      : <Button asChild className="w-full sm:w-auto"><Link to={`/item-requests/${req.id}#siapkan`}><PackageCheck className="size-4" /> Prepare items</Link></Button>
   }
 
   if (mode) {
     const reject = mode === 'REJECT'
     return (
       <div className={reject ? 'w-full space-y-2 rounded-lg border border-red-200 bg-red-50/60 p-3' : 'w-full space-y-2 rounded-lg border border-orange-200 bg-orange-50/60 p-3'}>
-        <Label htmlFor={`rj-${req.id}`} className={reject ? 'text-red-800' : 'text-orange-800'}>{reject ? 'Alasan ditolak *' : 'Kenapa direvisi? *'}</Label>
+        <Label htmlFor={`rj-${req.id}`} className={reject ? 'text-red-800' : 'text-orange-800'}>{reject ? 'Rejection reason *' : 'Why revise? *'}</Label>
         <Textarea id={`rj-${req.id}`} autoFocus rows={2} maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)}
-          placeholder={reject ? 'mis. Pakai stok lama dulu' : 'mis. Cek ulang barang / jumlahnya'} />
+          placeholder={reject ? 'e.g. Use old stock first' : 'e.g. Recheck the items / quantity'} />
         {err && <p className="text-sm text-destructive">{err}</p>}
         <div className="flex flex-wrap justify-end gap-2">
-          <Button variant="ghost" size="sm" onClick={() => { setMode(null); setErr(null) }} disabled={decide.isPending}>Batal</Button>
+          <Button variant="ghost" size="sm" onClick={() => { setMode(null); setErr(null) }} disabled={decide.isPending}>Cancel</Button>
           <Button size="sm" className={reject ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-orange-600 text-white hover:bg-orange-700'} onClick={() => send(mode)} disabled={decide.isPending}>
             {decide.isPending ? <Loader2 className="size-4 animate-spin" /> : reject ? <XCircle className="size-4" /> : <Undo2 className="size-4" />}
-            {reject ? 'Tolak request' : 'Kirim revisi ke admin'}
+            {reject ? 'Reject request' : 'Send revision to admin'}
           </Button>
         </div>
       </div>
@@ -220,19 +195,19 @@ export function ApprovalActions({ req, onDone, onPrepare, handover }: {
   return (
     <div className="w-full space-y-1.5 sm:w-auto">
       <Textarea rows={2} maxLength={500} value={approveNote} onChange={(e) => setApproveNote(e.target.value)} className="min-h-0 text-sm"
-        placeholder="Catatan untuk admin gudang & peminta (opsional)" aria-label="Catatan approval" />
+        placeholder="Notes for the warehouse admin & requester (optional)" aria-label="Approval notes" />
       <div className="flex flex-wrap gap-2">
         <Button variant="outline" className="flex-1 border-red-300 text-red-700 hover:bg-red-50 hover:text-red-800 sm:flex-none" onClick={() => setMode('REJECT')} disabled={decide.isPending}>
-          <XCircle className="size-4" /> Tolak
+          <XCircle className="size-4" /> Reject
         </Button>
         <Button variant="outline" className="flex-1 sm:flex-none" onClick={() => setMode('RETURN')} disabled={decide.isPending}>
-          <Undo2 className="size-4" /> Revisi
+          <Undo2 className="size-4" /> Revise
         </Button>
-        <Button className="flex-[2] bg-emerald-600 text-white hover:bg-emerald-700 sm:flex-none" onClick={() => send('APPROVE')} disabled={decide.isPending}>
-          {decide.isPending ? <Loader2 className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />} {isBypass(req) ? 'Approve sebagai Direktur' : info.approve}
+        <Button className="flex-[2] sm:flex-none" onClick={() => send('APPROVE')} disabled={decide.isPending}>
+          {decide.isPending ? <Loader2 className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />} {isBypass(req) ? 'Approve as Director' : info.approve}
         </Button>
       </div>
-      {isBypass(req) && <p className="text-xs text-muted-foreground">Manager ikut disetujui otomatis.</p>}
+      {isBypass(req) && <p className="text-xs text-muted-foreground">The Manager is approved automatically.</p>}
       {err && <p className="text-sm text-destructive">{err}</p>}
     </div>
   )
@@ -258,6 +233,12 @@ export function HandoverDialog({ open, onClose, req, onDone, fulfillment, handed
   const [editingReceiver, setEditingReceiver] = useState(!req.requester_name)
   const [signature, setSignature] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
+  // the requester named a representative: they pick up with the requester's one-time code (scanned)
+  const [byProxy, setByProxy] = useState(!!req.proxy)
+  const [code, setCode] = useState('')
+  const [scanning, setScanning] = useState(false)
+  const scanned = useCallback((text: string) => { setCode(text); setScanning(false) }, [])
+  const digits = (code.startsWith('STOCKWISE-WAKIL:') ? code.slice(16) : code).replace(/\D/g, '')
 
   const pick = async (f: File | undefined) => {
     if (!f) return
@@ -266,14 +247,16 @@ export function HandoverDialog({ open, onClose, req, onDone, fulfillment, handed
     try { setPhoto(await photoToDataUrl(f, 1600)) } catch (e) { setErr((e as Error).message) } finally { setReading(false) }
   }
 
-  const ready = !!photo && !!signature && receiver.trim() !== ''
+  const ready = !!photo && !!signature && (byProxy ? digits.length === 6 : receiver.trim() !== '')
   const qtyOf: Record<number, number> = Object.fromEntries((fulfillment?.lines ?? []).map((l) => [l.id, fixed?.[l.id] ?? l.qty]))
   const submit = () => {
     setErr(null)
-    if (!photo) return invalidTo(setErr, 'Ambil foto bukti serah terima dulu.')
-    if (!receiver.trim()) return invalidTo(setErr, 'Isi nama penerima.')
-    if (!signature) return invalidTo(setErr, 'Minta penerima tanda tangan.')
-    handover.mutate({ photo, signature, received_by: receiver.trim(), handed: fulfillment ? qtyOf : undefined, drop: drop?.length ? drop : undefined, reasons: reasons && Object.keys(reasons).length ? reasons : undefined }, {
+    if (!photo) return invalidTo(setErr, 'Take the handover proof photo first.')
+    if (byProxy && digits.length !== 6) return invalidTo(setErr, 'Scan the representative QR or type the code (6 digits).')
+    if (!byProxy && !receiver.trim()) return invalidTo(setErr, 'Fill in the recipient name.')
+    if (!signature) return invalidTo(setErr, 'Ask the recipient to sign.')
+    handover.mutate({ photo, signature, received_by: byProxy ? (req.proxy?.name ?? 'Wakil') : receiver.trim(), proxy_code: byProxy ? digits : undefined,
+      handed: fulfillment ? qtyOf : undefined, drop: drop?.length ? drop : undefined, reasons: reasons && Object.keys(reasons).length ? reasons : undefined }, {
       onSuccess: () => { onClose(); onDone?.() },
       onError: (e) => setErr(apiErrorMessage(e)),
     })
@@ -281,40 +264,67 @@ export function HandoverDialog({ open, onClose, req, onDone, fulfillment, handed
 
   let n = 0
   return (
-    <Modal open={open} onClose={onClose} title="Serah terima" description={fulfillment ? `${req.number} · NPBG ${fulfillment.no_npbg ?? ''}${fulfillment.seq > 1 ? ` (#${fulfillment.seq})` : ''} · ${fulfillment.lines.filter((l) => (qtyOf[l.id] ?? 0) > 0).length} barang sesuai tabel` : req.number} className="max-w-lg"
+    <Modal open={open} onClose={onClose} title="Handover" description={fulfillment ? `${req.number} · Delivery Order ${fulfillment.no_npbg ?? ''}${fulfillment.seq > 1 ? ` (#${fulfillment.seq})` : ''} · ${fulfillment.lines.filter((l) => (qtyOf[l.id] ?? 0) > 0).length} items as in the table` : req.number} className="max-w-lg"
       footer={
         <Button className="w-full" size="lg" onClick={submit} disabled={handover.isPending || !ready}>
           {handover.isPending ? <Loader2 className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />}
-          {handover.isPending ? 'Menyimpan…' : 'Selesai'}
+          {handover.isPending ? 'Saving…' : 'Done'}
         </Button>
       }>
       <div className="space-y-5">
+        {req.proxy && (
+          // the requester named a representative: who comes, and their code checked here
+          <section className="space-y-2">
+            <StepTitle n={++n} done={!byProxy || digits.length === 6}>Who is collecting?</StepTitle>
+            <div className="grid grid-cols-2 gap-1 rounded-lg border bg-muted/40 p-1" role="radiogroup" aria-label="Collector">
+              {([[false, `${req.requester_name ?? 'Requester'} yourself`], [true, `Representative: ${req.proxy.name}`]] as const).map(([v, label]) => (
+                <button key={String(v)} type="button" role="radio" aria-checked={byProxy === v} onClick={() => { setByProxy(v); setErr(null) }}
+                  className={byProxy === v ? 'truncate rounded-md bg-card px-2 py-1.5 text-sm font-medium ring-1 ring-border' : 'truncate rounded-md px-2 py-1.5 text-sm text-muted-foreground'}>{label}</button>
+              ))}
+            </div>
+            {byProxy && (digits.length === 6 && !scanning ? (
+              <div className="flex items-center justify-between gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm">
+                <span className="flex items-center gap-2 text-emerald-800"><ScanLine className="size-4" /> Code <b className=" tracking-widest">{digits}</b></span>
+                <button type="button" className="text-xs text-primary hover:underline" onClick={() => { setCode(''); setScanning(true) }}>Scan again</button>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {scanning ? <QrScanner onResult={scanned} /> : (
+                  <Button type="button" variant="outline" className="w-full" onClick={() => setScanning(true)}><ScanLine className="size-4" /> Scan representative QR</Button>
+                )}
+                <Input inputMode="numeric" maxLength={6} value={digits} onChange={(e) => setCode(e.target.value)} placeholder="or type the 6-digit code" aria-label="Representative code" className="text-center tracking-[0.3em]" />
+              </div>
+            ))}
+          </section>
+        )}
         <section className="space-y-2">
-          <StepTitle n={++n} done={!!photo}>Foto bukti</StepTitle>
+          <StepTitle n={++n} done={!!photo}>Proof photo</StepTitle>
           <input ref={file} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => { pick(e.target.files?.[0]); e.target.value = '' }} />
           {photo ? (
             <div className="relative overflow-hidden rounded-lg border">
-              <img src={photo} alt="Bukti serah terima" className="max-h-64 w-full bg-muted object-contain" />
-              <Button type="button" size="sm" variant="outline" className="absolute right-2 top-2 bg-card/90" onClick={() => file.current?.click()}><RefreshCw className="size-4" /> Ganti</Button>
+              <img src={photo} alt="Handover proof" className="max-h-64 w-full bg-muted object-contain" />
+              <Button type="button" size="sm" variant="outline" className="absolute right-2 top-2 bg-card/90" onClick={() => file.current?.click()}><RefreshCw className="size-4" /> Change</Button>
             </div>
           ) : (
             <button type="button" onClick={() => file.current?.click()} disabled={reading}
               className="flex w-full flex-col items-center justify-center gap-1.5 rounded-lg border-2 border-dashed px-4 py-8 text-sm text-muted-foreground transition-colors hover:border-primary hover:bg-primary/5 hover:text-primary">
               {reading ? <Loader2 className="size-7 animate-spin" /> : <Camera className="size-7" />}
-              <span className="font-medium">{reading ? 'Memproses…' : 'Ambil foto'}</span>
+              <span className="font-medium">{reading ? 'Processing…' : 'Take photo'}</span>
             </button>
           )}
         </section>
 
         <section className="space-y-2">
-          <StepTitle n={++n} done={!!signature}>Tanda tangan penerima</StepTitle>
+          <StepTitle n={++n} done={!!signature}>Recipient signature</StepTitle>
           {open && <SignaturePad onChange={setSignature} />}
-          {editingReceiver ? (
-            <Input value={receiver} maxLength={150} autoFocus={!req.requester_name} onChange={(e) => setReceiver(e.target.value)} placeholder="Nama penerima" aria-label="Nama penerima" />
+          {byProxy ? (
+            <p className="text-center text-xs text-muted-foreground">Recipient: <span className="font-medium text-foreground">{req.proxy?.name}</span> (representative {req.requester_name})</p>
+          ) : editingReceiver ? (
+            <Input value={receiver} maxLength={150} autoFocus={!req.requester_name} onChange={(e) => setReceiver(e.target.value)} placeholder="Recipient name" aria-label="Recipient name" />
           ) : (
             <p className="text-center text-xs text-muted-foreground">
-              Penerima: <span className="font-medium text-foreground">{receiver}</span>{' '}
-              <button type="button" className="text-primary hover:underline" onClick={() => setEditingReceiver(true)}>ubah</button>
+              Recipient: <span className="font-medium text-foreground">{receiver}</span>{' '}
+              <button type="button" className="text-primary hover:underline" onClick={() => setEditingReceiver(true)}>change</button>
             </p>
           )}
         </section>

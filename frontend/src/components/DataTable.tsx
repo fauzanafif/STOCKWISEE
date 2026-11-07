@@ -38,10 +38,9 @@ export function DataTable<T>({
   rows,
   rowKey,
   isLoading,
-  emptyText = 'Tidak ada data.',
+  emptyText = 'No data.',
   onRowClick,
   containerClassName,
-  stickyHeader,
   footer,
   notes,
   scrollMemoryKey,
@@ -55,36 +54,38 @@ export function DataTable<T>({
     ...columns,
     {
       key: '__note',
-      header: 'Catatan',
+      header: 'Notes',
       cell: (r: T) => <NoteCell entity={notes.entity} rowKey={noteKey(r)} note={noteMap?.[String(noteKey(r))]} />,
     },
   ]
 
   return (
     // Every table scrolls inside itself (fixed height, sticky header); more rows load at its bottom (footer).
-    <div ref={scrollRef} className={cn('max-h-[70vh] overflow-auto rounded-lg border bg-card', containerClassName)}>
-      <table className="w-full text-sm">
-        <thead className={cn('sticky top-0 z-10 border-b text-left', stickyHeader === false ? 'bg-muted/70' : 'bg-muted')}>
+    <div ref={scrollRef} className={cn('max-h-[70vh] overflow-auto rounded-lg border bg-card shadow-[0_1px_2px_rgb(15_23_42/0.05)]', containerClassName)}>
+      <table className="w-full text-[13px]">
+        <thead className={cn('sticky top-0 z-10 border-b text-left', 'bg-slate-100')}>
           <tr>
             {cols.map((c) => (
-              <th key={c.key} className={cn('whitespace-nowrap px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground', c.className)}>
+              <th key={c.key} className={cn('whitespace-nowrap px-3 py-2 text-xs font-semibold text-slate-600', c.className)}>
                 {c.header}
               </th>
             ))}
           </tr>
         </thead>
         <tbody>
-          {loading && (
-            <tr>
-              <td colSpan={cols.length} className="px-3 py-10 text-center text-muted-foreground">
-                Memuat…
-              </td>
+          {/* loading: the rows' shape, not a word */}
+          {loading && Array.from({ length: 6 }, (_, i) => (
+            <tr key={`sk-${i}`} className="border-t" aria-hidden>
+              {cols.map((c) => (
+                <td key={c.key} className="px-3 py-3"><div className="h-3.5 animate-pulse rounded bg-muted" style={{ width: `${45 + ((i * 7 + c.key.length * 5) % 45)}%` }} /></td>
+              ))}
             </tr>
-          )}
+          ))}
+          {loading && <tr className="sr-only"><td>Loading…</td></tr>}
           {!loading && rows.length === 0 && (
             <tr>
-              <td colSpan={cols.length} className="px-3 py-10 text-center text-muted-foreground">
-                {emptyText}
+              <td colSpan={cols.length} className="px-3 py-12 text-center">
+                <span className="text-sm text-muted-foreground">{emptyText}</span>
               </td>
             </tr>
           )}
@@ -92,11 +93,11 @@ export function DataTable<T>({
             rows.map((row) => (
               <tr
                 key={rowKey(row)}
-                className={cn('border-t transition-colors hover:bg-muted/40', onRowClick && 'cursor-pointer')}
+                className={cn('border-t transition-colors hover:bg-primary/[0.04]', onRowClick && 'cursor-pointer')}
                 onClick={() => onRowClick?.(row)}
               >
                 {cols.map((c) => (
-                  <td key={c.key} className={cn('px-3 py-2.5', c.className)}>
+                  <td key={c.key} className={cn('px-3 py-2', c.className)}>
                     {c.cell(row)}
                   </td>
                 ))}

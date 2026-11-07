@@ -51,7 +51,7 @@ export interface Opname {
   first_item?: { code: string; description: string } | null
 }
 
-/** One item line across documents — "Per barang" view (GET /api/stock-opnames/lines). */
+/** One item line across documents — "Per item" view (GET /api/stock-opnames/lines). */
 export interface OpnameLineRow extends OpnameLine {
   unit: string | null
   opname: {
@@ -70,7 +70,7 @@ export interface OpnameListFilters {
   search?: string
   date_from?: string
   date_to?: string
-  /** "Per barang" only: period of the NPBG / PPB counts (date_from/date_to are the opname date) */
+  /** "Per item" only: period of the NPBG / PPB counts (date_from/date_to are the opname date) */
   usage_from?: string
   usage_to?: string
   page?: number
@@ -137,12 +137,12 @@ export function useOpnameMutations(id: number) {
     start: useMutation({
       mutationFn: () => api.post<{ data: Opname }>(`/api/stock-opnames/${id}/start`),
       onSuccess: apply,
-      meta: { successMessage: 'Penghitungan dimulai. Isi jumlah fisik tiap barang.' },
+      meta: { successMessage: 'Counting started. Fill in the physical quantity of each item.' },
     }),
     submit: useMutation({
       mutationFn: () => api.post<{ data: Opname }>(`/api/stock-opnames/${id}/submit`),
       onSuccess: apply,
-      meta: { successMessage: 'Hasil hitung dikirim — menunggu review admin gudang.' },
+      meta: { successMessage: 'Count result sent, waiting for warehouse admin review.' },
     }),
     // saved per row on leaving the field; the row itself shows "Tersimpan" / the error
     count: useMutation({
@@ -155,7 +155,7 @@ export function useOpnameMutations(id: number) {
       mutationFn: (p: { decisions: Array<{ id: number; decision: string }>; note?: string }) =>
         api.post<{ data: Opname }>(`/api/stock-opnames/${id}/review`, p),
       onSuccess: apply,
-      meta: { successMessage: 'Review selesai.' },
+      meta: { successMessage: 'Review finished.' },
     }),
   }
 }

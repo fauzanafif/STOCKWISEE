@@ -10,15 +10,15 @@ import { cn } from '@/lib/utils'
 import { confirmDialog } from '@/components/ui/confirm'
 
 export const ACCESS: Record<ShareAccess, { label: string; hint: string; icon: React.ReactNode }> = {
-  VIEW: { label: 'Lihat', hint: 'hanya melihat, cetak & PDF', icon: <Eye className="size-4" /> },
- EDIT: { label: 'Edit', hint: 'isi & ubah transaksi, upload foto / file tanpa hapus', icon: <Pencil className="size-4" /> },
-  FULL: { label: 'Full akses', hint: 'juga hapus, dan buat kartu baru', icon: <ShieldCheck className="size-4" /> },
+  VIEW: { label: 'View', hint: 'view, print & PDF only', icon: <Eye className="size-4" /> },
+ EDIT: { label: 'Edit', hint: 'fill & change transactions, upload photos / files without deleting', icon: <Pencil className="size-4" /> },
+  FULL: { label: 'Full access', hint: 'also delete, and create a new card', icon: <ShieldCheck className="size-4" /> },
 }
 
 /** Opened on the server itself: a link made here points at localhost and won't open elsewhere. */
 const LOCAL = ['localhost', '127.0.0.1', '::1', '[::1]'].includes(window.location.hostname)
 
-const when = (d: string | null) => (d ? new Date(d).toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'belum pernah')
+const when = (d: string | null) => (d ? new Date(d).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'never')
 
 async function copy(text: string): Promise<boolean> {
   try {
@@ -38,10 +38,10 @@ async function copy(text: string): Promise<boolean> {
 
 function AccessPicker({ value, onChange }: { value: ShareAccess; onChange: (a: ShareAccess) => void }) {
   return (
-    <div className="grid grid-cols-3 gap-1 rounded-lg border bg-muted/40 p-1" role="radiogroup" aria-label="Akses">
+    <div className="grid grid-cols-3 gap-1 rounded-lg border bg-muted/40 p-1" role="radiogroup" aria-label="Access">
       {(Object.keys(ACCESS) as ShareAccess[]).map((a) => (
         <button key={a} type="button" role="radio" aria-checked={value === a} onClick={() => onChange(a)}
-          className={cn('flex items-center justify-center gap-1.5 rounded-md px-2 py-2 text-sm font-medium', value === a ? 'bg-card text-primary shadow-sm' : 'text-muted-foreground hover:text-foreground')}>
+          className={cn('flex items-center justify-center gap-1.5 rounded-md px-2 py-2 text-sm font-medium', value === a ? 'bg-card text-primary' : 'text-muted-foreground hover:text-foreground')}>
           {ACCESS[a].icon}{ACCESS[a].label}
         </button>
       ))}
@@ -57,19 +57,19 @@ function LinkRow({ link, projectId }: { link: StockCardShareLink; projectId: num
     <li className="space-y-2 py-3">
       <div className="flex items-center justify-between gap-2">
         <div className="min-w-0">
-          <div className="truncate text-sm font-medium">{link.label || 'Link tanpa nama'}</div>
- <div className="text-xs text-muted-foreground">dibuat {link.created_by ?? ''} · dibuka {when(link.last_used_at)}</div>
+          <div className="truncate text-sm font-medium">{link.label || 'Unnamed link'}</div>
+ <div className="text-xs text-muted-foreground">created {link.created_by ?? ''} · opened {when(link.last_used_at)}</div>
         </div>
-        <button type="button" className="rounded p-2 text-muted-foreground hover:text-destructive" aria-label="Hapus link"
-          onClick={async () => { if ((await confirmDialog('Hapus link ini? Orang yang memegangnya tidak bisa membuka lagi.'))) m.remove.mutate(link.id) }}>
+        <button type="button" className="rounded p-2 text-muted-foreground hover:text-destructive" aria-label="Delete link"
+          onClick={async () => { if ((await confirmDialog('Delete this link? People holding it can no longer open it.'))) m.remove.mutate(link.id) }}>
           <Trash2 className="size-4" />
         </button>
       </div>
       <AccessPicker value={link.access} onChange={(access) => m.update.mutate({ id: link.id, access, label: link.label })} />
       <div className="flex gap-2">
-        <Input readOnly value={url} className="h-10 min-w-0 flex-1 font-mono text-xs" onFocus={(e) => e.target.select()} />
+        <Input readOnly value={url} className="h-10 min-w-0 flex-1 text-[13px]" onFocus={(e) => e.target.select()} />
         <Button variant={copied ? 'outline' : 'default'} className="h-10 shrink-0" onClick={async () => { if (await copy(url)) { setCopied(true); setTimeout(() => setCopied(false), 2000) } }}>
-          {copied ? <Check className="size-4" /> : <Copy className="size-4" />} {copied ? 'Tersalin' : 'Salin'}
+          {copied ? <Check className="size-4" /> : <Copy className="size-4" />} {copied ? 'Copied' : 'Copy'}
         </Button>
       </div>
     </li>
@@ -93,35 +93,33 @@ export function ShareLinksModal({ project, open, onClose }: { project: { id: num
   }
 
   return (
-    <Modal open={open} onClose={onClose} title={<span className="inline-flex items-center gap-2"><Link2 className="size-4" />Bagikan link</span>}
- description={<>Proyek <b>{project.name}</b> siapa pun yang memegang link bisa membuka kartu stock proyek ini <b>tanpa login</b>, sesuai aksesnya.</>}>
+    <Modal open={open} onClose={onClose} title={<span className="inline-flex items-center gap-2"><Link2 className="size-4" />Share link</span>}
+ description={<>Project <b>{project.name}</b> anyone holding the link can open the stock cards of this project <b>without login</b>, according to their access.</>}>
       <div className="space-y-4">
         {LOCAL && (
           <p className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
-            STOCKWISE sedang dibuka lewat <b>{window.location.host}</b>, jadi link di bawah hanya bisa dibuka di komputer ini.
-            Untuk dibagikan, buka STOCKWISE lewat alamat jaringannya (mis. <span className="font-mono">http://192.168.x.x:8001</span>) lalu salin link dari sana.
+            STOCKWISE is opened through <b>{window.location.host}</b>, so the link below only opens on this computer. To share it, open STOCKWISE through its network address (e.g. <span className="">http://192.168.x.x:8001</span>) then copy the link from there.
           </p>
         )}
         <div className="space-y-2 rounded-lg border p-3">
-          <div className="text-sm font-medium">Link baru</div>
+          <div className="text-sm font-medium">New link</div>
           <AccessPicker value={access} onChange={setAccess} />
           <p className="text-xs text-muted-foreground">{ACCESS[access].label}: {ACCESS[access].hint}.</p>
           <div className="flex gap-2">
-            <Input className="h-10 min-w-0 flex-1" placeholder="Nama link (opsional), mis. Teknisi lapangan" value={label} onChange={(e) => setLabel(e.target.value)} maxLength={100} />
+            <Input className="h-10 min-w-0 flex-1" placeholder="Link name (optional), e.g. Field technicians" value={label} onChange={(e) => setLabel(e.target.value)} maxLength={100} />
             <Button className="h-10 shrink-0" onClick={create} disabled={m.create.isPending}>
-              {m.create.isPending ? <Loader2 className="size-4 animate-spin" /> : <Link2 className="size-4" />} Buat link
+              {m.create.isPending ? <Loader2 className="size-4 animate-spin" /> : <Link2 className="size-4" />} Create link
             </Button>
           </div>
- {m.create.isSuccess && <p className="text-xs text-emerald-600">Link dibuat dan disalin tinggal tempel (paste) ke WhatsApp / email.</p>}
+ {m.create.isSuccess && <p className="text-xs text-emerald-600">Link created and copied; just paste it into WhatsApp / email.</p>}
           {err && <p className="text-xs text-destructive">{err}</p>}
         </div>
 
         <div>
-          <div className="text-sm font-medium">Link aktif</div>
-          {links.isLoading ? <p className="py-3 text-sm text-muted-foreground">Memuat…</p>
-            : (links.data ?? []).length === 0 ? <p className="py-3 text-sm text-muted-foreground">Belum ada link.</p>
+          <div className="text-sm font-medium">Active link</div>
+          {links.isLoading ? <p className="py-3 text-sm text-muted-foreground">Loading…</p>
+            : (links.data ?? []).length === 0 ? <p className="py-3 text-sm text-muted-foreground">No links yet.</p>
               : <ul className="divide-y">{links.data!.map((l) => <LinkRow key={l.id} link={l} projectId={project.id} />)}</ul>}
-          <p className="pt-1 text-xs text-muted-foreground">Hapus link untuk mencabut aksesnya. Link hanya bisa dibuka dari jaringan yang bisa menjangkau server STOCKWISE.</p>
         </div>
       </div>
     </Modal>

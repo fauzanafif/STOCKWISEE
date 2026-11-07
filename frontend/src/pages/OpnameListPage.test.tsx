@@ -38,10 +38,10 @@ describe('OpnameListPage', () => {
     renderWithProviders(<OpnameListPage />)
 
     expect((await screen.findAllByText('KABEL TIES NYLON 3.6 x 200mm')).length).toBeGreaterThan(0)
-    expect(screen.getByRole('columnheader', { name: 'Qty sebelum' })).toBeInTheDocument()
-    expect(screen.getByRole('columnheader', { name: 'Qty sesudah' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Qty before' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Qty after' })).toBeInTheDocument()
     expect(screen.getAllByText('+4').length).toBeGreaterThan(0)
-    expect(screen.getAllByText('Penyesuaian stok').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Stock adjustment').length).toBeGreaterThan(0)
   })
 
   it('per-document view names the items and how many more', async () => {
@@ -49,7 +49,7 @@ describe('OpnameListPage', () => {
     renderWithProviders(<OpnameListPage />)
 
     await userEvent.click(await screen.findByRole('button', { name: 'Per dokumen' }))
-    expect(await screen.findByText('+2 barang lainnya')).toBeInTheDocument()
+    expect(await screen.findByText('+2 other items')).toBeInTheDocument()
     expect(get).toHaveBeenCalledWith('/api/stock-opnames', expect.objectContaining({ params: expect.objectContaining({ source: 'accurate' }) }))
   })
 
@@ -58,7 +58,7 @@ describe('OpnameListPage', () => {
     renderWithProviders(<OpnameListPage />)
 
     expect((await screen.findAllByText('KABEL TIES NYLON 3.6 x 200mm')).length).toBeGreaterThan(0)
-    expect(screen.queryByText('Qty sebelum')).not.toBeInTheDocument()
-    expect(screen.queryByText('Selisih')).not.toBeInTheDocument()
+    expect(screen.queryByText('Qty before')).not.toBeInTheDocument()
+    expect(screen.queryByText('Difference')).not.toBeInTheDocument()
   })
 })

@@ -23,7 +23,7 @@ export async function downloadSvgAsPng(svg: SVGSVGElement, filename: string): Pr
     const img = new Image()
     await new Promise<void>((resolve, reject) => {
       img.onload = () => resolve()
-      img.onerror = () => reject(new Error('Gagal memuat grafik untuk diunduh.'))
+      img.onerror = () => reject(new Error('Failed to load the chart for download.'))
       img.src = svgUrl
     })
 
@@ -84,7 +84,7 @@ export function ChartCard({
         {hasChart && (
           <button
             type="button"
-            title="Unduh grafik (PNG)"
+            title="Download chart (PNG)"
             onClick={download}
             className="shrink-0 rounded p-1 text-muted-foreground hover:bg-muted hover:text-primary print:hidden"
           >
@@ -96,7 +96,7 @@ export function ChartCard({
         {empty ? (
           <div className="flex h-[180px] flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
             <Info className="size-5" />
-            Tidak ada data untuk ditampilkan.
+            No data to show.
           </div>
         ) : children}
       </CardContent>

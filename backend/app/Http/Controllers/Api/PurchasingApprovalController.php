@@ -49,8 +49,9 @@ class PurchasingApprovalController extends Controller
         if ($user->hasPermission(PurchaseOrderService::DIRECTOR)) {
             $last = DB::table(PurchaseOrderService::LOG.' as a')->whereRaw('a.id = (select max(b.id) from '.PurchaseOrderService::LOG.' b where b.purchase_order_id = a.purchase_order_id)')
                 ->where('a.action', 'DIAJUKAN')->pluck('a.purchase_order_id');
-            foreach (PurchaseOrder::with('vendor:id,name')->withCount('items')->whereIn('id', $last)->where('status', 'DRAFT')->whereNull('accurate_po_id')->orderBy('id')->get() as $p) {
+            foreach (PurchaseOrder::with('vendor:id,name', 'items.quotes.vendor:id,name')->withCount('items')->whereIn('id', $last)->where('status', 'DRAFT')->whereNull('accurate_po_id')->orderBy('id')->get() as $p) {
                 $po[] = ['id' => $p->id, 'number' => $p->number, 'vendor' => $p->vendor?->name, 'total' => (float) $p->total, 'items_count' => $p->items_count,
+                    'off_pick' => $p->items->filter(fn ($l) => \App\Services\PoDraftService::directorPick($l, $p->vendor_id)['status'] === 'BUKAN')->count(),
                     'from_ppb' => $p->from_ppb_approval, 'date' => $p->date?->toDateString()];
             }
         }

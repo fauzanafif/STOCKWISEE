@@ -35,7 +35,8 @@ class PpbDraftController extends Controller
      */
     public function lines(Request $request): JsonResponse
     {
-        $q = PpbDraftLine::query()->whereNull('ppb_id')
+        // To do: what is not waiting in a saved draft
+        $q = PpbDraftLine::query()->whereNull('ppb_id')->whereNull('saved_draft_id')
             ->whereHas('draft', fn ($d) => $d->where('status', 'DRAFT')->when($request->filled('source'), fn ($x) => $x->where('source', strtoupper((string) $request->input('source')))))
             ->with(['draft:id,number,source,item_request_id,divisi,tgl_diperlukan,peminta,created_at,created_by', 'draft.creator:id,name',
                 'draft.itemRequest:id,number,requester_name,divisi,needed_date,urgency', 'item.snapshot:item_id,available,stock_known']);
@@ -97,6 +98,93 @@ class PpbDraftController extends Controller
         $this->service->removeLine($line);
 
         return response()->json(['data' => ['id' => $line->id, 'removed' => true]]);
+    }
+
+    /** GET /ppb-saved-drafts — items picked for a Purchase Request, kept before asking for approval. */
+    public function savedIndex(): JsonResponse
+    {
+        $rows = \App\Models\PpbSavedDraft::with(['creator:id,name', 'openLines.item.snapshot:item_id,available,stock_known'])->whereHas('openLines')->orderByDesc('updated_at')->get();
+
+        return response()->json(['data' => $rows->map(fn ($d) => [
+            'id' => $d->id, 'name' => $d->name, 'no_ppb' => $d->no_ppb, 'tgl_ppb' => $d->tgl_ppb?->toDateString(), 'tgl_diperlukan' => $d->tgl_diperlukan?->toDateString(),
+            'divisi' => $d->divisi, 'keterangan' => $d->keterangan, 'created_by' => $d->creator?->name, 'updated_at' => $d->updated_at?->copy()->timezone(config('app.timezone'))->toIso8601String(),
+            'lines' => $d->openLines->map(fn (PpbDraftLine $l) => ['id' => $l->id, 'kode_barang' => $l->kode_barang, 'deskripsi_barang' => $l->deskripsi_barang, 'qty' => $l->qty, 'satuan' => $l->satuan,
+                'available' => $l->item?->snapshot?->stock_known ? (float) $l->item->snapshot->available : null])->values(),
+        ])->values()]);
+    }
+
+    private function savedHeader(Request $request, array $extra = []): array
+    {
+        return $request->validate($extra + [
+            'name' => ['nullable', 'string', 'max:150'], 'no_ppb' => ['nullable', 'string', 'max:60'], 'tgl_ppb' => ['nullable', 'date'],
+            'tgl_diperlukan' => ['nullable', 'date'], 'divisi' => ['nullable', 'string', 'max:30'], 'keterangan' => ['nullable', 'string', 'max:2000'],
+        ]);
+    }
+
+    /** POST /ppb-saved-drafts {line_ids, name?, no_ppb?, ...} — the items leave To do and wait here. Nobody is asked yet. */
+    public function savedStore(Request $request): JsonResponse
+    {
+        $data = $this->savedHeader($request, ['line_ids' => ['required', 'array', 'min:1', 'max:200'], 'line_ids.*' => ['integer']]);
+        $ids = array_values(array_unique(array_map('intval', $data['line_ids'])));
+        unset($data['line_ids']);
+        $saved = \Illuminate\Support\Facades\DB::transaction(function () use ($data, $ids, $request) {
+            $lines = PpbDraftLine::with('draft:id,status')->whereIn('id', $ids)->lockForUpdate()->get();
+            if ($lines->count() !== count($ids) || $lines->contains(fn ($l) => $l->ppb_id !== null || $l->saved_draft_id !== null || $l->draft?->status !== 'DRAFT')) {
+                throw \Illuminate\Validation\ValidationException::withMessages(['line_ids' => 'Sebagian barang sudah di draft lain, sudah diajukan, atau dibatalkan. Muat ulang daftar.']);
+            }
+            $saved = \App\Models\PpbSavedDraft::create($data + ['created_by' => $request->user()->id]);
+            PpbDraftLine::whereIn('id', $ids)->update(['saved_draft_id' => $saved->id]);
+
+            return $saved;
+        });
+
+        return response()->json(['data' => ['id' => $saved->id]], 201);
+    }
+
+    public function savedUpdate(Request $request, \App\Models\PpbSavedDraft $saved): JsonResponse
+    {
+        $saved->update($this->savedHeader($request));
+
+        return response()->json(['data' => ['id' => $saved->id]]);
+    }
+
+    /** POST /ppb-saved-drafts/{saved}/submit {no_ppb, tgl_ppb, ...} — one Purchase Request, and the usual approval begins. */
+    public function savedSubmit(Request $request, \App\Models\PpbSavedDraft $saved): JsonResponse
+    {
+        $data = $request->validate([
+            'no_ppb' => ['required', 'string', 'max:60'], 'tgl_ppb' => ['required', 'date'], 'divisi' => ['nullable', 'string', 'max:30'],
+            'tgl_diperlukan' => ['nullable', 'date'], 'keterangan' => ['nullable', 'string', 'max:2000'],
+        ]);
+        $ids = $saved->openLines()->pluck('id')->all();
+        if ($ids === []) {
+            throw \Illuminate\Validation\ValidationException::withMessages(['line_ids' => 'Draft ini sudah tidak punya barang.']);
+        }
+        $data += ['divisi' => $saved->divisi, 'tgl_diperlukan' => $saved->tgl_diperlukan?->toDateString(), 'keterangan' => $saved->keterangan];
+        $made = $this->service->submitLines($request->user(), $ids, $data);
+        $saved->delete();
+
+        return response()->json(['data' => ['no_ppb' => trim($data['no_ppb']), 'ppb_id' => $made[0] ?? null, 'lines' => count($made)]], 201);
+    }
+
+    /** DELETE /ppb-saved-drafts/{saved} — every item back to To do; nothing is lost. */
+    public function savedDestroy(\App\Models\PpbSavedDraft $saved): JsonResponse
+    {
+        PpbDraftLine::where('saved_draft_id', $saved->id)->update(['saved_draft_id' => null]);
+        $saved->delete();
+
+        return response()->json(['data' => ['deleted' => true]]);
+    }
+
+    /** DELETE /ppb-saved-drafts/{saved}/lines/{line} — one item back to To do; the last one takes the empty draft with it. */
+    public function savedRelease(\App\Models\PpbSavedDraft $saved, PpbDraftLine $line): JsonResponse
+    {
+        abort_unless($line->saved_draft_id === $saved->id, 404);
+        $line->update(['saved_draft_id' => null]);
+        if (! $saved->openLines()->exists()) {
+            $saved->delete();
+        }
+
+        return response()->json(['data' => ['released' => true]]);
     }
 
     /** POST /ppb-drafts {items: [{item_id, qty?}]} — Restock: a new draft from the picked items. */

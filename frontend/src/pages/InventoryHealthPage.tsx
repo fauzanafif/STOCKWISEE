@@ -32,29 +32,29 @@ import { DropdownMenu } from '@/components/ui/dropdown'
 // Key harus sama persis dengan ExportController::inventoryAnalysisColumns() (backend) —
 // itulah yang membuat "sembunyikan kolom" di sini juga berarti "jangan ikut di export/cetak".
 const analysisColumns: Column<AnalysisRow>[] = [
-  { key: 'code', header: 'Kode', cell: (r) => <span className="font-mono text-xs">{r.item.code}</span> },
-  { key: 'description', header: 'Deskripsi', cell: (r) => r.item.description },
-  { key: 'available', header: 'Tersedia', cell: (r) => (r.stock_known ? r.available : 'UNKNOWN') },
+  { key: 'code', header: 'Code', cell: (r) => <span className="text-[13px]">{r.item.code}</span> },
+  { key: 'description', header: 'Description', cell: (r) => r.item.description, className: 'min-w-[18rem]' },
+  { key: 'available', header: 'Available', cell: (r) => (r.stock_known ? r.available : 'UNKNOWN') },
   { key: 'safety_stock', header: 'Safety Stock', cell: (r) => r.safety_stock },
  { key: 'min_pr', header: 'MIN PR', cell: (r) => r.min_pr ?? '' },
- { key: 'avg_usage_1m', header: '1 Bulan', cell: (r) => (r.avg_usage_1m != null ? Math.round(r.avg_usage_1m) : '') },
- { key: 'avg_usage_3m', header: '3 Bulan', cell: (r) => (r.avg_usage_3m != null ? Math.round(r.avg_usage_3m) : '') },
- { key: 'avg_usage_6m', header: '6 Bulan', cell: (r) => (r.avg_usage_6m != null ? Math.round(r.avg_usage_6m) : '') },
- { key: 'avg_usage_12m', header: '12 Bulan', cell: (r) => (r.avg_usage_12m != null ? Math.round(r.avg_usage_12m) : '') },
-  { key: 'selisih', header: 'Selisih', cell: (r) => r.selisih },
-  { key: 'deficit', header: 'Defisit', cell: (r) => r.deficit },
+ { key: 'avg_usage_1m', header: '1 Month', cell: (r) => (r.avg_usage_1m != null ? Math.round(r.avg_usage_1m) : '') },
+ { key: 'avg_usage_3m', header: '3 Months', cell: (r) => (r.avg_usage_3m != null ? Math.round(r.avg_usage_3m) : '') },
+ { key: 'avg_usage_6m', header: '6 Months', cell: (r) => (r.avg_usage_6m != null ? Math.round(r.avg_usage_6m) : '') },
+ { key: 'avg_usage_12m', header: '12 Months', cell: (r) => (r.avg_usage_12m != null ? Math.round(r.avg_usage_12m) : '') },
+  { key: 'selisih', header: 'Difference', cell: (r) => r.selisih },
+  { key: 'deficit', header: 'Deficit', cell: (r) => r.deficit },
  { key: 'lead_time', header: 'LT', cell: (r) => r.lead_time_days ?? '' },
-  { key: 'priority_score', header: 'Skor', cell: (r) => r.priority_score },
+  { key: 'priority_score', header: 'Score', cell: (r) => r.priority_score },
   { key: 'status', header: 'Status', cell: (r) => <StatusBadge status={r.status} /> },
-  { key: 'priority_level', header: 'Prioritas', cell: (r) => <PriorityBadge level={r.priority_level} /> },
+  { key: 'priority_level', header: 'Priority', cell: (r) => <PriorityBadge level={r.priority_level} /> },
   {
     key: 'on_order',
-    header: 'Dalam pesanan',
+    header: 'On order',
     cell: (r) => (r.on_order?.total ? <span className="whitespace-nowrap text-xs" title={r.on_order.docs.join(', ')}><b className="tabular-nums">{r.on_order.total.toLocaleString('id-ID')}</b> <span className="text-muted-foreground">{r.on_order.docs[0]}{r.on_order.docs.length > 1 ? ` +${r.on_order.docs.length - 1}` : ''}</span></span> : ''),
   },
   {
     key: 'recommendation',
-    header: 'Rekomendasi',
+    header: 'Recommendation',
     cell: (r) => <span className="text-xs text-muted-foreground">{r.recommendation}</span>,
     className: 'max-w-xs',
   },
@@ -125,9 +125,9 @@ function AnalysisTab() {
   const visibleColumns: Column<AnalysisRow>[] = !canRestock ? shownColumns : [
     {
       key: '__pick',
-      header: <span className="sr-only">Pilih</span>,
+      header: <span className="sr-only">Select</span>,
       className: 'w-8',
-      cell: (r) => <input type="checkbox" className="size-4 accent-primary disabled:opacity-40" aria-label={`Pilih ${r.item.code} untuk restock`}
+      cell: (r) => <input type="checkbox" className="size-4 accent-primary disabled:opacity-40" aria-label={`Select ${r.item.code} to restock`}
         disabled={onOrder(r)} checked={picked.has(r.item.id)} onChange={() => togglePick(r)} onClick={(e) => e.stopPropagation()} />,
     },
     ...shownColumns,
@@ -137,12 +137,12 @@ function AnalysisTab() {
       className: 'text-right',
       cell: (r) => onOrder(r) ? (
         <Button size="sm" variant="ghost" className="h-7 cursor-not-allowed px-2 text-muted-foreground" disabled
-          title={`Sedang dipesan ${r.on_order!.total.toLocaleString('id-ID')} (${r.on_order!.docs.join(', ')}) — bisa restock lagi setelah barang diterima (RI)`}>
-          <Clock className="size-3.5" /> Dipesan
+          title={`On order ${r.on_order!.total.toLocaleString('id-ID')} (${r.on_order!.docs.join(', ')}) — can be restocked again after the items arrive (Receipt)`}>
+          <Clock className="size-3.5" /> Ordered
         </Button>
       ) : (
         <Button size="sm" variant={r.status === 'AMAN' ? 'ghost' : 'outline'} className="h-7 px-2" disabled={restock.isPending}
-          onClick={(e) => { e.stopPropagation(); startRestock([r]) }} title={`Masukkan ${r.item.code} ke Draft PPB (saran ${r.recommended_qty})`}>
+          onClick={(e) => { e.stopPropagation(); startRestock([r]) }} title={`Add ${r.item.code} to Draft Purchase Request (suggested ${r.recommended_qty})`}>
           {restock.isPending && restock.variables?.some((v) => v.item_id === r.item.id) ? <Loader2 className="size-3.5 animate-spin" /> : <PackagePlus className="size-3.5" />} Restock
         </Button>
       ),
@@ -227,21 +227,20 @@ function AnalysisTab() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-end gap-2">
-        <DropdownMenu label={busy ? 'Menyiapkan…' : 'Export'} icon={Download} busy={busy !== null} items={[
+        <DropdownMenu label={busy ? 'Preparing…' : 'Export'} icon={Download} busy={busy !== null} items={[
           { label: 'Excel (.xlsx)', icon: Download, onSelect: () => exportFile('xlsx'), hidden: !canExportExcel },
           { label: 'CSV', icon: Download, onSelect: () => exportFile('csv'), hidden: !canExportCsv },
           { label: 'PDF', icon: FileText, onSelect: () => exportFile('pdf'), hidden: !canExportPdf },
-          { label: 'Cetak', icon: Printer, onSelect: () => printNow(), hidden: !canExportPdf },
+          { label: 'Print', icon: Printer, onSelect: () => printNow(), hidden: !canExportPdf },
         ]} />
         <div className="relative">
           <Button size="sm" variant="outline" onClick={() => setColMenuOpen((v) => !v)}>
-            <Columns3 className="size-4" /> Kolom
+            <Columns3 className="size-4" /> Columns
           </Button>
           {colMenuOpen && (
             <>
               <div className="fixed inset-0 z-10" onClick={() => setColMenuOpen(false)} />
               <div className="absolute right-0 z-20 mt-1 max-h-80 w-64 overflow-y-auto rounded-lg border bg-card p-1.5 shadow-lg">
-                <p className="px-2 py-1 text-xs text-muted-foreground">Kolom tersembunyi tidak ikut di export/cetak.</p>
                 {toggleableColumns.map((c) => (
                   <label key={c.key} className="flex items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-muted/60">
                     <input type="checkbox" checked={!hiddenCols.has(c.key)} onChange={() => toggleColumn(c.key)} />
@@ -262,15 +261,15 @@ function AnalysisTab() {
               <div className="font-medium">{data.run.item_count}</div>
             </div>
             <div>
-              <div className="text-muted-foreground">Tidak Aman</div>
+              <div className="text-muted-foreground">Unsafe</div>
               <div className="font-medium text-red-700">{data.run.tidak_aman_count}</div>
             </div>
             <div>
               <div className="text-muted-foreground">Threshold Lead Time (p75)</div>
-              <div className="font-medium">{data.run.lead_time_threshold} hari</div>
+              <div className="font-medium">{data.run.lead_time_threshold} days</div>
             </div>
             <div>
-              <div className="text-muted-foreground">Median Defisit</div>
+              <div className="text-muted-foreground">Median Deficit</div>
               <div className="font-medium">{data.run.median_deficit}</div>
             </div>
           </CardContent>
@@ -279,7 +278,7 @@ function AnalysisTab() {
 
       <FilterBar>
         <Input
-          placeholder="Cari…"
+          placeholder="Search…"
           className="max-w-xs"
           value={search}
           onChange={(e) => {
@@ -295,10 +294,10 @@ function AnalysisTab() {
             setPage(1)
           }}
         >
-          <option value="">Semua status</option>
-          <option value="TIDAK_AMAN">Tidak Aman</option>
-          <option value="AMAN">Aman</option>
-          <option value="BEP">Stok Habis (BEP)</option>
+          <option value="">All statuses</option>
+          <option value="TIDAK_AMAN">Unsafe</option>
+          <option value="AMAN">Safe</option>
+          <option value="BEP">Out of Stock (BEP)</option>
         </select>
         <select
           className="h-9 max-w-full rounded-md border border-input bg-card px-3 text-sm"
@@ -308,10 +307,10 @@ function AnalysisTab() {
             setPage(1)
           }}
         >
-          <option value="">Semua prioritas</option>
-          <option value="HIGH">Tinggi</option>
-          <option value="MEDIUM">Sedang</option>
-          <option value="LOW">Rendah</option>
+          <option value="">All priorities</option>
+          <option value="HIGH">High</option>
+          <option value="MEDIUM">Medium</option>
+          <option value="LOW">Low</option>
         </select>
         <select
           className="h-9 max-w-full rounded-md border border-input bg-card px-3 text-sm"
@@ -321,23 +320,23 @@ function AnalysisTab() {
             setPage(1)
           }}
         >
-          <option value="">Semua kategori</option>
+          <option value="">All categories</option>
           {indukOptions.map((v) => (
             <option key={v} value={v}>{v}</option>
           ))}
         </select>
       </FilterBar>
 
-      {isError && <p className="text-sm text-destructive">Gagal memuat analisis.</p>}
+      {isError && <p className="text-sm text-destructive">Failed to load analysis.</p>}
       {err && <p className="text-sm text-destructive">{err}</p>}
 
       {picked.size > 0 && (
         <div className="sticky top-16 z-20 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-primary/40 bg-primary/5 px-4 py-2.5">
-          <span className="text-sm"><b>{picked.size}</b> barang dipilih — qty mengikuti saran analisis (dikurangi yang sedang dipesan), bisa diubah di Draft PPB.</span>
+          <span className="text-sm"><b>{picked.size}</b> items selected — qty follows the analysis suggestion (less what is on order), can be changed in Draft Purchase Request.</span>
           <div className="flex gap-2">
-            <Button size="sm" variant="ghost" onClick={() => setPicked(new Map())}><X className="size-4" /> Batal pilih</Button>
+            <Button size="sm" variant="ghost" onClick={() => setPicked(new Map())}><X className="size-4" /> Cancel selection</Button>
             <Button size="sm" disabled={restock.isPending} onClick={() => startRestock([...picked.values()])}>
-              <PackagePlus className="size-4" /> {restock.isPending ? 'Memproses…' : `Restock ${picked.size} barang`}
+              <PackagePlus className="size-4" /> {restock.isPending ? 'Processing…' : `Restock ${picked.size} items`}
             </Button>
           </div>
         </div>
@@ -349,7 +348,7 @@ function AnalysisTab() {
         footer={scrollFooter}
         notes={{ entity: 'inventory_item' }} rowKey={(r) => r.item.id}
         isLoading={isLoading}
-        emptyText="Belum ada hasil analisis."
+        emptyText="No analysis results yet."
       />
     </div>
   )
@@ -358,11 +357,11 @@ function AnalysisTab() {
 // ============================================================ Tab 2 — Safety Stock
 
 const safetyColumns: Column<SafetyStockRow>[] = [
- { key: 'code', header: 'Kode', cell: (r) => <span className="font-mono text-xs">{r.item_code ?? ''}</span> },
- { key: 'desc', header: 'Deskripsi', cell: (r) => r.item_description ?? '' },
- { key: 'cat', header: 'Kategori Sheet', cell: (r) => r.source_category ?? '' },
- { key: 'avg3', header: 'Rata2 3bln *', cell: (r) => r.avg_usage_3m ?? '' },
- { key: 'lt', header: 'LT (hari)', cell: (r) => r.lead_time_days ?? '' },
+ { key: 'code', header: 'Code', cell: (r) => <span className="text-[13px]">{r.item_code ?? ''}</span> },
+ { key: 'desc', header: 'Description', cell: (r) => r.item_description ?? '' },
+ { key: 'cat', header: 'Sheet Category', cell: (r) => r.source_category ?? '' },
+ { key: 'avg3', header: '3-month avg *', cell: (r) => r.avg_usage_3m ?? '' },
+ { key: 'lt', header: 'LT (days)', cell: (r) => r.lead_time_days ?? '' },
   { key: 'ss', header: 'Safety Stock', cell: (r) => <span className="font-medium">{r.safety_stock}</span> },
  { key: 'minpr', header: 'MIN PR', cell: (r) => r.min_pr ?? '' },
   {
@@ -370,8 +369,8 @@ const safetyColumns: Column<SafetyStockRow>[] = [
     header: 'Status',
     cell: (r) => (
       <div className="flex flex-wrap gap-1">
-        {r.is_effective ? <Badge variant="success">Efektif</Badge> : <Badge variant="neutral">Non-aktif</Badge>}
-        {r.needs_review && <Badge variant="warning">Perlu Review</Badge>}
+        {r.is_effective ? <Badge variant="success">Effective</Badge> : <Badge variant="neutral">Inactive</Badge>}
+        {r.needs_review && <Badge variant="warning">Needs Review</Badge>}
       </div>
     ),
   },
@@ -425,10 +424,10 @@ function SafetyCreateForm({ onDone }: { onDone: () => void }) {
         {form.item ? (
           <div className="flex items-center justify-between rounded-md border px-3 py-2 text-sm">
             <span>
-              <span className="font-mono text-xs text-muted-foreground">{form.item.code}</span> {form.item.description}
+              <span className="text-[13px] text-muted-foreground">{form.item.code}</span> {form.item.description}
             </span>
             <button className="text-xs text-destructive" onClick={() => setForm((f) => ({ ...f, item: null }))}>
-              ganti
+              change
             </button>
           </div>
         ) : (
@@ -437,39 +436,39 @@ function SafetyCreateForm({ onDone }: { onDone: () => void }) {
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
  {/* avg_usage_3m bukan avg_usage_1m yang masuk rumus Safety Stock/MIN PR (lihat SafetyStockService). */}
           <Input
-            type="number" step="any" placeholder="Rata2 3 bln *"
+            type="number" step="any" placeholder="3-month avg *"
             value={form.avg3} onChange={(e) => setForm((f) => ({ ...f, avg3: e.target.value }))}
           />
           <Input
-            type="number" min={0} placeholder="Lead time (hari) *"
+            type="number" min={0} placeholder="Lead time (days) *"
             value={form.leadTime} onChange={(e) => setForm((f) => ({ ...f, leadTime: e.target.value }))}
           />
           <Input
-            placeholder="Kategori sheet (mis. ASSETS)"
+            placeholder="Sheet category (e.g. ASSETS)"
             value={form.sourceCategory}
             onChange={(e) => setForm((f) => ({ ...f, sourceCategory: e.target.value }))}
           />
           <Input
-            type="number" step="any" placeholder="Rata2 1 bln (informasi)"
+            type="number" step="any" placeholder="1-month avg (information)"
             value={form.avg1} onChange={(e) => setForm((f) => ({ ...f, avg1: e.target.value }))}
           />
           <Input
-            type="number" step="any" placeholder="Rata2 6 bln (informasi)"
+            type="number" step="any" placeholder="6-month avg (information)"
             value={form.avg6} onChange={(e) => setForm((f) => ({ ...f, avg6: e.target.value }))}
           />
           <Input
-            type="number" step="any" placeholder="Rata2 12 bln (informasi)"
+            type="number" step="any" placeholder="12-month avg (information)"
             value={form.avg12} onChange={(e) => setForm((f) => ({ ...f, avg12: e.target.value }))}
           />
         </div>
-        <Input placeholder="Catatan (opsional)" value={form.note} onChange={(e) => setForm((f) => ({ ...f, note: e.target.value }))} />
+        <Input placeholder="Notes (optional)" value={form.note} onChange={(e) => setForm((f) => ({ ...f, note: e.target.value }))} />
         <p className="text-xs text-muted-foreground">
-          * wajib — Safety Stock dan MIN PR dihitung otomatis dari Rata2 3 bln × Lead Time (rumus yang sama seperti sheet Excel asli). Rata2 1/6/12 bln hanya informasi.
+          * required — Safety Stock and MIN PR are calculated from the 3-month average × Lead Time (same formula as the original Excel sheet). The 1/6/12-month averages are for information only.
         </p>
         {err && <p className="text-sm text-destructive">{err}</p>}
         <div className="flex justify-end gap-2">
           <Button variant="outline" size="sm" onClick={onDone}>
-            Batal
+            Cancel
           </Button>
           <Button
             size="sm"
@@ -481,7 +480,7 @@ function SafetyCreateForm({ onDone }: { onDone: () => void }) {
               })
             }
           >
-            Simpan
+            Save
           </Button>
         </div>
       </CardContent>
@@ -507,39 +506,39 @@ function SafetyEditForm({ row, onDone }: { row: SafetyStockRow; onDone: () => vo
     <Card className="border-primary/30 bg-muted/30">
       <CardContent className="space-y-3 p-4">
         <div className="text-sm">
-          <span className="font-mono text-xs text-muted-foreground">{row.item_code}</span> {row.item_description}
+          <span className="text-[13px] text-muted-foreground">{row.item_code}</span> {row.item_description}
         </div>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           <Input
-            type="number" step="any" placeholder="Rata2 3 bln *"
+            type="number" step="any" placeholder="3-month avg *"
             value={form.avg3} onChange={(e) => setForm((f) => ({ ...f, avg3: e.target.value }))}
           />
           <Input
-            type="number" min={0} placeholder="Lead time (hari) *"
+            type="number" min={0} placeholder="Lead time (days) *"
             value={form.leadTime} onChange={(e) => setForm((f) => ({ ...f, leadTime: e.target.value }))}
           />
           <Input
-            placeholder="Kategori sheet"
+            placeholder="Sheet category"
             value={form.sourceCategory} onChange={(e) => setForm((f) => ({ ...f, sourceCategory: e.target.value }))}
           />
           <Input
-            type="number" step="any" placeholder="Rata2 1 bln (informasi)"
+            type="number" step="any" placeholder="1-month avg (information)"
             value={form.avg1} onChange={(e) => setForm((f) => ({ ...f, avg1: e.target.value }))}
           />
           <Input
-            type="number" step="any" placeholder="Rata2 6 bln (informasi)"
+            type="number" step="any" placeholder="6-month avg (information)"
             value={form.avg6} onChange={(e) => setForm((f) => ({ ...f, avg6: e.target.value }))}
           />
           <Input
-            type="number" step="any" placeholder="Rata2 12 bln (informasi)"
+            type="number" step="any" placeholder="12-month avg (information)"
             value={form.avg12} onChange={(e) => setForm((f) => ({ ...f, avg12: e.target.value }))}
           />
         </div>
-        <Input placeholder="Catatan" value={form.note} onChange={(e) => setForm((f) => ({ ...f, note: e.target.value }))} />
+        <Input placeholder="Notes" value={form.note} onChange={(e) => setForm((f) => ({ ...f, note: e.target.value }))} />
         {err && <p className="text-sm text-destructive">{err}</p>}
         <div className="flex justify-end gap-2">
           <Button variant="outline" size="sm" onClick={onDone}>
-            Batal
+            Cancel
           </Button>
           <Button
             size="sm"
@@ -548,7 +547,7 @@ function SafetyEditForm({ row, onDone }: { row: SafetyStockRow; onDone: () => vo
               update.mutate(toSafetyPayload(form), { onSuccess: onDone, onError: (e) => setErr(apiErrorMessage(e)) })
             }
           >
-            Simpan
+            Save
           </Button>
         </div>
       </CardContent>
@@ -580,7 +579,7 @@ function SafetyStockTab() {
   const canResolve = hasPermission('item.safety_stock.resolve_conflict')
 
   async function remove(row: SafetyStockRow) {
-    if (!(await confirmDialog(`Hapus safety stock untuk ${row.item_code}?`))) return
+    if (!(await confirmDialog(`Delete the safety stock for ${row.item_code}?`))) return
     del.mutate(row.id, { onError: (e) => setErr(apiErrorMessage(e)) })
   }
 
@@ -591,7 +590,7 @@ function SafetyStockTab() {
       <div className="flex flex-wrap items-center justify-end gap-2">
         {canUpdate && (
           <Button size="sm" variant="outline" onClick={() => setShowForm((v) => !v)}>
-            {showForm ? 'Tutup' : 'Tambah Safety Stock'}
+            {showForm ? 'Close' : 'Add Safety Stock'}
           </Button>
         )}
       </div>
@@ -601,7 +600,7 @@ function SafetyStockTab() {
 
       <div className="flex flex-wrap gap-2">
         <Input
-          placeholder="Cari kode / deskripsi barang…"
+          placeholder="Search item code / description…"
           className="max-w-xs"
           value={search}
           onChange={(e) => {
@@ -617,9 +616,9 @@ function SafetyStockTab() {
             setPage(1)
           }}
         >
-          <option value="">Semua baris</option>
-          <option value="1">Perlu review (konflik)</option>
-          <option value="0">Efektif saja</option>
+          <option value="">All rows</option>
+          <option value="1">Needs review (conflict)</option>
+          <option value="0">Effective only</option>
         </select>
       </div>
 
@@ -637,7 +636,7 @@ function SafetyStockTab() {
                     <div className="flex justify-end gap-1">
                       {canResolve && r.needs_review && !r.is_effective && (
                         <Button size="sm" variant="outline" onClick={() => resolve.mutate(r.id, { onError: (e) => setErr(apiErrorMessage(e)) })}>
-                          Jadikan Efektif
+                          Make Effective
                         </Button>
                       )}
                       {canUpdate && (
@@ -668,7 +667,7 @@ function SafetyStockTab() {
 // ============================================================ Halaman gabungan
 
 const TOP_TABS = [
-  { key: 'analysis' as const, label: 'Analisis Inventory', icon: Boxes, permission: 'inventory.view_analysis' },
+  { key: 'analysis' as const, label: 'Inventory Analysis', icon: Boxes, permission: 'inventory.view_analysis' },
   { key: 'safety' as const, label: 'Safety Stock', icon: ShieldCheck, permission: 'item.safety_stock.view' },
 ]
 
@@ -689,8 +688,8 @@ export function InventoryHealthPage() {
   return (
     <div className="space-y-4">
       <PageHeader
-        title="Analisis Inventory & Safety Stock"
-        subtitle="Status stok tiap barang terhadap batas amannya, dan input Safety Stock/lead time di balik perhitungan itu"
+        title="Inventory Analysis & Safety Stock"
+        subtitle="Each item stock status against its safe limit, and the Safety Stock/lead time input behind it"
         icon={<Boxes className="size-5" />}
       />
 
@@ -701,7 +700,7 @@ export function InventoryHealthPage() {
               key={key}
               onClick={() => setTab(key)}
               className={`inline-flex items-center gap-1.5 rounded-sm px-3 py-1.5 text-sm font-medium transition ${
-                tab === key ? 'bg-card shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                tab === key ? 'bg-card' : 'text-muted-foreground hover:text-foreground'
               }`}
             >
               <Icon className="size-4" /> {label}

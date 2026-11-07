@@ -1,8 +1,9 @@
 import { useRef, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQueryClient, useQuery } from '@tanstack/react-query'
 import { ImagePlus, Loader2, X } from 'lucide-react'
 import { api } from '@/lib/api'
 import { photoToDataUrl } from '@/components/tracking/EvidencePhoto'
+import { openImage } from '@/components/ui/lightbox'
 import { cn } from '@/lib/utils'
 
 /** Images the requester may attach to a request (shown from the request to its end). */
@@ -15,7 +16,7 @@ export function RequestImagesInput({ value, onChange, onError }: { value: string
   const add = async (files: FileList | null) => {
     if (!files?.length) return
     const room = MAX_REQUEST_IMAGES - value.length
-    if (files.length > room) onError?.(`Gambar maksimal ${MAX_REQUEST_IMAGES}.`)
+    if (files.length > room) onError?.(`Maximum ${MAX_REQUEST_IMAGES} images.`)
     setReading(true)
     try {
       const made = await Promise.all([...files].slice(0, Math.max(0, room)).map((f) => photoToDataUrl(f, 1600)))
@@ -28,13 +29,13 @@ export function RequestImagesInput({ value, onChange, onError }: { value: string
   }
   return (
     <div className="space-y-1.5">
-      <div className="text-sm font-medium">Gambar <span className="font-normal text-muted-foreground">(opsional, maksimal {MAX_REQUEST_IMAGES}: contoh barang, kondisi yang rusak, dll)</span></div>
+      <div className="text-sm font-medium">Image <span className="font-normal text-muted-foreground">(optional, maximum {MAX_REQUEST_IMAGES}: item sample, damaged condition, etc.)</span></div>
       <input ref={input} type="file" accept="image/*" multiple className="hidden" onChange={(e) => { void add(e.target.files); e.target.value = '' }} />
       <div className="flex flex-wrap gap-2">
         {value.map((src, i) => (
           <div key={i} className="relative size-20 overflow-hidden rounded-lg border bg-muted">
-            <img src={src} alt={`Gambar ${i + 1}`} className="size-full object-cover" />
-            <button type="button" aria-label={`Hapus gambar ${i + 1}`} onClick={() => onChange(value.filter((_, j) => j !== i))}
+            <img src={src} alt={`Image ${i + 1}`} className="size-full object-cover" />
+            <button type="button" aria-label={`Delete image ${i + 1}`} onClick={() => onChange(value.filter((_, j) => j !== i))}
               className="absolute right-1 top-1 rounded-full bg-black/60 p-0.5 text-white hover:bg-black/80"><X className="size-3.5" /></button>
           </div>
         ))}
@@ -50,18 +51,20 @@ export function RequestImagesInput({ value, onChange, onError }: { value: string
   )
 }
 
-/** One image of a request, fetched with the session; opens full size in a new tab. */
-function SessionImage({ requestId, lineId, slot, size }: { requestId: number; lineId?: number; slot: string; size: string }) {
-  const path = lineId ? `/api/item-requests/${requestId}/lines/${lineId}/image/${slot}` : `/api/item-requests/${requestId}/image/${slot}`
+const imagePath = (requestId: number, slot: string, lineId?: number) => (lineId ? `/api/item-requests/${requestId}/lines/${lineId}/image/${slot}` : `/api/item-requests/${requestId}/image/${slot}`)
+const imageKey = (requestId: number, slot: string, lineId?: number) => ['item-requests', requestId, 'image', lineId ?? 0, slot]
+
+/** One image of a request, fetched with the session; a click shows them all in the popup. */
+function SessionImage({ requestId, lineId, slot, size, onOpen }: { requestId: number; lineId?: number; slot: string; size: string; onOpen: () => void }) {
   const { data: url } = useQuery({
-    queryKey: ['item-requests', requestId, 'image', lineId ?? 0, slot],
+    queryKey: imageKey(requestId, slot, lineId),
     staleTime: Infinity,
-    queryFn: async () => URL.createObjectURL((await api.get(path, { responseType: 'blob' })).data as Blob),
+    queryFn: async () => URL.createObjectURL((await api.get(imagePath(requestId, slot, lineId), { responseType: 'blob' })).data as Blob),
   })
   return (
-    <a href={url} target="_blank" rel="noreferrer" className={cn('block shrink-0 overflow-hidden rounded-lg border bg-muted', size)} title="Buka gambar">
-      {url ? <img src={url} alt={`Gambar ${slot.replace('img', '')}`} className="size-full object-cover" /> : <div className="size-full animate-pulse" />}
-    </a>
+    <button type="button" onClick={onOpen} className={cn('block shrink-0 cursor-zoom-in overflow-hidden rounded-lg border bg-muted', size)} title="View image">
+      {url ? <img src={url} alt={`Image ${slot.replace('img', '')}`} className="size-full object-cover" /> : <div className="size-full animate-pulse" />}
+    </button>
   )
 }
 
@@ -75,18 +78,27 @@ export function RequestImages({ requestId, lineId, slots, token, size = 'size-20
   lineId?: number
   slots?: string[] | null; token?: string; size?: string; className?: string
 }) {
+  const qc = useQueryClient()
   if (!slots?.length) return null
   const pub = (slot: string) => `${api.defaults.baseURL ?? ''}/api/public/request-status/image?token=${token}&slot=${slot}${lineId ? `&line=${lineId}` : ''}`
+  // every image of this request / item in the popup, opened on the one clicked
+  const show = (i: number) => openImage(slots.map((slot) => ({
+    alt: `Image ${slot.replace('img', '')}`,
+    ...(token ? { src: pub(slot) } : {
+      load: () => qc.fetchQuery({ queryKey: imageKey(requestId!, slot, lineId), staleTime: Infinity,
+        queryFn: async () => URL.createObjectURL((await api.get(imagePath(requestId!, slot, lineId), { responseType: 'blob' })).data as Blob) }),
+    }),
+  })), i)
   return (
     <div className={cn('flex flex-wrap gap-2', className)}>
-      {slots.map((slot) => token
+      {slots.map((slot, i) => token
         ? (
-          <a key={slot} href={pub(slot)} target="_blank" rel="noreferrer"
-            className={cn('block shrink-0 overflow-hidden rounded-lg border bg-muted', size)} title="Buka gambar">
-            <img src={pub(slot)} alt={`Gambar ${slot.replace('img', '')}`} className="size-full object-cover" />
-          </a>
+          <button key={slot} type="button" onClick={() => show(i)}
+            className={cn('block shrink-0 cursor-zoom-in overflow-hidden rounded-lg border bg-muted', size)} title="View image">
+            <img src={pub(slot)} alt={`Image ${slot.replace('img', '')}`} className="size-full object-cover" />
+          </button>
         )
-        : requestId ? <SessionImage key={slot} requestId={requestId} lineId={lineId} slot={slot} size={size} /> : null)}
+        : requestId ? <SessionImage key={slot} requestId={requestId} lineId={lineId} slot={slot} size={size} onOpen={() => show(i)} /> : null)}
     </div>
   )
 }
@@ -110,13 +122,13 @@ export function LineImagesInput({ value, onChange, label }: { value: string[]; o
       <input ref={input} type="file" accept="image/*" multiple className="hidden" onChange={(e) => { void add(e.target.files); e.target.value = '' }} />
       {value.map((src, i) => (
         <div key={i} className="relative size-9 overflow-hidden rounded-md border bg-muted">
-          <img src={src} alt={`Gambar ${label} ${i + 1}`} className="size-full object-cover" />
-          <button type="button" aria-label={`Hapus gambar ${label} ${i + 1}`} onClick={() => onChange(value.filter((_, j) => j !== i))}
+          <img src={src} alt={`Image ${label} ${i + 1}`} className="size-full object-cover" />
+          <button type="button" aria-label={`Delete image ${label} ${i + 1}`} onClick={() => onChange(value.filter((_, j) => j !== i))}
             className="absolute inset-0 flex items-center justify-center bg-black/50 text-white opacity-0 transition-opacity hover:opacity-100"><X className="size-3.5" /></button>
         </div>
       ))}
       {value.length < MAX_REQUEST_IMAGES && (
-        <button type="button" onClick={() => input.current?.click()} disabled={reading} title={`Tambah gambar ${label} (maks ${MAX_REQUEST_IMAGES})`} aria-label={`Tambah gambar ${label}`}
+        <button type="button" onClick={() => input.current?.click()} disabled={reading} title={`Add image ${label} (maks ${MAX_REQUEST_IMAGES})`} aria-label={`Add image ${label}`}
           className="flex size-9 items-center justify-center rounded-md border border-dashed text-muted-foreground transition-colors hover:border-primary hover:bg-primary/5 hover:text-primary">
           {reading ? <Loader2 className="size-4 animate-spin" /> : <ImagePlus className="size-4" />}
         </button>

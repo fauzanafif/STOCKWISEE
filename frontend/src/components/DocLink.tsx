@@ -23,13 +23,13 @@ export function docHref(no: string): string | null {
 export function DocLink({ no, className }: { no: string | null | undefined; className?: string }) {
   if (!no) return <span className="text-muted-foreground">—</span>
   const href = docHref(no)
-  if (!href) return <span className={cn('font-mono', className)}>{no}</span>
+  if (!href) return <span className={cn('', className)}>{no}</span>
   return (
     <Link
       to={href}
       onClick={(e) => e.stopPropagation()}
-      className={cn('font-mono text-primary underline-offset-2 hover:underline', className)}
-      title={`Buka ${no}`}
+      className={cn(' text-primary underline-offset-2 hover:underline', className)}
+      title={`Open ${no}`}
     >
       {no}
     </Link>

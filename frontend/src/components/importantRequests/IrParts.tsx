@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
-export const fmtDateTime = (v: string | null | undefined) => (v ? new Date(v).toLocaleString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-')
+export const fmtDateTime = (v: string | null | undefined) => (v ? new Date(v).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-')
 export const fmtSize = (n: number) => (n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`)
 
 export function IrStatusBadge({ status, label }: { status: IrStatus; label?: string | null }) {
@@ -25,7 +25,7 @@ export function IrDeadline({ deadline, overdue, closed }: { deadline: string | n
   if (!deadline) return <span className="text-muted-foreground">-</span>
   const ms = new Date(deadline).getTime() - Date.now()
   const days = Math.ceil(ms / 86_400_000)
-  const note = closed ? null : overdue ? `terlambat ${Math.max(1, -days + 1)} hari` : days <= 0 ? 'hari ini' : days <= 3 ? `${days} hari lagi` : null
+  const note = closed ? null : overdue ? `${Math.max(1, -days + 1)} days late` : days <= 0 ? 'today' : days <= 3 ? `in ${days} days` : null
   return (
     <span className="whitespace-nowrap">
       <span className={cn('tabular-nums', overdue && !closed && 'font-semibold text-red-600')}>{fmtDateTime(deadline)}</span>
@@ -49,7 +49,7 @@ export function IrFilePicker({ files, onChange, maxMb, label = 'Lampirkan file',
     for (const file of [...list].slice(0, 10)) {
       const key = `${file.name}-${file.size}-${Math.random()}`
       if (file.size > maxMb * 1024 * 1024) {
-        toast.invalid(`${file.name} lebih dari ${maxMb} MB.`)
+        toast.invalid(`${file.name} more than ${maxMb} MB.`)
         continue
       }
       onChange((prev) => [...prev, { key, name: file.name, size: file.size, progress: 0 }])
@@ -65,7 +65,7 @@ export function IrFilePicker({ files, onChange, maxMb, label = 'Lampirkan file',
       <Button type="button" variant="outline" size="sm" className={compact ? 'h-8' : undefined} onClick={() => input.current?.click()}>
         <Paperclip className="size-4" /> {label}
       </Button>
-      {!compact && <p className="text-xs text-muted-foreground">PDF, Word, Excel, PowerPoint, CSV, TXT, gambar, ZIP/RAR/7Z · maks {maxMb} MB per file</p>}
+      {!compact && <p className="text-xs text-muted-foreground">PDF, Word, Excel, PowerPoint, CSV, TXT, images, ZIP/RAR/7Z · max {maxMb} MB per file</p>}
       {files.length > 0 && (
         <ul className="space-y-1.5">
           {files.map((f) => (
@@ -78,7 +78,7 @@ export function IrFilePicker({ files, onChange, maxMb, label = 'Lampirkan file',
                 )}
               </div>
               {!f.token && !f.error ? <Loader2 className="size-4 animate-spin text-muted-foreground" /> : null}
-              <button type="button" aria-label={`Hapus ${f.name}`} onClick={() => onChange((prev) => prev.filter((x) => x.key !== f.key))} className="text-muted-foreground hover:text-destructive"><X className="size-4" /></button>
+              <button type="button" aria-label={`Delete ${f.name}`} onClick={() => onChange((prev) => prev.filter((x) => x.key !== f.key))} className="text-muted-foreground hover:text-destructive"><X className="size-4" /></button>
             </li>
           ))}
         </ul>
@@ -106,16 +106,16 @@ export function IrFileList({ requestId, files, onDelete, empty, cards }: { reque
   if (cards) return (
     <ul className="grid gap-2 sm:grid-cols-2">
       {files.map((f) => (
-        <li key={f.id} className="flex overflow-hidden rounded-xl border bg-card transition-shadow hover:shadow-sm">
-          <button type="button" className="flex w-16 shrink-0 items-center justify-center border-r bg-muted/60 text-[11px] font-semibold uppercase text-muted-foreground" disabled={busy === f.id}
-            onClick={() => open(f, !!f.previewable)} aria-label={`Buka ${f.name}`}>{busy === f.id ? <Loader2 className="size-4 animate-spin" /> : f.extension ?? 'file'}</button>
+        <li key={f.id} className="flex overflow-hidden rounded-lg border bg-card transition-colors hover:bg-muted/40">
+          <button type="button" className="flex w-16 shrink-0 items-center justify-center border-r bg-muted/60 text-[11px] font-semibold text-muted-foreground" disabled={busy === f.id}
+            onClick={() => open(f, !!f.previewable)} aria-label={`Open ${f.name}`}>{busy === f.id ? <Loader2 className="size-4 animate-spin" /> : f.extension ?? 'file'}</button>
           <div className="min-w-0 flex-1 px-3 py-2">
             <button type="button" className="block w-full truncate text-left text-sm font-medium hover:text-primary hover:underline" title={f.name} onClick={() => open(f, !!f.previewable)}>{f.name}</button>
             <div className="truncate text-xs text-muted-foreground">{fmtSize(f.size)} · {f.uploader ?? '-'}</div>
           </div>
           <div className="flex shrink-0 items-center pr-1">
-            <Button size="sm" variant="ghost" className="h-8 px-2" disabled={busy === f.id} onClick={() => open(f, false)} aria-label={`Unduh ${f.name}`}><Download className="size-4" /></Button>
-            {onDelete && <Button size="sm" variant="ghost" className="h-8 px-2 text-muted-foreground hover:text-destructive" onClick={() => onDelete(f)} aria-label={`Hapus ${f.name}`}><Trash2 className="size-4" /></Button>}
+            <Button size="sm" variant="ghost" className="h-8 px-2" disabled={busy === f.id} onClick={() => open(f, false)} aria-label={`Download ${f.name}`}><Download className="size-4" /></Button>
+            {onDelete && <Button size="sm" variant="ghost" className="h-8 px-2 text-muted-foreground hover:text-destructive" onClick={() => onDelete(f)} aria-label={`Delete ${f.name}`}><Trash2 className="size-4" /></Button>}
           </div>
         </li>
       ))}
@@ -125,15 +125,15 @@ export function IrFileList({ requestId, files, onDelete, empty, cards }: { reque
     <ul className="divide-y rounded-lg border bg-card">
       {files.map((f) => (
         <li key={f.id} className="flex flex-wrap items-center gap-3 px-3 py-2.5 text-sm">
-          <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-muted text-[10px] font-semibold uppercase text-muted-foreground">{f.extension ?? 'file'}</span>
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-muted text-[10px] font-semibold text-muted-foreground">{f.extension ?? 'file'}</span>
           <div className="min-w-0 flex-1">
             <div className="truncate font-medium" title={f.name}>{f.name}</div>
             <div className="text-xs text-muted-foreground">{fmtSize(f.size)} · {f.uploader ?? '-'} · {fmtDateTime(f.created_at)}</div>
           </div>
           <div className="flex shrink-0 gap-1">
-            {f.previewable && <Button size="sm" variant="ghost" className="h-8" disabled={busy === f.id} onClick={() => open(f, true)}><Eye className="size-4" /> Lihat</Button>}
-            <Button size="sm" variant="ghost" className="h-8" disabled={busy === f.id} onClick={() => open(f, false)}>{busy === f.id ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />} Unduh</Button>
-            {onDelete && <Button size="sm" variant="ghost" className="h-8 text-muted-foreground hover:text-destructive" onClick={() => onDelete(f)} aria-label={`Hapus ${f.name}`}><Trash2 className="size-4" /></Button>}
+            {f.previewable && <Button size="sm" variant="ghost" className="h-8" disabled={busy === f.id} onClick={() => open(f, true)}><Eye className="size-4" /> View</Button>}
+            <Button size="sm" variant="ghost" className="h-8" disabled={busy === f.id} onClick={() => open(f, false)}>{busy === f.id ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />} Download</Button>
+            {onDelete && <Button size="sm" variant="ghost" className="h-8 text-muted-foreground hover:text-destructive" onClick={() => onDelete(f)} aria-label={`Delete ${f.name}`}><Trash2 className="size-4" /></Button>}
           </div>
         </li>
       ))}

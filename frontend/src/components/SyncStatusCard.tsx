@@ -7,15 +7,15 @@ import { Badge } from '@/components/ui/badge'
 function statusBadge(status: string | undefined) {
   switch (status) {
     case 'SUCCESS':
-      return <Badge variant="success">Berhasil</Badge>
+      return <Badge variant="success">Successful</Badge>
     case 'PARTIAL':
-      return <Badge variant="warning">Sebagian</Badge>
+      return <Badge variant="warning">Partial</Badge>
     case 'FAILED':
-      return <Badge variant="danger">Gagal</Badge>
+      return <Badge variant="danger">Failed</Badge>
     case 'RUNNING':
-      return <Badge variant="default">Sedang berjalan</Badge>
+      return <Badge variant="default">In progress</Badge>
     default:
-      return <Badge variant="neutral">{status ?? 'Belum pernah sync'}</Badge>
+      return <Badge variant="neutral">{status ?? 'Never synced'}</Badge>
   }
 }
 
@@ -46,45 +46,44 @@ export function SyncStatusCard() {
               {status?.status === 'SUCCESS' && <CheckCircle2 className="size-5 text-emerald-600" />}
               {status?.status === 'FAILED' && <XCircle className="size-5 text-red-600" />}
               {status?.status === 'PARTIAL' && <AlertTriangle className="size-5 text-amber-600" />}
-              <span className="font-medium">Sync terakhir</span>
+              <span className="font-medium">Last sync</span>
               {statusBadge(status?.status)}
             </div>
-            {status && <span className="font-mono text-xs text-muted-foreground">{status.sync_code}</span>}
+            {status && <span className="text-[13px] text-muted-foreground">{status.sync_code}</span>}
           </div>
 
           {status?.status === 'RUNNING' && (
             <div className="flex items-center gap-2 rounded-md bg-muted/50 p-3 text-sm">
               <Loader2 className="size-4 shrink-0 animate-spin text-primary" />
-              {status.current_step ? SYNC_STEP_LABELS[status.current_step] ?? status.current_step : 'Memulai…'}
+              {status.current_step ? SYNC_STEP_LABELS[status.current_step] ?? status.current_step : 'Starting…'}
             </div>
           )}
 
-          {isLoading && <p className="text-sm text-muted-foreground">Memuat…</p>}
+          {isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
 
           {!isLoading && !status && (
             <p className="text-sm text-muted-foreground">
- Belum ada data yang masuk dari Accurate. Sinkronisasi otomatis berjalan jam {SYNC_SCHEDULE} data
-              akan muncul di sini setelah jadwal berikutnya.
+ No data from Accurate yet. Automatic sync runs at {SYNC_SCHEDULE} data will appear here after the next schedule.
             </p>
           )}
 
           {status && (
             <>
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
-                <StatTile label="Total Dibaca" value={status.total_records} />
-                <StatTile label="Baris Baru" value={status.inserted_records} />
-                <StatTile label="Diperbarui" value={status.updated_records} />
-                <StatTile label="Dihapus" value={status.deleted_records} />
-                <StatTile label="Dilewati" value={status.skipped_records} />
+                <StatTile label="Total Read" value={status.total_records} />
+                <StatTile label="New Row" value={status.inserted_records} />
+                <StatTile label="Updated" value={status.updated_records} />
+                <StatTile label="Deleted" value={status.deleted_records} />
+                <StatTile label="Skipped" value={status.skipped_records} />
               </div>
               <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
                 <div>
-                  <dt className="text-muted-foreground">Terakhir Sync</dt>
-                  <dd>{new Date(status.started_at).toLocaleString('id-ID')}</dd>
+                  <dt className="text-muted-foreground">Last Sync</dt>
+                  <dd>{new Date(status.started_at).toLocaleString('en-GB')}</dd>
                 </div>
                 <div>
-                  <dt className="text-muted-foreground">Durasi</dt>
-                  <dd>{status.duration_seconds != null ? `${status.duration_seconds.toFixed(1)} detik` : '—'}</dd>
+                  <dt className="text-muted-foreground">Duration</dt>
+                  <dd>{status.duration_seconds != null ? `${status.duration_seconds.toFixed(1)} seconds` : '—'}</dd>
                 </div>
                 <div>
                   <dt className="text-muted-foreground">Error</dt>

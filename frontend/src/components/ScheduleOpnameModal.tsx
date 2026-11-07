@@ -107,8 +107,8 @@ export function ScheduleOpnameModal({ open, onClose, onScheduled }: Props) {
   }
 
   function submit() {
-    if (!warehouseId) return invalidTo(setErr, 'Pilih gudang.')
-    if (selected.size === 0) return invalidTo(setErr, 'Pilih minimal 1 barang.')
+    if (!warehouseId) return invalidTo(setErr, 'Select a warehouse.')
+    if (selected.size === 0) return invalidTo(setErr, 'Select at least 1 item.')
     setErr(null)
     create.mutate(
       { warehouse_id: Number(warehouseId), scheduled_date: TODAY, type: 'PARTIAL', item_ids: [...selected.keys()] },
@@ -124,89 +124,85 @@ export function ScheduleOpnameModal({ open, onClose, onScheduled }: Props) {
   }
 
   return (
-    <Modal
+    <Modal page form
       open={open}
       onClose={onClose}
-      title="Jadwalkan Stock Opname"
-      description={`Tanggal: hari ini (${new Date().toLocaleDateString('id-ID')}). Pilih gudang, lalu barang yang akan dihitung.`}
+      title="Schedule Physical Inventory"
+      description={`Date: today (${new Date().toLocaleDateString('en-GB')}). Select the warehouse, then the items to count.`}
       className="max-w-3xl"
       footer={
         <>
           <span className="mr-auto self-center text-sm">
-            <b className="tabular-nums">{selected.size}</b> <span className="text-muted-foreground">barang dipilih</span>
+            <b className="tabular-nums">{selected.size}</b> <span className="text-muted-foreground">items selected</span>
           </span>
-          <Button size="sm" variant="outline" onClick={onClose}>Batal</Button>
+          <Button size="sm" variant="outline" onClick={onClose}>Cancel</Button>
           <Button size="sm" disabled={create.isPending || !warehouseId || selected.size === 0} onClick={submit}>
-            {create.isPending ? 'Menjadwalkan…' : `Jadwalkan${selected.size ? ` (${selected.size} barang)` : ''}`}
+            {create.isPending ? 'Scheduling…' : `Schedule${selected.size ? ` (${selected.size} items)` : ''}`}
           </Button>
         </>
       }
     >
       <div className="space-y-3">
         <div className="space-y-1.5">
-          <label className="text-sm font-medium">1. Pilih gudang</label>
+          <label className="text-sm font-medium">1. Select warehouse</label>
           <Select value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)}>
-            <option value="">— pilih gudang —</option>
+            <option value="">— select warehouse —</option>
             {warehouses?.map((w) => <option key={w.id} value={w.id}>{w.code} — {w.name}</option>)}
           </Select>
         </div>
 
-        <div className="text-sm font-medium">2. Pilih barang yang akan dihitung</div>
+        <div className="text-sm font-medium">2. Select the items to count</div>
         <div>
-          <label className="text-xs text-muted-foreground">Cari &amp; tambah satu barang</label>
+          <label className="text-xs text-muted-foreground">Find &amp; add one item</label>
           <ItemPicker onPick={addOne} />
         </div>
 
         <div className="space-y-3 rounded-md border p-3">
           <div>
-            <div className="text-xs font-medium text-muted-foreground">Atau pilih banyak sekaligus (per kategori / satuan)</div>
-            <p className="text-xs text-muted-foreground">
-              Isi filter sesuai kebutuhan (boleh dikombinasikan), lalu centang barang satu per satu atau klik
-              &ldquo;Tambahkan semua hasil filter&rdquo;.
-            </p>
+            <div className="text-xs font-medium text-muted-foreground">Or select many at once (by category / unit)</div>
           </div>
-          <Input placeholder="Cari kode/deskripsi…" value={search}
+          <Input placeholder="Search code/description…" value={search}
             onChange={(e) => { setSearch(e.target.value); setPage(1) }} />
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <Select value={anak1} onChange={(e) => { setAnak1(e.target.value); setPage(1) }}>
-              <option value="">Semua Kategori Anak 1</option>
+              <option value="">All Sub Category 1</option>
               {anak1Options.map((v) => <option key={v} value={v}>{v}</option>)}
             </Select>
             <Select value={anak2} onChange={(e) => { setAnak2(e.target.value); setPage(1) }}>
-              <option value="">Semua Kategori Anak 2</option>
+              <option value="">All Sub Category 2</option>
               {anak2Options.map((v) => <option key={v} value={v}>{v}</option>)}
             </Select>
             <Select value={anak3} onChange={(e) => { setAnak3(e.target.value); setPage(1) }}>
-              <option value="">Semua Kategori Anak 3</option>
+              <option value="">All Sub Category 3</option>
               {anak3Options.map((v) => <option key={v} value={v}>{v}</option>)}
             </Select>
             <Select value={unitId} onChange={(e) => { setUnitId(e.target.value); setPage(1) }}>
-              <option value="">Semua UOM</option>
+              <option value="">All UOM</option>
               {units?.map((u) => <option key={u.id} value={u.id}>{u.code}</option>)}
             </Select>
           </div>
           <Button size="sm" variant="outline" disabled={addingAll} onClick={addAllFiltered}>
-            {addingAll ? 'Menambahkan…' : `+ Tambahkan semua hasil filter${data ? ` (${data.meta.total})` : ''}`}
+            {addingAll ? 'Adding…' : `+ Add all filter results${data ? ` (${data.meta.total})` : ''}`}
           </Button>
 
           <div className="max-h-60 overflow-y-auto rounded border">
-            {isLoading && <p className="p-2 text-sm text-muted-foreground">Memuat…</p>}
+            {isLoading && <p className="p-2 text-sm text-muted-foreground">Loading…</p>}
             {!isLoading && (data?.data.length ?? 0) === 0 && (
-              <p className="p-2 text-sm text-muted-foreground">Tidak ada hasil.</p>
+              <p className="p-2 text-sm text-muted-foreground">No results.</p>
             )}
             {data?.data.map((it) => (
               <label key={it.id} className="flex cursor-pointer items-start gap-2 border-b px-2 py-1.5 text-sm last:border-b-0 hover:bg-muted/50">
                 <input type="checkbox" className="mt-0.5 shrink-0" checked={selected.has(it.id)} onChange={() => toggle(it.id, `${it.code} — ${it.description}`)} />
-                <span className="shrink-0 font-mono text-xs text-muted-foreground">{it.code}</span>
+                <span className="shrink-0 text-[13px] text-muted-foreground">{it.code}</span>
                 <span>{it.description}</span>
               </label>
             ))}
           </div>
           {data && data.meta.last_page > 1 && (
             <div className="flex items-center justify-between text-xs text-muted-foreground">
-              <button className="rounded border px-2 py-1 disabled:opacity-40" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>Sebelumnya</button>
-              <span>Hal {page} / {data.meta.last_page}</span>
-              <button className="rounded border px-2 py-1 disabled:opacity-40" disabled={page >= data.meta.last_page} onClick={() => setPage((p) => p + 1)}>Berikutnya</button>
+              <button className="rounded border px-2 py-1 disabled:opacity-40" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>Previous</button>
+              <span>Page {page} / {data.meta.last_page}</span>
+              <button className="rounded border px-2 py-1 disabled:opacity-40" disabled={page >= data.meta.last_page} onClick={() => setPage((p) => p + 1)}>Next</button>
             </div>
           )}
         </div>
@@ -214,9 +210,9 @@ export function ScheduleOpnameModal({ open, onClose, onScheduled }: Props) {
         {selected.size > 0 && (
           <div className="space-y-1">
             <div className="flex items-center justify-between">
-              <div className="text-xs font-medium text-muted-foreground">Barang dipilih ({selected.size})</div>
+              <div className="text-xs font-medium text-muted-foreground">Selected items ({selected.size})</div>
               <button type="button" className="text-xs text-destructive hover:underline" onClick={() => setSelected(new Map())}>
-                Kosongkan pilihan
+                Clear selection
               </button>
             </div>
             <div className="flex max-h-32 flex-wrap gap-1 overflow-y-auto">
@@ -227,7 +223,7 @@ export function ScheduleOpnameModal({ open, onClose, onScheduled }: Props) {
                 </span>
               ))}
               {selected.size > 100 && (
-                <span className="px-2 py-0.5 text-xs text-muted-foreground">+{selected.size - 100} barang lainnya</span>
+                <span className="px-2 py-0.5 text-xs text-muted-foreground">+{selected.size - 100} other items</span>
               )}
             </div>
           </div>

@@ -9,12 +9,12 @@ export function AssetPicker({ onPick }: { onPick: (asset: AssetOption) => void }
 
   return (
     <div className="relative">
-      <Input placeholder="Cari nopol / nama kendaraan…" value={q} onChange={(e) => setQ(e.target.value)} />
+      <Input placeholder="Search plate no. / vehicle name…" value={q} onChange={(e) => setQ(e.target.value)} />
       {open && (
         <ul className="absolute z-10 mt-1 max-h-56 w-full overflow-auto rounded-md border bg-card shadow-md">
-          {isFetching && <li className="px-3 py-2 text-sm text-muted-foreground">Mencari…</li>}
+          {isFetching && <li className="px-3 py-2 text-sm text-muted-foreground">Searching…</li>}
           {!isFetching && (data?.length ?? 0) === 0 && (
-            <li className="px-3 py-2 text-sm text-muted-foreground">Tidak ada aset.</li>
+            <li className="px-3 py-2 text-sm text-muted-foreground">No assets.</li>
           )}
           {data?.map((a) => (
             <li key={a.id}>
@@ -26,7 +26,7 @@ export function AssetPicker({ onPick }: { onPick: (asset: AssetOption) => void }
                   setQ('')
                 }}
               >
-                <span className="font-mono text-xs text-muted-foreground">{a.code}</span> {a.name}
+                <span className="text-[13px] text-muted-foreground">{a.code}</span> {a.name}
                 {a.brand_model ? <span className="ml-1 text-xs text-muted-foreground">({a.brand_model})</span> : null}
               </button>
             </li>

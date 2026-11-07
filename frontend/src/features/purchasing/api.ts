@@ -1,6 +1,7 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import type { Paginated } from '@/types/inventory'
+import { showBlob } from '@/components/ui/lightbox'
 
 // ---------------------------------------------------------------- Purchase Order
 
@@ -14,10 +15,15 @@ export interface PoLine {
   vendor_name?: string | null
   qty: number
   unit: string | null
+  /** frozen as ordered, and the item's Base UOM when it differs */
+  unit_ratio?: number | null
+  base_unit?: string | null
   unit_price: number
   line_total: number
   qty_received: number
   line_status: string
+  /** STOCKWISE PO: this line against the Direktur's vendor pick */
+  director_pick?: { status: 'PILIHAN' | 'BUKAN'; vendor: string | null; unit_price: number | null } | null
   /** Accurate's own PODET.REQID/REQSEQ chain — the PPB (mirror) line this PO line was raised from, if any. */
   source_ppb?: { id: number; no_ppb: string | null } | null
   /** RI lines that received against this PO line. */
@@ -220,18 +226,15 @@ export function useUploadPoProof(id: number) {
       form.append('file', file)
       return (await api.post<{ data: PurchaseOrder }>(`/api/purchase-orders/${id}/proof`, form)).data.data
     },
-    meta: { successMessage: 'Bukti pembelian diunggah — PO sudah dibeli.' },
+    meta: { successMessage: 'Purchase proof uploaded; the PO is now purchased.' },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['purchase-orders'] }),
   })
 }
 
-/** Opens the proof of purchase in a new tab (fetched with the session token). */
+/** The proof of purchase: a photo in the popup, a PDF in a new tab (fetched with the session token). */
 export async function openPoProof(id: number) {
-  const tab = window.open('', '_blank')
   const blob = (await api.get(`/api/purchase-orders/${id}/proof`, { responseType: 'blob' })).data as Blob
-  const url = URL.createObjectURL(blob)
-  if (tab) tab.location.href = url
-  else window.location.href = url
+  showBlob(blob, { alt: 'Purchase proof', name: 'bukti-pembelian' })
 }
 
 /** STOCKWISE PO: vendor, prices (and quantities) — then it waits for the Direktur. */
@@ -240,7 +243,7 @@ export function useCompletePo(id: number) {
   return useMutation({
     mutationFn: async (body: { vendor_id: number | null; expected_date?: string | null; notes?: string | null; lines: { id: number; qty: number; unit_price: number; vendor_id?: number | null }[] }) =>
       (await api.put<{ data: PurchaseOrder }>(`/api/purchase-orders/${id}/complete`, body)).data.data,
-    meta: { successMessage: 'PO diajukan ke Direktur.' },
+    meta: { successMessage: 'PO submitted to the Director.' },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['purchase-orders'] }),
   })
 }

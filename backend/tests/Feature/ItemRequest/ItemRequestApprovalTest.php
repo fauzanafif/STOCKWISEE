@@ -70,7 +70,7 @@ class ItemRequestApprovalTest extends TestCase
             ->assertCreated()->json('data');
         $this->actingAsRole('admin_gudang');
         $this->postJson("/api/item-requests/{$req['id']}/process", [
-            'lines' => [$req['lines'][0]['id'] => ['item_id' => $this->item->id, 'qty' => $proposed]],
+            'lines' => [$req['lines'][0]['id'] => ['item_id' => $this->item->id, 'qty' => $proposed, 'reason' => $proposed !== null && $proposed < $qty ? 'uji: diberi kurang' : null]],
             'npbg' => ['pelanggan' => 'HRD'],
         ])->assertOk()->assertJsonPath('data.status', 'APPROVAL_MANAGER')->assertJsonPath('data.status_label', 'Persetujuan Manajer');
         $this->assertSame(0, Npbg::count(), 'nothing is issued before the approval');
@@ -160,7 +160,7 @@ class ItemRequestApprovalTest extends TestCase
         $this->postJson("/api/item-requests/{$req['id']}/process", ['lines' => [$lineId => ['item_id' => $this->item->id, 'qty' => 3]]])->assertStatus(422)->assertJsonValidationErrors("lines.{$lineId}.item_id");
         $this->postJson("/api/item-requests/{$req['id']}/process", ['lines' => [$lineId => ['item_id' => 999999, 'qty' => 3]]])->assertStatus(422)->assertJsonValidationErrors("lines.{$lineId}.item_id");
         $this->item->update(['is_active' => true]);
-        $this->postJson("/api/item-requests/{$req['id']}/process", ['lines' => [$lineId => ['item_id' => $this->item->id, 'qty' => 3]]])->assertOk();
+        $this->postJson("/api/item-requests/{$req['id']}/process", ['lines' => [$lineId => ['item_id' => $this->item->id, 'qty' => 3, 'reason' => 'uji']]])->assertOk();
         $done = $this->approveBoth($id = $req['id'], [$lineId => 3]);
         $this->actingAsRole('lapangan_gudang');
         $f = $this->getJson("/api/item-requests/{$id}")->json('data.fulfillments.0');
@@ -192,43 +192,121 @@ class ItemRequestApprovalTest extends TestCase
         $this->assertContains('kertas hvs a4 yang bagus ya', $notes);
     }
 
-    public function test_gudang_hands_over_less_and_closes_the_rest(): void
+    public function test_less_than_asked_needs_a_reason_and_everyone_sees_the_admin_notes(): void
+    {
+        $this->stock(10);
+        $this->actingAsRole('karyawan', ['name' => 'SITI']);
+        $req = $this->postJson('/api/item-requests', ['divisi' => 'HRD', 'lines' => [['deskripsi_barang' => 'kertas hvs a4', 'qty' => 10, 'satuan' => 'RIM']]])->assertCreated()->json('data');
+        $lineId = $req['lines'][0]['id'];
+        $this->actingAsRole('admin_gudang');
+        // 9 of 10 (1 kept in stock) without a reason: refused
+        $this->postJson("/api/item-requests/{$req['id']}/process", ['lines' => [$lineId => ['item_id' => $this->item->id, 'qty' => 9]]])
+            ->assertStatus(422)->assertJsonValidationErrors("lines.{$lineId}.reason");
+        $data = $this->postJson("/api/item-requests/{$req['id']}/process", [
+            'lines' => [$lineId => ['item_id' => $this->item->id, 'qty' => 9, 'reason' => 'Sisa 1 untuk cadangan gudang']],
+            'note' => 'Diambil di gudang lantai 1',
+        ])->assertOk()->json('data');
+        $this->assertSame(['Sisa 1 untuk cadangan gudang', 'Diambil di gudang lantai 1', 9.0], [$data['lines'][0]['short_reason'], $data['verify_note'], (float) $data['lines'][0]['approved_qty']]);
+
+        // the approvers see both
+        $this->actingAsRole('manager');
+        $row = collect($this->getJson('/api/approvals')->assertOk()->json('data'))->firstWhere('id', $req['id']);
+        $this->assertSame(['Diambil di gudang lantai 1', 'Sisa 1 untuk cadangan gudang'], [$row['verify_note'], $row['lines'][0]['short_reason']]);
+        // and the requester on the status page (no account)
+        $token = ItemRequest::find($req['id'])->track_token;
+        $pub = $this->getJson('/api/public/request-status?tokens='.$token)->assertOk()->json('data.0');
+        $this->assertSame(['Diambil di gudang lantai 1', 'Sisa 1 untuk cadangan gudang'], [$pub['verify_note'], $pub['lines'][0]['short_reason']]);
+    }
+
+    public function test_gudang_hands_over_the_whole_npbg_never_part_of_it(): void
     {
         $this->stock(20);
-        [$id, , $lineId] = $this->verifiedRequest(6);
+        [$id] = $this->verifiedRequest(6);
         $this->approveBoth($id);
         $this->actingAsRole('lapangan_gudang', ['name' => 'JOKO']);
         $f = $this->getJson("/api/item-requests/{$id}")->json('data.fulfillments.0');
         $fl = $f['lines'][0]['id'];
 
-        // less than the approved NPBG while the stock was there: a reason is required
+        // 4 of the 6 prepared, even with a reason: refused, nothing leaves the stock
         $this->postJson("/api/item-requests/{$id}/fulfillments/{$f['id']}/handover", ['photo' => self::PNG, 'signature' => self::PNG, 'received_by' => 'Siti',
-            'handed' => [$fl => 4], 'drop' => [$fl]])->assertStatus(422)->assertJsonValidationErrors("reasons.{$fl}");
-        // 4 of the 6 prepared handed over, the other 2 not needed any more: back to stock, approved 4, done
-        $done = $this->postJson("/api/item-requests/{$id}/fulfillments/{$f['id']}/handover", ['photo' => self::PNG, 'signature' => self::PNG, 'received_by' => 'Siti',
-            'handed' => [$fl => 4], 'drop' => [$fl], 'reasons' => [$fl => 'Peminta cukup 4']])->assertOk()->json('data');
-        $this->assertSame(['SELESAI', 4.0, 4.0, 0.0], [$done['status'], (float) $done['lines'][0]['approved_qty'], (float) $done['lines'][0]['fulfilled_qty'], (float) $done['lines'][0]['remaining']]);
-        $this->assertSame(16.0, $this->onHand());
-        $this->assertSame(4.0, (float) Npbg::sole()->kuantitas);
-        $log = collect($done['approval_log'])->firstWhere('stage', 'SERAH_TERIMA')['note'];
-        $this->assertStringContainsString('diserahkan ke Siti', $log);
-        $this->assertStringContainsString('4', $log);
-        $this->assertStringContainsString('2 tetap di stok, sisa ditutup; alasan: Peminta cukup 4', $log);
+            'handed' => [$fl => 4], 'drop' => [$fl], 'reasons' => [$fl => 'Peminta cukup 4']])->assertStatus(422)->assertJsonValidationErrors("handed.{$fl}");
+        $this->assertSame(20.0, $this->onHand());
+        // the whole NPBG: done
+        $done = $this->handover($id, $f['id']);
+        $this->assertSame(['SELESAI', 6.0, 0.0], [$done['status'], (float) $done['lines'][0]['fulfilled_qty'], (float) $done['lines'][0]['remaining']]);
+        $this->assertSame(14.0, $this->onHand());
+        $this->assertStringContainsString('diserahkan ke Siti', collect($done['approval_log'])->firstWhere('stage', 'SERAH_TERIMA')['note']);
     }
 
-    public function test_gudang_hands_over_less_and_the_rest_stays_owed(): void
+    public function test_picked_up_by_a_representative_gudang_scans_the_requesters_one_time_code(): void
     {
         $this->stock(20);
-        // 1 of 3 handed over, the rest still owed (Gudang prepares it again later)
-        [$id2] = $this->verifiedRequest(3);
-        $this->approveBoth($id2);
-        $this->actingAsRole('lapangan_gudang');
-        $f2 = $this->getJson("/api/item-requests/{$id2}")->json('data.fulfillments.0');
-        $part = $this->postJson("/api/item-requests/{$id2}/fulfillments/{$f2['id']}/handover", ['photo' => self::PNG, 'signature' => self::PNG, 'received_by' => 'Budi',
-            'handed' => [$f2['lines'][0]['id'] => 1], 'reasons' => [$f2['lines'][0]['id'] => 'Barang fisik rusak']])->assertOk()->json('data');
-        $this->assertSame([3.0, 1.0, 2.0], [(float) $part['lines'][0]['approved_qty'], (float) $part['lines'][0]['fulfilled_qty'], (float) $part['lines'][0]['remaining']]);
-        $this->assertSame('DISIAPKAN', $part['status'], 'stock is there for the 2 still owed');
-        $this->assertStringContainsString('sisa tetap ditunggu', collect($part['approval_log'])->firstWhere('stage', 'SERAH_TERIMA')['note']);
+        [$id, $karyawan] = $this->verifiedRequest(6);
+        $this->approveBoth($id);
+
+        // only the requester names a representative; they see the code + QR text, Gudang never reads it
+        $this->actingAsRole('karyawan');
+        $this->postJson("/api/item-requests/{$id}/proxy", ['name' => 'Budi'])->assertForbidden();
+        \Laravel\Sanctum\Sanctum::actingAs($karyawan);
+        // the representative comes from data pekerja (active), suggested while typing
+        foreach (['Andi', 'Budi Santoso', 'Budiman'] as $n) {
+            \App\Models\Employee::create(['name' => $n, 'is_active' => true]);
+        }
+        \App\Models\Employee::create(['name' => 'Budi Lama', 'is_active' => false]);
+        $this->assertSame(['Budi Santoso', 'Budiman'], array_column($this->getJson("/api/item-requests/{$id}/proxy-people?q=bud")->assertOk()->json('data'), 'name'));
+        $this->postJson("/api/item-requests/{$id}/proxy", ['name' => 'Orang Asing'])->assertStatus(422)->assertJsonValidationErrors('name');
+        $this->postJson("/api/item-requests/{$id}/proxy", ['name' => 'Budi Lama'])->assertStatus(422);
+        $old = $this->postJson("/api/item-requests/{$id}/proxy", ['name' => 'Andi'])->assertOk()->json('data.proxy');
+        $proxy = $this->postJson("/api/item-requests/{$id}/proxy", ['name' => '  Budi   Santoso '])->assertOk()->json('data.proxy');
+        $this->assertSame('Budi Santoso', $proxy['name']);
+        $this->assertMatchesRegularExpression('/^\d{6}$/', $proxy['code']);
+        $this->assertSame('STOCKWISE-WAKIL:'.$proxy['code'], $proxy['qr']);
+
+        $this->actingAsRole('lapangan_gudang', ['name' => 'JOKO']);
+        $data = $this->getJson("/api/item-requests/{$id}")->assertOk()->json('data');
+        $this->assertSame('Budi Santoso', $data['proxy']['name']);
+        $this->assertArrayNotHasKey('code', $data['proxy'], 'Gudang scans the code, never reads it');
+        $this->assertSame('Budi Santoso', $this->getJson('/api/approvals')->json('data.0.proxy.name'));
+        $f = $data['fulfillments'][0];
+        $body = fn (string $code) => ['photo' => self::PNG, 'signature' => self::PNG, 'received_by' => 'x', 'proxy_code' => $code];
+
+        // the replaced code, a wrong one: refused, nothing leaves the stock
+        if ($old['code'] !== $proxy['code']) {
+            $this->postJson("/api/item-requests/{$id}/fulfillments/{$f['id']}/handover", $body($old['code']))->assertStatus(422)->assertJsonValidationErrors('proxy_code');
+        }
+        $this->postJson("/api/item-requests/{$id}/fulfillments/{$f['id']}/handover", $body('000000' === $proxy['code'] ? '111111' : '000000'))->assertStatus(422);
+        $this->assertSame(20.0, $this->onHand());
+
+        // the scanned QR: handed over to the representative, the code used up
+        $done = $this->postJson("/api/item-requests/{$id}/fulfillments/{$f['id']}/handover", $body($proxy['qr']))->assertOk()->json('data');
+        $this->assertSame('SELESAI', $done['status']);
+        $this->assertSame('Budi Santoso (wakil SITI)', $done['fulfillments'][0]['received_by']);
+        $this->assertStringContainsString('kode wakil terverifikasi', collect($done['approval_log'])->firstWhere('stage', 'SERAH_TERIMA')['note']);
+        $this->assertNull($done['proxy'], 'used once');
+        $this->assertSame(14.0, $this->onHand());
+
+        // done: no representative any more (the requester's status page says so too)
+        \Laravel\Sanctum\Sanctum::actingAs($karyawan);
+        $this->postJson("/api/item-requests/{$id}/proxy", ['name' => 'Citra'])->assertStatus(422);
+        $token = \App\Models\ItemRequest::find($id)->track_token;
+        $this->assertFalse($this->getJson("/api/public/request-status?tokens={$token}")->json('data.0.can_proxy'));
+    }
+
+    public function test_the_status_page_names_a_representative_and_can_take_it_back(): void
+    {
+        $this->stock(20);
+        [$id] = $this->verifiedRequest(6);
+        $token = \App\Models\ItemRequest::find($id)->track_token;
+        \App\Models\Employee::create(['name' => 'Budi', 'is_active' => true]);
+        $this->getJson('/api/public/request-status/proxy-people?token='.str_repeat('x', 32).'&q=bud')->assertNotFound();
+        $this->assertSame([['name' => 'Budi', 'divisi' => null]], $this->getJson("/api/public/request-status/proxy-people?token={$token}&q=BUD")->assertOk()->json('data'));
+        $this->postJson('/api/public/request-status/proxy', ['token' => $token, 'name' => 'Zaki'])->assertStatus(422);
+        $this->postJson('/api/public/request-status/proxy', ['token' => 'x', 'name' => 'Budi'])->assertStatus(422);
+        $made = $this->postJson('/api/public/request-status/proxy', ['token' => $token, 'name' => 'Budi'])->assertOk()->json('data');
+        $this->assertMatchesRegularExpression('/^\d{6}$/', $made['code']);
+        $this->assertSame($made['code'], $this->getJson("/api/public/request-status?tokens={$token}")->json('data.0.proxy.code'));
+        $this->deleteJson("/api/public/request-status/proxy?token={$token}")->assertOk();
+        $this->assertNull($this->getJson("/api/public/request-status?tokens={$token}")->json('data.0.proxy'));
     }
 
     public function test_one_requested_item_met_by_two_master_items_the_shortage_goes_to_draft_ppb(): void
@@ -248,6 +326,9 @@ class ItemRequestApprovalTest extends TestCase
         // Sidu 8 (more than its stock of 6 — allowed: the rest is bought) + Sinar 2
         $data = $this->postJson("/api/item-requests/{$req['id']}/process", ['lines' => [$lineId => ['items' => [['item_id' => $this->item->id, 'qty' => 8], ['item_id' => $sinar->id, 'qty' => 2]]]]])
             ->assertOk()->assertJsonPath('data.status', 'APPROVAL_MANAGER')->json('data');
+        // the approvers see who in the warehouse picked them
+        $this->actingAsRole('manager');
+        $this->assertSame('ADMIN', $this->getJson('/api/approvals')->assertOk()->json('data.0.verified_step.stage'));
         // two lines, both still "buku" in the requester's words, the master item beside it
         $this->assertSame([['buku', 'ATK.0001', 8.0], ['buku', 'ATK.0002', 2.0]],
             array_map(fn ($l) => [$l['deskripsi_peminta'], $l['kode_barang'], (float) $l['approved_qty']], $data['lines']));
@@ -278,30 +359,28 @@ class ItemRequestApprovalTest extends TestCase
         $this->assertSame('Siapkan & serah terima gudang · NPBG partial & menunggu pengadaan', $ready['lines'][0]['line_status_label']);
 
         $this->actingAsRole('lapangan_gudang');
-        // only 3 really handed over: 1 back to stock, the NPBG says 3
-        $after = $this->handover($id, $ready['fulfillments'][0]['id'], [$ready['fulfillments'][0]['lines'][0]['id'] => 3]);
-        $this->assertSame(1.0, $this->onHand());
-        $this->assertEquals(3, Npbg::sole()->kuantitas);
-        $this->assertSame(['DISIAPKAN', 3.0, 7.0], [$after['status'], (float) $after['lines'][0]['fulfilled_qty'], (float) $after['lines'][0]['remaining']]);
-        $f2 = $this->postJson("/api/item-requests/{$id}/fulfillments", ['lines' => [['line_id' => $lineId, 'qty' => 2]]])->assertStatus(422); // only 1 in stock
-        $f2 = $this->postJson("/api/item-requests/{$id}/fulfillments", ['lines' => [['line_id' => $lineId, 'qty' => 1]]])->assertOk()->json('data.fulfillments.1');
-        $after = $this->handover($id, $f2['id']);
+        // the 4 from stock handed over whole (never part of them); the 6 wait for the purchase
+        $after = $this->handover($id, $ready['fulfillments'][0]['id']);
+        $this->assertSame(0.0, $this->onHand());
+        $this->assertEquals(4, Npbg::sole()->kuantitas);
+        $this->assertSame([4.0, 6.0], [(float) $after['lines'][0]['fulfilled_qty'], (float) $after['lines'][0]['remaining']]);
+        $this->postJson("/api/item-requests/{$id}/fulfillments", ['lines' => [['line_id' => $lineId, 'qty' => 1]]])->assertStatus(422); // nothing in stock
         $this->assertSame(['MENUNGGU_PENGADAAN', 'MENUNGGU_PENGADAAN'], [$after['status'], $after['lines'][0]['line_status']]);
         $this->assertSame('NPBG partial & menunggu pengadaan', $after['status_label']);
 
         // a manual RI brings goods: given at once (NPBG lanjutan), ready for the serah terima
         $this->actingAsRole('admin_gudang');
         $this->postJson('/api/ri', ['divisi' => 'ATK', 'kode_barang' => 'ATK.0001', 'deskripsi_barang' => 'KERTAS', 'kuantitas' => 10, 'photos' => [self::PNG]])->assertCreated();
-        $this->assertSame([10.0, 6.0, 'DISIAPKAN', 3], [$this->onHand(), $this->held(), ItemRequest::find($id)->status, Npbg::count()]);
+        $this->assertSame([10.0, 6.0, 'DISIAPKAN', 2], [$this->onHand(), $this->held(), ItemRequest::find($id)->status, Npbg::count()]);
         $this->assertSame(4.0, (float) DB::table('inventory_snapshots')->where('item_id', $this->item->id)->value('available'), 'the stock shown follows at once');
 
         $this->actingAsRole('lapangan_gudang');
         $shown = $this->getJson("/api/item-requests/{$id}")->assertOk()->json('data');
         $this->assertSame(4.0, (float) $shown['lines'][0]['available'], 'the Stok column of the Item table is live');
-        $f3 = $shown['fulfillments'][2];
+        $f3 = $shown['fulfillments'][1];
         $this->assertEquals(6, $f3['lines'][0]['qty']);
-        $this->assertSame(3, $f3['seq']);
-        $this->assertStringContainsString('NPBG lanjutan #3', Npbg::orderByDesc('id')->first()->keterangan);
+        $this->assertSame(2, $f3['seq']);
+        $this->assertStringContainsString('NPBG lanjutan #2', Npbg::orderByDesc('id')->first()->keterangan);
         $done = $this->handover($id, $f3['id']);
         $this->assertSame(['SELESAI', 10.0], [$done['status'], (float) $done['lines'][0]['fulfilled_qty']]);
         $this->assertSame([$this->item->id => 0.0], StockwiseNet::byItem());
@@ -400,7 +479,7 @@ class ItemRequestApprovalTest extends TestCase
 
         $this->actingAsRole('admin_gudang');
         $this->postJson("/api/item-requests/{$id}/process", ['lines' => [$lineId => ['item_id' => $this->item->id, 'qty' => 12]]])->assertStatus(422); // more than asked
-        $again = $this->postJson("/api/item-requests/{$id}/process", ['lines' => [$lineId => ['item_id' => $this->item->id, 'qty' => 5]]])
+        $again = $this->postJson("/api/item-requests/{$id}/process", ['lines' => [$lineId => ['item_id' => $this->item->id, 'qty' => 5, 'reason' => 'uji']]])
             ->assertOk()->assertJsonPath('data.status', 'APPROVAL_MANAGER')->json('data');
         $this->assertEquals(5, $again['lines'][0]['approved_qty']);
     }
@@ -454,7 +533,7 @@ class ItemRequestApprovalTest extends TestCase
         $link = $this->postJson('/api/item-request-links', ['label' => 'Umum', 'form_type' => 'ATK'])->assertCreated()->json('data');
         $this->app['auth']->forgetGuards();
 
-        $sent = $this->postJson("/api/public/item-request/{$link['token']}", ['requester_name' => 'Rina Ayu', 'lines' => [['deskripsi_barang' => 'pulpen', 'qty' => 3]]])
+        $sent = $this->postJson("/api/public/item-request/{$link['token']}", ['session' => $this->linkSession($link['token'], 'Rina Ayu'), 'lines' => [['deskripsi_barang' => 'pulpen', 'qty' => 3]]])
             ->assertCreated()->json('data');
         $rows = $this->getJson('/api/public/request-status?tokens='.$sent['track_token'].',bogus!,'.str_repeat('x', 32))->assertOk()->json('data');
         $this->assertCount(1, $rows);

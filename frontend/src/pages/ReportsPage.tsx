@@ -14,14 +14,14 @@ interface Dataset {
 }
 
 const DATASETS: Dataset[] = [
-  { key: 'inventory', label: 'Inventory', description: 'Stok aktual, reserved & tersedia per gudang', permission: 'report.inventory' },
-  { key: 'inventory_analysis', label: 'Analisis Inventory', description: 'Status stok vs. safety stock & rekomendasi pembelian (real-time)', permission: 'inventory.view_analysis' },
-  { key: 'npbg', label: 'NPBG', description: 'Mirror ARINV/ARINVDET dari Accurate', permission: 'report.npbg' },
-  { key: 'ppb', label: 'PPB', description: 'Mirror REQUISITION/REQUISITIONDET dari Accurate', permission: 'report.ppb' },
-  { key: 'purchase-orders', label: 'Purchase Order', description: 'Pesanan pembelian ke vendor (Accurate & internal)', permission: 'po.view' },
-  { key: 'ri', label: 'RI', description: 'Mirror APINV/APITMDET dari Accurate', permission: 'report.ri' },
-  { key: 'stock-opnames', label: 'Stock Opname', description: 'Riwayat opname & selisih', permission: 'report.opname' },
-  { key: 'stock-movements', label: 'Pergerakan Stok', description: 'Kartu stok / ledger lengkap', permission: 'report.stock_movement' },
+  { key: 'inventory', label: 'Inventory', description: 'Actual, reserved & available stock per warehouse', permission: 'report.inventory' },
+  { key: 'inventory_analysis', label: 'Inventory Analysis', description: 'Stock status vs. safety stock & purchase recommendation (real-time)', permission: 'inventory.view_analysis' },
+  { key: 'npbg', label: 'Delivery Order', description: 'Mirror of ARINV/ARINVDET from Accurate', permission: 'report.npbg' },
+  { key: 'ppb', label: 'Purchase Request', description: 'Mirror of REQUISITION/REQUISITIONDET from Accurate', permission: 'report.ppb' },
+  { key: 'purchase-orders', label: 'Purchase Order', description: 'Purchase orders to vendors (Accurate & internal)', permission: 'po.view' },
+  { key: 'ri', label: 'Receipt', description: 'Mirror of APINV/APITMDET from Accurate', permission: 'report.ri' },
+  { key: 'stock-opnames', label: 'Physical Inventory', description: 'Opname history & differences', permission: 'report.opname' },
+  { key: 'stock-movements', label: 'Stock Movement', description: 'Full stock card / ledger', permission: 'report.stock_movement' },
 ]
 
 interface LegacyFile {
@@ -34,14 +34,14 @@ interface LegacyFile {
 
 /** 9 file Excel lama PT Surya Inti Gas — direplika sama persis (sheet/kolom/rumus), diisi data live. */
 const LEGACY_FILES: LegacyFile[] = [
-  { key: 'data', label: 'Master Barang & Safety Stock', filename: 'DATA.xlsx', description: 'DATABASE UTAMA + 12 sheet SAFETY STOCK (formula asli, ~1 menit untuk dibuat)', anyOf: ['report.inventory'] },
-  { key: 'npbg', label: 'NPBG', filename: '2. NPBG.xlsx', description: 'Nota Pengeluaran Barang Gudang', anyOf: ['report.npbg'] },
-  { key: 'borrow-lend', label: 'Tracking Borrow & Lend', filename: '3. Tracking Borrow & Lend.xlsx', description: 'Sheet Lend, Borrow', anyOf: ['lend.view', 'borrow.view'] },
-  { key: 'stpp', label: 'Tracking STPP', filename: '4. Tracking STPP.xlsx', description: 'Serah Terima Pinjam Pakai', anyOf: ['stpp.view'] },
-  { key: 'ban-luar', label: 'Tracking Ban Luar', filename: '5. Tracking Ban Luar.xlsx', description: 'Penggantian ban kendaraan', anyOf: ['tyre.view'] },
-  { key: 'maintenance-assets', label: 'Tracking Maintenance Assets', filename: '6. Tracking Maintenance Assets.xlsx', description: 'SPK perbaikan aset/kendaraan', anyOf: ['maintenance.view'] },
-  { key: 'manufaktur-assembly', label: 'Tracking Manufaktur & Assembly', filename: '7. Tracking Manufaktur & Assembly.xlsx', description: 'Sheet Manufaktur & Assembly, Manufaktur & Jasa', anyOf: ['manufacturing.view'] },
-  { key: 'pengembalian-bekas', label: 'Tracking Pengembalian Bekas', filename: '8. Tracking Pengembalian Bekas.xlsx', description: 'Sheet Spare Part (matriks), Spare Part Lain', anyOf: ['used_return.view'] },
+  { key: 'data', label: 'Item Master & Safety Stock', filename: 'DATA.xlsx', description: 'MAIN DATABASE + 12 SAFETY STOCK sheets (original formulas, ~1 minute to create)', anyOf: ['report.inventory'] },
+  { key: 'npbg', label: 'Delivery Order', filename: '2. NPBG.xlsx', description: 'Delivery Order (NPBG) legacy file', anyOf: ['report.npbg'] },
+  { key: 'borrow-lend', label: 'Borrow & Lend Tracking', filename: '3. Tracking Borrow & Lend.xlsx', description: 'Lend, Borrow sheets', anyOf: ['lend.view', 'borrow.view'] },
+  { key: 'stpp', label: 'Tracking STPP', filename: '4. Tracking STPP.xlsx', description: 'Loan-for-Use Handover', anyOf: ['stpp.view'] },
+  { key: 'ban-luar', label: 'Outer Tyre Tracking', filename: '5. Tracking Ban Luar.xlsx', description: 'Vehicle tyre replacement', anyOf: ['tyre.view'] },
+  { key: 'maintenance-assets', label: 'Maintenance Assets Tracking', filename: '6. Tracking Maintenance Assets.xlsx', description: 'Asset/vehicle repair SPK', anyOf: ['maintenance.view'] },
+  { key: 'manufaktur-assembly', label: 'Manufacturing & Assembly Tracking', filename: '7. Tracking Manufaktur & Assembly.xlsx', description: 'Manufacturing & Assembly, Manufacturing & Services sheets', anyOf: ['manufacturing.view'] },
+  { key: 'pengembalian-bekas', label: 'Used Item Return Tracking', filename: '8. Tracking Pengembalian Bekas.xlsx', description: 'Spare Part (matrix), Other Spare Part sheets', anyOf: ['used_return.view'] },
 ]
 
 const FORMATS = [
@@ -122,16 +122,16 @@ export function ReportsPage() {
   }
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       <PageHeader
-        title="Laporan & Export"
-        subtitle="Unduh data STOCKWISE dalam format Excel, CSV, atau PDF"
+        title="Reports & Export"
+        subtitle="Download STOCKWISE data as Excel, CSV, or PDF"
         icon={<Download className="size-5" />}
       />
 
       {err && <p className="text-sm text-destructive">{err}</p>}
       <p className="text-xs text-muted-foreground">
-        Format PDF diunduh sebagai halaman cetak — buka file lalu gunakan “Simpan sebagai PDF” di dialog cetak browser.
+        The PDF format downloads as a print page; open the file and use “Save as PDF” in the browser print dialog.
       </p>
 
       <div className="grid gap-3 sm:grid-cols-2">
@@ -155,7 +155,7 @@ export function ReportsPage() {
                       onClick={() => download(d.key, f.key)}
                     >
                       <Icon className="size-4" />
-                      {busy === id ? 'Menyiapkan…' : f.label}
+                      {busy === id ? 'Preparing…' : f.label}
                     </Button>
                   )
                 })}
@@ -167,7 +167,7 @@ export function ReportsPage() {
                     onClick={() => print(d.key)}
                   >
                     <Printer className="size-4" />
-                    {busy === `${d.key}:print` ? 'Menyiapkan…' : 'Cetak'}
+                    {busy === `${d.key}:print` ? 'Preparing…' : 'Print'}
                   </Button>
                 )}
               </div>
@@ -179,7 +179,7 @@ export function ReportsPage() {
       {datasets.length === 0 && (
         <Card>
           <CardContent className="py-10 text-center text-sm text-muted-foreground">
-            Anda tidak memiliki akses laporan.
+            You have no access to reports.
           </CardContent>
         </Card>
       )}
@@ -187,8 +187,8 @@ export function ReportsPage() {
       {legacyFiles.length > 0 && (
         <>
           <PageHeader
-            title="Excel Klasik"
-            subtitle="Replika 9 file Excel lama — sheet, kolom & rumus sama persis, diisi data live STOCKWISE"
+            title="Classic Excel"
+            subtitle="Replica of 9 old Excel files; identical sheets, columns & formulas, filled with live STOCKWISE data"
             icon={<Archive className="size-5" />}
           />
           <div className="grid gap-3 sm:grid-cols-2">
@@ -199,12 +199,12 @@ export function ReportsPage() {
                   <CardContent className="flex items-center justify-between gap-3 p-4">
                     <div>
                       <div className="font-medium">{f.label}</div>
-                      <div className="font-mono text-xs text-muted-foreground">{f.filename}</div>
+                      <div className="text-[13px] text-muted-foreground">{f.filename}</div>
                       <div className="text-xs text-muted-foreground">{f.description}</div>
                     </div>
                     <Button size="sm" variant="outline" disabled={busy === id} onClick={() => downloadLegacy(f)}>
                       <FileSpreadsheet className="size-4" />
-                      {busy === id ? 'Menyiapkan…' : 'Unduh'}
+                      {busy === id ? 'Preparing…' : 'Download'}
                     </Button>
                   </CardContent>
                 </Card>

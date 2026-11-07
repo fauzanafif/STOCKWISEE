@@ -38,13 +38,13 @@ describe('SyncProgressModal (background sync)', () => {
     renderWithProviders(<><Trigger /><SyncProgressModal /></>)
     await userEvent.click(await screen.findByRole('button', { name: 'Sync Accurate' }))
 
-    expect(await screen.findByText('Sinkronisasi Accurate sedang berjalan')).toBeInTheDocument()
-    expect(screen.getByText(/aplikasi tetap bisa dipakai/)).toBeInTheDocument()
+    expect(await screen.findByText('Accurate sync is running')).toBeInTheDocument()
+    expect(screen.getByText(/application stays usable/)).toBeInTheDocument()
     expect(success).not.toHaveBeenCalled() // RUNNING is not "done"
 
     current = batch('SUCCESS', null)
     // polls every 5s while RUNNING (see useSyncStatus)
-    await waitFor(() => expect(success).toHaveBeenCalledWith('Sinkronisasi selesai — 2 diperbarui.'), { timeout: 8000 })
-    await waitFor(() => expect(screen.queryByText('Sinkronisasi Accurate sedang berjalan')).not.toBeInTheDocument())
+    await waitFor(() => expect(success).toHaveBeenCalledWith('Sync finished — 2 updated.'), { timeout: 8000 })
+    await waitFor(() => expect(screen.queryByText('Accurate sync is running')).not.toBeInTheDocument())
   }, 20000)
 })

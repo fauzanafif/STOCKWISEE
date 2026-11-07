@@ -20,7 +20,7 @@ interface Props {
 }
 
 type CatField = 'induk' | 'anak_1' | 'anak_2' | 'anak_3'
-const CAT_FIELDS: [CatField, string][] = [['induk', 'Kategori Induk'], ['anak_1', 'Kategori Anak 1'], ['anak_2', 'Kategori Anak 2'], ['anak_3', 'Kategori Anak 3']]
+const CAT_FIELDS: [CatField, string][] = [['induk', 'Main Category'], ['anak_1', 'Sub Category 1'], ['anak_2', 'Sub Category 2'], ['anak_3', 'Sub Category 3']]
 const NO_CATS: Record<CatField, string> = { induk: '', anak_1: '', anak_2: '', anak_3: '' }
 
 /**
@@ -73,7 +73,7 @@ export function ItemFormModal({ open, onClose, item, initial, onCreated }: Props
   function submit() {
     setErr(null)
     if (!code.trim() || !description.trim()) {
-      invalidTo(setErr, 'Kode dan Deskripsi Produk wajib diisi.')
+      invalidTo(setErr, 'Product Code and Description are required.')
       return
     }
     const payload = {
@@ -98,28 +98,29 @@ export function ItemFormModal({ open, onClose, item, initial, onCreated }: Props
   }
 
   return (
-    <Modal
+    <Modal page
+      form
       open={open}
       onClose={onClose}
-      title={isEdit ? `Ubah Produk — ${item?.code}` : 'Tambah Produk Baru'}
-      description="Master Produk: barang (punya stok) atau jasa (tanpa stok)."
+      title={isEdit ? `Edit Product — ${item?.code}` : 'Add New Product'}
+      description="Product Master: items (with stock) or services (no stock)."
       className="max-w-2xl"
       footer={
         <>
           <Button variant="outline" size="sm" onClick={onClose}>
-            Batal
+            Cancel
           </Button>
           <Button size="sm" disabled={pending} onClick={submit}>
-            {pending ? 'Menyimpan…' : 'Simpan'}
+            {pending ? 'Saving…' : 'Save'}
           </Button>
         </>
       }
     >
       <div className="space-y-4">
         <div className="space-y-1.5">
-          <Label>Jenis produk</Label>
-          <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Jenis produk">
-            {([['BARANG', 'Barang', 'Punya stok di gudang'], ['JASA', 'Jasa', 'Layanan, tanpa stok']] as const).map(([k, label, hint]) => (
+          <Label>Product type</Label>
+          <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Product type">
+            {([['BARANG', 'Item', 'Has stock in the warehouse'], ['JASA', 'Services', 'Service, no stock']] as const).map(([k, label, hint]) => (
               <button key={k} type="button" role="radio" aria-checked={kind === k} onClick={() => setKind(k)}
                 className={kind === k ? 'rounded-lg border border-primary bg-primary/5 p-2.5 text-left ring-1 ring-primary' : 'rounded-lg border bg-card p-2.5 text-left hover:bg-muted/50'}>
                 <div className="text-sm font-semibold">{label}</div>
@@ -130,13 +131,13 @@ export function ItemFormModal({ open, onClose, item, initial, onCreated }: Props
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
-            <Label>Kode Produk</Label>
-            <Input value={code} onChange={(e) => setCode(e.target.value)} placeholder="mis. PUI.0019" />
+            <Label>Product Code</Label>
+            <Input value={code} onChange={(e) => setCode(e.target.value)} placeholder="e.g. PUI.0019" />
           </div>
           <div className="space-y-1.5">
             <Label>UOM</Label>
             <Select value={unitId} onChange={(e) => setUnitId(e.target.value ? Number(e.target.value) : '')}>
-              <option value="">— pilih —</option>
+              <option value="">— select —</option>
               {/* an Accurate item may have a UOM outside the list: it stays selectable for that item */}
               {item?.unit && !options?.uom?.some((u) => u.id === item.unit!.id) && <option value={item.unit.id}>{item.unit.code}</option>}
               {options?.uom?.map((u) => (
@@ -149,7 +150,7 @@ export function ItemFormModal({ open, onClose, item, initial, onCreated }: Props
         </div>
 
         <div className="space-y-1.5">
-          <Label>Deskripsi Produk</Label>
+          <Label>Product Description</Label>
           <Input value={description} onChange={(e) => setDescription(e.target.value)} />
         </div>
 
@@ -161,7 +162,7 @@ export function ItemFormModal({ open, onClose, item, initial, onCreated }: Props
               <div key={field} className="space-y-1.5">
                 <Label>{label}</Label>
                 <Select value={current} onChange={(e) => setCats((c) => ({ ...c, [field]: e.target.value }))}>
-                  <option value="">— pilih —</option>
+                  <option value="">— select —</option>
                   {current && !choices.includes(current) && <option value={current}>{current}</option>}
                   {choices.map((o) => <option key={o} value={o}>{o}</option>)}
                 </Select>
@@ -180,7 +181,7 @@ export function ItemFormModal({ open, onClose, item, initial, onCreated }: Props
                 setLocationId('')
               }}
             >
-              <option value="">— pilih —</option>
+              <option value="">— select —</option>
               {warehouses?.map((w) => (
                 <option key={w.id} value={w.id}>
                   {w.code}
@@ -191,7 +192,7 @@ export function ItemFormModal({ open, onClose, item, initial, onCreated }: Props
           <div className="space-y-1.5">
             <Label>LETAK RAK</Label>
             <Select value={locationId} onChange={(e) => setLocationId(e.target.value ? Number(e.target.value) : '')} disabled={!warehouseId}>
-              <option value="">— pilih —</option>
+              <option value="">— select —</option>
               {locations?.map((l) => (
                 <option key={l.id} value={l.id}>
                   {l.code}
@@ -203,23 +204,23 @@ export function ItemFormModal({ open, onClose, item, initial, onCreated }: Props
 
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
-            <Label>LEAD TIME (hari)</Label>
+            <Label>LEAD TIME (days)</Label>
             <Input type="number" min={0} value={leadTime} onChange={(e) => setLeadTime(e.target.value ? Number(e.target.value) : '')} />
           </div>
           <div className="space-y-1.5">
             <Label>BLUEPRINT 3D VIEW</Label>
-            <Input value={blueprint3d} onChange={(e) => setBlueprint3d(e.target.value)} placeholder="ref / kode rak" />
+            <Input value={blueprint3d} onChange={(e) => setBlueprint3d(e.target.value)} placeholder="rack ref / code" />
           </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-5 text-sm">
           <label className="flex items-center gap-2">
             <input type="checkbox" checked={needsBlueprint} onChange={(e) => setNeedsBlueprint(e.target.checked)} />
-            Perlu Blueprint?
+            Needs Blueprint?
           </label>
           <label className="flex items-center gap-2">
             <input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} />
-            Aktif
+            Active
           </label>
         </div>
 

@@ -27,6 +27,8 @@ class PpbResource extends JsonResource
             'deskripsi_barang' => $this->deskripsi_barang,
             'kuantitas' => $this->kuantitas,
             'satuan' => $this->satuan,
+            'unit_ratio' => $this->unit_ratio === null ? null : (float) $this->unit_ratio,
+            'base_satuan' => $this->base_satuan,
             'qty_dipesan' => $this->qty_dipesan,
             'qty_diterima' => $this->qty_diterima,
             'peminta' => $this->peminta,

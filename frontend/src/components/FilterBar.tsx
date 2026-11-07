@@ -12,7 +12,7 @@ export function FilterBar({ children, end, className }: { children: ReactNode; e
   const [open, setOpen] = useState(false)
   const [first, ...rest] = Children.toArray(children)
   return (
-    <div className={cn('flex flex-wrap items-end gap-2 rounded-lg border bg-card p-3', className)}>
+    <div className={cn('flex flex-wrap items-end gap-2', className)}>
       {/* phone: the search takes the room beside the Filter button; wider screens: as laid out */}
       <div className="max-md:min-w-0 max-md:flex-1 md:contents">{first}</div>
       {rest.length > 0 && (

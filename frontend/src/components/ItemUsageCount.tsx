@@ -16,7 +16,7 @@ export function ItemUsageCount({ kind, code, count, period }: { kind: 'npbg' | '
     <Link
       to={`/${kind}?${q.toString()}`}
       onClick={(e) => e.stopPropagation()}
-      title={`Lihat ${n} baris ${kind.toUpperCase()} untuk ${code}`}
+      title={`View ${n} rows ${kind.toUpperCase()} for ${code}`}
       className="tabular-nums font-medium text-primary hover:underline"
     >
       {n.toLocaleString('id-ID')}

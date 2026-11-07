@@ -44,6 +44,10 @@ Route::get('/ping', HealthController::class)->name('api.ping');
 Route::get('/login', fn () => response()->json(['message' => 'Unauthenticated.'], 401))
     ->name('login');
 
+// a profile photo through its signed URL (User::avatarUrl): an <img> sends no token
+Route::get('/avatars/{user}', [\App\Http\Controllers\Api\AvatarController::class, 'show'])->whereNumber('user')
+    ->middleware('throttle:600,1,avatars')->name('api.avatars.show');
+
 Route::post('/login', [AuthController::class, 'login'])
     ->middleware('throttle:20,1')
     ->name('api.login');
@@ -59,13 +63,24 @@ Route::post('/login', [AuthController::class, 'login'])
 Route::get('public/item-request/{token}', [\App\Http\Controllers\Api\PublicItemRequestController::class, 'show'])
     ->middleware('throttle:60,1')->name('api.public.item-request.show');
 Route::post('public/item-request/{token}', [\App\Http\Controllers\Api\PublicItemRequestController::class, 'store'])
-    ->middleware('throttle:6,1')->name('api.public.item-request.store');
+    ->middleware('throttle:6,1,public-request-store')->name('api.public.item-request.store');
+// the form opens for a STOCKWISE account: username + password, the requester's data comes back for the form
+Route::post('public/item-request/{token}/login', [\App\Http\Controllers\Api\PublicItemRequestController::class, 'login'])
+    ->middleware('throttle:10,1,public-request-login')->name('api.public.item-request.login');
 // Cek Permintaan: the requester follows their requests by track token (kept on their device)
 // or finds one by number + name. Only the status and the items are shown.
 Route::get('public/request-status', [\App\Http\Controllers\Api\PublicItemRequestController::class, 'status'])
     ->middleware('throttle:60,1')->name('api.public.request-status');
 Route::get('public/request-status/image', [\App\Http\Controllers\Api\PublicItemRequestController::class, 'image'])
     ->middleware('throttle:120,1')->name('api.public.request-status.image');
+Route::post('public/request-status/proxy', [\App\Http\Controllers\Api\PublicItemRequestController::class, 'createProxy'])
+    ->middleware('throttle:10,1')->name('api.public.request-status.proxy');
+Route::get('public/request-status/proxy-people', [\App\Http\Controllers\Api\PublicItemRequestController::class, 'proxyPeople'])
+    ->middleware('throttle:120,1,public-proxy-people')->name('api.public.request-status.proxy-people');
+Route::delete('public/request-status/proxy', [\App\Http\Controllers\Api\PublicItemRequestController::class, 'cancelProxy'])
+    ->middleware('throttle:10,1')->name('api.public.request-status.proxy-cancel');
+Route::post('public/request-status/mine', [\App\Http\Controllers\Api\PublicItemRequestController::class, 'mine'])
+    ->middleware('throttle:60,1,public-request-mine')->name('api.public.request-status.mine');
 Route::post('public/request-status/lookup', [\App\Http\Controllers\Api\PublicItemRequestController::class, 'lookup'])
     ->middleware('throttle:10,1')->name('api.public.request-status.lookup');
 
@@ -117,6 +132,10 @@ Route::middleware('auth:sanctum')->group(function (): void {
     Route::get('/permissions', [PermissionController::class, 'index'])
         ->middleware('permission:permission.view|role.manage')->name('api.permissions.index');
 
+    // Profile photo (any logged-in user, their own)
+    Route::post('/me/avatar', [\App\Http\Controllers\Api\AvatarController::class, 'update'])->middleware('throttle:20,1')->name('api.me.avatar');
+    Route::delete('/me/avatar', [\App\Http\Controllers\Api\AvatarController::class, 'destroy'])->name('api.me.avatar.destroy');
+
     // Self-service password change (any logged-in user).
     Route::post('/me/password', [AuthController::class, 'changePassword'])
         ->middleware('throttle:10,1')->name('api.me.password');
@@ -167,9 +186,33 @@ Route::middleware('auth:sanctum')->group(function (): void {
     | PHASE 3 — Master Data + Inventory + Calculation Engine
     |--------------------------------------------------------------------------
     */
+    // Master Kategori Barang (Kategori Induk / Anak 1 / 2 / 3 of a Master Produk)
+    Route::get('/item-categories', [\App\Http\Controllers\Api\ItemCategoryController::class, 'index'])
+        ->middleware('permission:master.category.view')->name('api.item-categories.index');
+    Route::middleware('permission:master.category.manage')->controller(\App\Http\Controllers\Api\ItemCategoryController::class)->group(function (): void {
+        Route::post('/item-categories', 'store')->name('api.item-categories.store');
+        Route::put('/item-categories/{id}', 'update')->whereNumber('id')->name('api.item-categories.update');
+        Route::delete('/item-categories/{id}', 'destroy')->whereNumber('id')->name('api.item-categories.destroy');
+    });
     Route::middleware('permission:master.category.view')->group(function () {
         Route::get('/categories', [MasterDataController::class, 'categories'])->name('api.categories');
         Route::get('/categories/tree', [MasterDataController::class, 'categoryTree'])->name('api.categories.tree');
+    });
+    // Master UOM: categories, their units and ratios; conversions per item
+    Route::get('/uom', [\App\Http\Controllers\Api\UomController::class, 'index'])->middleware('permission:master.unit.view')->name('api.uom.index');
+    Route::get('/uom/preview', [\App\Http\Controllers\Api\UomController::class, 'preview'])->middleware('permission:ri.create|npbg.create|ppb.create|item_request.process|po.create|master.unit.view')->name('api.uom.preview');
+    Route::get('/uom/unmapped', [\App\Http\Controllers\Api\UomController::class, 'unmapped'])->middleware('permission:master.unit.view')->name('api.uom.unmapped');
+    Route::get('/uom/convert', [\App\Http\Controllers\Api\UomController::class, 'convert'])->middleware('permission:master.unit.view')->name('api.uom.convert');
+    Route::get('/items/{item}/unit-conversions', [\App\Http\Controllers\Api\UomController::class, 'itemConversions'])->whereNumber('item')->middleware('permission:master.unit.view')->name('api.items.unit-conversions');
+    Route::middleware('permission:master.unit.manage')->controller(\App\Http\Controllers\Api\UomController::class)->group(function (): void {
+        Route::put('/items/{item}/base-unit', 'setBaseUnit')->whereNumber('item')->name('api.items.base-unit');
+        Route::post('/uom/categories', 'storeCategory')->name('api.uom.categories.store');
+        Route::put('/uom/categories/{category}', 'updateCategory')->name('api.uom.categories.update');
+        Route::delete('/uom/categories/{category}', 'destroyCategory')->name('api.uom.categories.destroy');
+        Route::post('/uom/units', 'storeUnit')->name('api.uom.units.store');
+        Route::put('/uom/units/{unit}', 'updateUnit')->name('api.uom.units.update');
+        Route::post('/items/{item}/unit-conversions', 'saveItemConversion')->whereNumber('item')->name('api.items.unit-conversions.store');
+        Route::delete('/items/{item}/unit-conversions/{conversion}', 'destroyItemConversion')->whereNumber('item')->name('api.items.unit-conversions.destroy');
     });
     Route::get('/units', [MasterDataController::class, 'units'])
         ->middleware('permission:master.unit.view|item_request.create|item.view')->name('api.units');
@@ -237,6 +280,9 @@ Route::middleware('auth:sanctum')->group(function (): void {
         ->middleware('permission:item_request.create|item_request.view')->name('api.item-requests.index');
     Route::post('/item-requests', [ItemRequestController::class, 'store'])
         ->middleware('permission:item_request.create')->name('api.item-requests.store');
+    // the requester's own data (Data Pekerja) to fill the Buat Request form, like the form via link
+    Route::get('/item-requests/my-profile', [ItemRequestController::class, 'myProfile'])
+        ->middleware('permission:item_request.create')->name('api.item-requests.my-profile');
     Route::get('/item-request-forms', [ItemRequestController::class, 'forms'])
         ->middleware('permission:item_request.create|item_request.view')->name('api.item-request-forms.index');
     Route::get('/item-requests/{itemRequest}', [ItemRequestController::class, 'show'])
@@ -250,6 +296,27 @@ Route::middleware('auth:sanctum')->group(function (): void {
     // Approval: Manager → Direktur → Lapangan Gudang → serah terima (ItemRequestApprovalService)
     Route::get('/approvals', [ItemRequestController::class, 'approvals'])
         ->middleware('permission:item_request.approve_manager|item_request.approve_director|item_request.handover|ppb.approve_manager|ppb.approve_director|po.approve_director|npbg.approve_manager|npbg.approve_director')->name('api.approvals.index');
+    // each menu's Dashboard: basic analytics (permission per module, checked in the controller) and the user's own layout
+    Route::get('/module-stats/{module}', [\App\Http\Controllers\Api\ModuleStatsController::class, 'show'])->name('api.module-stats');
+    Route::get('/preferences/{key}', [\App\Http\Controllers\Api\PreferenceController::class, 'show'])->name('api.preferences.show');
+    Route::put('/preferences/{key}', [\App\Http\Controllers\Api\PreferenceController::class, 'update'])->middleware('throttle:60,1')->name('api.preferences.update');
+    // the work waiting for this user across STOCKWISE (Important Request home: "Perlu dikerjakan")
+    Route::get('/reminders', [\App\Http\Controllers\Api\ReminderController::class, 'index'])->name('api.reminders');
+    // Update Alert: the popup for every user (due / seen); managing them is Super Admin only (checked in the controller)
+    Route::get('/update-alerts/due', [\App\Http\Controllers\Api\UpdateAlertController::class, 'due'])->name('api.update-alerts.due');
+    Route::post('/update-alerts/{updateAlert}/seen', [\App\Http\Controllers\Api\UpdateAlertController::class, 'seen'])->whereNumber('updateAlert')->middleware('throttle:60,1')->name('api.update-alerts.seen');
+    Route::post('/update-alerts/{updateAlert}/thumbs-up', [\App\Http\Controllers\Api\UpdateAlertController::class, 'thumbsUp'])->whereNumber('updateAlert')->middleware('throttle:60,1')->name('api.update-alerts.thumbs-up');
+    Route::get('/update-alerts/{updateAlert}/closed-by', [\App\Http\Controllers\Api\UpdateAlertController::class, 'closedBy'])->whereNumber('updateAlert')->name('api.update-alerts.closed-by');
+    Route::get('/update-alerts/{updateAlert}/thumbs-up', [\App\Http\Controllers\Api\UpdateAlertController::class, 'thumbs'])->whereNumber('updateAlert')->name('api.update-alerts.thumbs');
+    Route::get('/update-alerts', [\App\Http\Controllers\Api\UpdateAlertController::class, 'index'])->name('api.update-alerts.index');
+    Route::post('/update-alerts', [\App\Http\Controllers\Api\UpdateAlertController::class, 'store'])->name('api.update-alerts.store');
+    Route::put('/update-alerts/{updateAlert}', [\App\Http\Controllers\Api\UpdateAlertController::class, 'update'])->whereNumber('updateAlert')->name('api.update-alerts.update');
+    Route::delete('/update-alerts/{updateAlert}', [\App\Http\Controllers\Api\UpdateAlertController::class, 'destroy'])->whereNumber('updateAlert')->name('api.update-alerts.destroy');
+    // Settings · Auto Refresh: Super Admin only (checked in the controller)
+    Route::get('/settings/auto-refresh', [\App\Http\Controllers\Api\AutoRefreshController::class, 'show'])->name('api.settings.auto-refresh.show');
+    Route::put('/settings/auto-refresh', [\App\Http\Controllers\Api\AutoRefreshController::class, 'update'])->name('api.settings.auto-refresh.update');
+    // what changed since the last look (the app refetches only that area): updates between accounts in seconds
+    Route::get('/live', [\App\Http\Controllers\Api\LiveController::class, 'index'])->name('api.live');
     Route::get('/approvals/count', [ItemRequestController::class, 'approvalCount'])
         ->middleware('permission:item_request.approve_manager|item_request.approve_director|item_request.handover|ppb.approve_manager|ppb.approve_director|po.approve_director|npbg.approve_manager|npbg.approve_director')->name('api.approvals.count');
     // STOCKWISE PPB (Manager → Direktur) and PO (Direktur) waiting for this user
@@ -278,6 +345,13 @@ Route::middleware('auth:sanctum')->group(function (): void {
     Route::get('/item-requests/{itemRequest}/handover/{slot}', [ItemRequestController::class, 'handoverFile'])
         ->whereIn('slot', ['handover', 'signature'])
         ->middleware('permission:item_request.create|item_request.view|item_request.approve_manager|item_request.approve_director|item_request.handover')->name('api.item-requests.handover-file');
+    // pickup by a representative: the requester's own (checked in the controller)
+    Route::post('/item-requests/{itemRequest}/proxy', [ItemRequestController::class, 'createProxy'])
+        ->middleware(['permission:item_request.create', 'throttle:20,1'])->name('api.item-requests.proxy');
+    Route::get('/item-requests/{itemRequest}/proxy-people', [ItemRequestController::class, 'proxyPeople'])
+        ->middleware('permission:item_request.create')->name('api.item-requests.proxy-people');
+    Route::delete('/item-requests/{itemRequest}/proxy', [ItemRequestController::class, 'cancelProxy'])
+        ->middleware(['permission:item_request.create', 'throttle:20,1'])->name('api.item-requests.proxy-cancel');
     Route::post('/item-requests/{itemRequest}/cancel', [ItemRequestController::class, 'cancel'])
         ->middleware('permission:item_request.create|item_request.process')->name('api.item-requests.cancel');
     Route::get('/share-base', [\App\Http\Controllers\Api\ItemRequestLinkController::class, 'shareBase'])->name('api.share-base');
@@ -410,6 +484,8 @@ Route::middleware('auth:sanctum')->group(function (): void {
         ->middleware('permission:master.employee.view')->name('api.employees.index');
     Route::get('/employees/departments', [\App\Http\Controllers\Api\EmployeeController::class, 'departments'])
         ->middleware('permission:master.employee.view')->name('api.employees.departments');
+    Route::post('/employees/departments', [\App\Http\Controllers\Api\EmployeeController::class, 'storeDepartment'])
+        ->middleware('permission:master.employee.manage')->name('api.employees.departments.store');
     Route::get('/employees/users', [\App\Http\Controllers\Api\EmployeeController::class, 'users'])
         ->middleware('permission:master.employee.manage')->name('api.employees.users');
     Route::get('/employees/template', [\App\Http\Controllers\Api\EmployeeController::class, 'template'])
@@ -445,6 +521,12 @@ Route::middleware('auth:sanctum')->group(function (): void {
         Route::post('/ppb-draft-lines/submit', [\App\Http\Controllers\Api\PpbDraftController::class, 'submitLines'])->name('api.ppb-draft-lines.submit');
         Route::put('/ppb-draft-lines/{line}', [\App\Http\Controllers\Api\PpbDraftController::class, 'updateLine'])->name('api.ppb-draft-lines.update');
         Route::delete('/ppb-draft-lines/{line}', [\App\Http\Controllers\Api\PpbDraftController::class, 'removeLine'])->name('api.ppb-draft-lines.destroy');
+        Route::get('/ppb-saved-drafts', [\App\Http\Controllers\Api\PpbDraftController::class, 'savedIndex'])->name('api.ppb-saved-drafts.index');
+        Route::post('/ppb-saved-drafts', [\App\Http\Controllers\Api\PpbDraftController::class, 'savedStore'])->name('api.ppb-saved-drafts.store');
+        Route::put('/ppb-saved-drafts/{saved}', [\App\Http\Controllers\Api\PpbDraftController::class, 'savedUpdate'])->name('api.ppb-saved-drafts.update');
+        Route::post('/ppb-saved-drafts/{saved}/submit', [\App\Http\Controllers\Api\PpbDraftController::class, 'savedSubmit'])->name('api.ppb-saved-drafts.submit');
+        Route::delete('/ppb-saved-drafts/{saved}', [\App\Http\Controllers\Api\PpbDraftController::class, 'savedDestroy'])->name('api.ppb-saved-drafts.destroy');
+        Route::delete('/ppb-saved-drafts/{saved}/lines/{line}', [\App\Http\Controllers\Api\PpbDraftController::class, 'savedRelease'])->name('api.ppb-saved-drafts.release');
         Route::get('/ppb-drafts', [\App\Http\Controllers\Api\PpbDraftController::class, 'index'])->name('api.ppb-drafts.index');
         Route::post('/ppb-drafts', [\App\Http\Controllers\Api\PpbDraftController::class, 'store'])->name('api.ppb-drafts.store');
         Route::get('/ppb-drafts/{ppbDraft}', [\App\Http\Controllers\Api\PpbDraftController::class, 'show'])->name('api.ppb-drafts.show');
@@ -475,6 +557,12 @@ Route::middleware('auth:sanctum')->group(function (): void {
         ->middleware('permission:ri.create')->name('api.ri.store-from-po');
     Route::get('/ri/used-return-lines', [RiController::class, 'usedReturnLines'])
         ->middleware('permission:ri.create')->name('api.ri.used-return-lines');
+    Route::post('/ri/serials/template', [RiController::class, 'serialTemplate'])
+        ->middleware('permission:ri.create')->name('api.ri.serials.template');
+    Route::post('/ri/serials/import', [RiController::class, 'serialImport'])
+        ->middleware('permission:ri.create')->name('api.ri.serials.import');
+    Route::get('/ri/{ri}/serials-export', [RiController::class, 'serialExport'])
+        ->middleware('permission:ri.view')->name('api.ri.serials.export');
     Route::get('/ri', [RiController::class, 'index'])
         ->middleware('permission:ri.view')->name('api.ri.index');
     Route::post('/ri', [RiController::class, 'store'])
@@ -505,9 +593,22 @@ Route::middleware('auth:sanctum')->group(function (): void {
     });
 
     // Draft PO: the items of approved STOCKWISE PPBs — vendor prices compared, picked into one PO per vendor
+    // PPB Siap PO → Penawaran Harga (purchasing) → the Direktur picks the vendor → Draft PO
+    Route::get('/po-draft-lines', [\App\Http\Controllers\Api\PoDraftController::class, 'lines'])
+        ->middleware('permission:po.create|po.approve_director')->name('api.po-draft-lines.index');
+    Route::middleware('permission:po.approve_director')->group(function () {
+        Route::post('/po-draft-lines/{item}/choose', [\App\Http\Controllers\Api\PoDraftController::class, 'choose'])->whereNumber('item')->name('api.po-draft-lines.choose');
+        Route::post('/po-draft-lines/{item}/change-pick', [\App\Http\Controllers\Api\PoDraftController::class, 'changePick'])->whereNumber('item')->name('api.po-draft-lines.change-pick');
+        Route::post('/po-draft-lines/{item}/return', [\App\Http\Controllers\Api\PoDraftController::class, 'returnQuotation'])->whereNumber('item')->name('api.po-draft-lines.return');
+    });
     Route::middleware('permission:po.create')->group(function () {
-        Route::get('/po-draft-lines', [\App\Http\Controllers\Api\PoDraftController::class, 'lines'])->name('api.po-draft-lines.index');
+        Route::post('/po-draft-lines/vendors', [\App\Http\Controllers\Api\PoDraftController::class, 'addVendors'])->name('api.po-draft-lines.vendors');
+        Route::delete('/po-draft-lines/vendors/{vendor}', [\App\Http\Controllers\Api\PoDraftController::class, 'dropVendor'])->whereNumber('vendor')->name('api.po-draft-lines.vendors.destroy');
+        Route::post('/po-draft-lines/to-quotation', [\App\Http\Controllers\Api\PoDraftController::class, 'toQuotation'])->name('api.po-draft-lines.to-quotation');
+        Route::post('/po-draft-lines/back-to-ready', [\App\Http\Controllers\Api\PoDraftController::class, 'backToReady'])->name('api.po-draft-lines.back-to-ready');
+        Route::post('/po-draft-lines/submit-quotation', [\App\Http\Controllers\Api\PoDraftController::class, 'submitQuotation'])->name('api.po-draft-lines.submit-quotation');
         Route::post('/po-draft-lines/submit', [\App\Http\Controllers\Api\PoDraftController::class, 'submit'])->name('api.po-draft-lines.submit');
+        Route::get('/po-draft-lines/{item}/units', [\App\Http\Controllers\Api\PoDraftController::class, 'orderUnits'])->whereNumber('item')->name('api.po-draft-lines.units');
         Route::put('/po-draft-lines/{item}/quotes', [\App\Http\Controllers\Api\PoDraftController::class, 'quote'])->name('api.po-draft-lines.quote');
         Route::delete('/po-draft-lines/{item}/quotes/{quote}', [\App\Http\Controllers\Api\PoDraftController::class, 'removeQuote'])->name('api.po-draft-lines.quote.destroy');
     });

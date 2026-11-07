@@ -17,9 +17,9 @@ use Illuminate\Validation\ValidationException;
 /**
  * The workflow of an Important Request — simple, like an assignment in Google Classroom.
  *
- *   recipient: DITUGASKAN → (submit) DISERAHKAN, or DISERAHKAN_TERLAMBAT after the deadline
- *              → the creator approves: SELESAI, or returns it: REVISI → submit again
- *              (a submission not reviewed yet may be withdrawn: back to DITUGASKAN / REVISI)
+ *   recipient: DITUGASKAN → (submit) DISERAHKAN "Submitted", or DISERAHKAN_TERLAMBAT after the deadline
+ *              → the creator opens it: ON_REVIEW → approves: SELESAI, or returns it: REVISI → submit again
+ *              (a submission not opened for review yet may be withdrawn: back to DITUGASKAN / REVISI)
  *   request:   DRAFT → DITUGASKAN → MENUNGGU_REVIEW (a result waits) → SELESAI (every part approved)
  *              (+ DIBATALKAN). Not handed in after the deadline: "terlambat" — an indicator, not a status.
  *
@@ -29,13 +29,13 @@ use Illuminate\Validation\ValidationException;
 class ImportantRequestService
 {
     public const STATUS_LABELS = [
-        'DRAFT' => 'Draft', 'DITUGASKAN' => 'Ditugaskan', 'MENUNGGU_REVIEW' => 'Perlu ditinjau', 'SELESAI' => 'Selesai', 'DIBATALKAN' => 'Dibatalkan',
+        'DRAFT' => 'Draft', 'DITUGASKAN' => 'Ditugaskan', 'MENUNGGU_REVIEW' => 'Submitted', 'SELESAI' => 'Selesai', 'DIBATALKAN' => 'Dibatalkan',
         // a recipient's own part
-        'DISERAHKAN' => 'Diserahkan', 'DISERAHKAN_TERLAMBAT' => 'Diserahkan terlambat', 'REVISI' => 'Perlu revisi',
+        'DISERAHKAN' => 'Submitted', 'DISERAHKAN_TERLAMBAT' => 'Submitted (terlambat)', 'ON_REVIEW' => 'On Review', 'REVISI' => 'Perlu revisi',
     ];
 
-    /** a recipient's part handed in, waiting for the review */
-    public const HANDED_IN = ['DISERAHKAN', 'DISERAHKAN_TERLAMBAT'];
+    /** a recipient's part handed in, waiting for the review (ON_REVIEW: the reviewer has opened it) */
+    public const HANDED_IN = ['DISERAHKAN', 'DISERAHKAN_TERLAMBAT', 'ON_REVIEW'];
 
     /** a recipient's part still to hand in */
     public const TO_DO = ['DITUGASKAN', 'REVISI'];
@@ -204,6 +204,9 @@ class ImportantRequestService
                     "{$user->name} menyerahkan hasil".($round > 1 ? ' revisi' : '').'. Tinjau dan setujui atau kembalikan.'];
             } elseif ($action === 'unsubmit') {
                 $sub = ImportantRequestSubmission::where(['assignee_id' => $a->id, 'status' => 'MENUNGGU_REVIEW'])->lockForUpdate()->latest('id')->first();
+                if ($a->status === 'ON_REVIEW') {
+                    throw ValidationException::withMessages(['status' => 'Hasil sedang direview, tidak bisa ditarik.']);
+                }
                 if (! $sub || ! in_array($a->status, self::HANDED_IN, true)) {
                     throw ValidationException::withMessages(['status' => 'Tidak ada hasil yang bisa ditarik (sudah ditinjau?).']);
                 }
@@ -227,6 +230,29 @@ class ImportantRequestService
 
     // ------------------------------------------------------------------ creator: review, deadline, cancel, reopen
 
+    /** The creator opened the request: every result waiting for them becomes On Review (the recipient is told). */
+    public function startReview(User $user, ImportantRequest $request): int
+    {
+        if ($request->created_by !== $user->id || in_array($request->status, ImportantRequest::CLOSED, true)) {
+            return 0;
+        }
+        $who = DB::transaction(function () use ($user, $request) {
+            $waiting = ImportantRequestAssignee::where('important_request_id', $request->id)->whereIn('status', ['DISERAHKAN', 'DISERAHKAN_TERLAMBAT'])
+                ->where('user_id', '!=', $user->id)->lockForUpdate()->get();
+            foreach ($waiting as $a) {
+                $a->update(['status' => 'ON_REVIEW']);
+            }
+            if ($waiting->isNotEmpty()) {
+                $this->log($request, $user, 'REVIEW_STARTED', ['penerima' => $this->names($waiting->pluck('user_id')->all())]);
+            }
+
+            return $waiting->pluck('user_id')->all();
+        });
+        $this->notify($who, $request, 'info', "Hasil {$request->number} sedang direview", "{$user->name} sedang meninjau hasil Anda.", $user->id);
+
+        return count($who);
+    }
+
     public function review(User $user, ImportantRequest $request, ImportantRequestSubmission $submission, bool $approve, ?string $note): ImportantRequest
     {
         $this->assertCreator($user, $request, 'Hanya pembuat request yang meninjau hasilnya.');
@@ -242,10 +268,9 @@ class ImportantRequestService
             if ($sub->user_id === $user->id) {
                 abort(403, 'Hasil sendiri tidak bisa disetujui sendiri.');
             }
-            if (! $approve && trim((string) $note) === '') {
-                throw ValidationException::withMessages(['note' => 'Tulis apa yang perlu direvisi.']);
-            }
-            $sub->update(['status' => $approve ? 'DISETUJUI' : 'REVISI', 'reviewed_by' => $user->id, 'reviewed_at' => now(), 'review_note' => $note ? trim($note) : null]);
+            // the reviewer's note is optional, approving or returning
+            $note = trim((string) $note) ?: null;
+            $sub->update(['status' => $approve ? 'DISETUJUI' : 'REVISI', 'reviewed_by' => $user->id, 'reviewed_at' => now(), 'review_note' => $note]);
             $targets = $r->assignment_mode === 'COLLECTIVE'
                 ? ImportantRequestAssignee::where('important_request_id', $r->id)->whereIn('status', self::HANDED_IN)->get()
                 : ImportantRequestAssignee::whereKey($sub->assignee_id)->get();
@@ -322,12 +347,26 @@ class ImportantRequestService
 
     // ------------------------------------------------------------------ discussion
 
+    /** The discussion is open while the request runs: approved (Selesai) or cancelled closes it, reopening opens it again. */
+    public static function discussionOpen(ImportantRequest $r): bool
+    {
+        return ! in_array($r->status, ImportantRequest::CLOSED, true);
+    }
+
+    private function assertDiscussionOpen(ImportantRequest $r): void
+    {
+        if ($r->status === 'DRAFT') {
+            throw ValidationException::withMessages(['body' => 'Kirim request dulu sebelum berdiskusi.']);
+        }
+        if (! self::discussionOpen($r)) {
+            throw ValidationException::withMessages(['body' => 'Forum sudah ditutup karena request '.($r->status === 'SELESAI' ? 'selesai' : 'dibatalkan').'.']);
+        }
+    }
+
     /** A comment / reply (one level deep), its files, and @username mentions told. */
     public function addComment(User $user, ImportantRequest $request, string $body, ?int $parentId, array $tokens): ImportantRequestComment
     {
-        if ($request->status === 'DRAFT') {
-            throw ValidationException::withMessages(['body' => 'Kirim request dulu sebelum berdiskusi.']);
-        }
+        $this->assertDiscussionOpen($request);
         if (trim($body) === '' && ! $tokens) {
             throw ValidationException::withMessages(['body' => 'Tulis komentar atau lampirkan file.']);
         }
@@ -360,6 +399,7 @@ class ImportantRequestService
     {
         abort_unless($c->important_request_id === $request->id, 404);
         abort_unless($c->user_id === $user->id && $c->kind === 'COMMENT' && ! $c->deleted_at, 403, 'Hanya komentar sendiri yang bisa diubah.');
+        $this->assertDiscussionOpen($request);
         if (trim($body) === '') {
             throw ValidationException::withMessages(['body' => 'Komentar tidak boleh kosong.']);
         }
@@ -374,6 +414,10 @@ class ImportantRequestService
     {
         abort_unless($c->important_request_id === $request->id, 404);
         abort_unless(($c->user_id === $user->id || $user->hasPermission('important_request.view_all')) && $c->kind === 'COMMENT', 403, 'Tidak bisa menghapus komentar ini.');
+        // a closed forum stays as it was; only an admin can still take a comment down
+        if (! $user->hasPermission('important_request.view_all')) {
+            $this->assertDiscussionOpen($request);
+        }
         $this->log($request, $user, 'COMMENT_DELETED', ['komentar' => $c->id, 'isi' => mb_substr($c->body, 0, 500)]);
         $c->update(['deleted_at' => now()]);
     }

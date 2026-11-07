@@ -31,7 +31,7 @@ export interface RequestForm {
   default_divisi: string | null
 }
 
-export const URGENCY_LABEL: Record<Urgency, string> = { URGENT: 'Urgent', NORMAL: 'Tidak Urgent' }
+export const URGENCY_LABEL: Record<Urgency, string> = { URGENT: 'Urgent', NORMAL: 'Not Urgent' }
 
 export interface ItemRequest {
   /** images the requester attached (img1..img3), on the detail and the Approval page */
@@ -50,11 +50,13 @@ export interface ItemRequest {
   requester_id: number | null
   requester_name: string | null
   requester_contact: string | null
-  /** "Jaringan Kantor" / "Di Luar Kantor" / "Tidak Diketahui" */
+  /** "Jaringan Kantor" / "Outside Office" / "Tidak Diketahui" */
   requester_location: string | null
   divisi: string | null
   needed_date: string | null
   note: string | null
+  /** admin gudang's note at the verification (for the approvers and the requester) */
+  verify_note?: string | null
   lines_count: number
   open_lines_count: number
   processed_at: string | null
@@ -89,7 +91,16 @@ export interface ItemRequestLine {
   deskripsi_peminta?: string | null
   qty: number
   satuan: string | null
+  /** as asked, kept beside the quantity in the item's Base UOM */
+  requested_qty?: number | null
+  requested_unit?: string | null
+  /** frozen at the verification; null: the same unit, or a word the master does not know */
+  unit_ratio?: number | null
+  /** a word that is no unit of the master: counted as written, waiting for mapping */
+  uom_unmapped?: boolean
   note: string | null
+  /** given less than asked at the verification: why (admin gudang) */
+  short_reason?: string | null
   decision: LineDecision | null
   reject_reason: string | null
   npbg_id: number | null
@@ -197,6 +208,10 @@ export interface ItemRequestDetail extends ItemRequest {
   approve_as?: 'MANAGER' | 'DIREKTUR' | 'GUDANG' | null
   /** Gudang: prepare & hand over the prepared NPBG now (its quantities fixed in the serah terima) */
   can_handover: boolean
+  /** picked up by a representative (the code / QR only for the requester) */
+  proxy?: RequestProxy | null
+  /** the requester may name a representative now */
+  can_proxy?: boolean
   /** Gudang can give from stock now (no NPBG waiting for its serah terima) */
   can_fulfill?: boolean
   /** what is left can be closed officially */
@@ -223,32 +238,47 @@ export interface ItemRequestCreatePayload {
   urgency?: Urgency | null
   form_detail?: string | null
   divisi?: string | null
+  /** the requester's phone (in-app: from Data Pekerja, may be changed) */
+  contact?: string | null
   needed_date?: string | null
   note?: string | null
   lines: NewRequestLine[]
 }
 
+/** The signed-in requester's own data (Data Pekerja), to fill the Buat Request form. */
+export interface MyRequestProfile { name: string; username: string; contact: string | null; divisi: string | null; position: string | null }
+
+export function useMyRequestProfile(enabled: boolean) {
+  return useQuery({
+    queryKey: ['item-requests', 'my-profile'],
+    queryFn: async () => (await api.get<{ data: MyRequestProfile }>('/api/item-requests/my-profile')).data.data,
+    enabled, staleTime: 5 * 60_000,
+  })
+}
+
 /** Admin gudang verifies: per line the master item (null = new item) and the quantity proposed. */
 export interface ProcessPayload {
   /** per requested line: one Master Produk item, or several (items: the line is split, one per item) */
-  lines: Record<number, { item_id?: number | null; qty?: number; items?: { item_id: number; qty: number }[] }>
+  lines: Record<number, { item_id?: number | null; qty?: number; items?: { item_id: number; qty: number }[]; reason?: string | null; unit?: string | null }>
+  /** admin gudang's note, seen by the approvers and the requester (optional) */
+  note?: string | null
   npbg?: { pelanggan?: string | null; tipe_npbg?: 'Penjualan' | 'Non Penjualan' }
 }
 
 export const REQUEST_STATUS: Record<ItemRequestStatus, { label: string; variant: 'warning' | 'default' | 'success' | 'danger' | 'neutral' }> = {
-  MENUNGGU: { label: 'Menunggu admin', variant: 'warning' },
-  DIPROSES: { label: 'Diproses sebagian', variant: 'default' },
-  PERLU_PERBAIKAN: { label: 'Perlu perbaikan', variant: 'warning' },
-  APPROVAL_MANAGER: { label: 'Persetujuan Manajer', variant: 'default' },
-  APPROVAL_DIREKTUR: { label: 'Persetujuan Direktur', variant: 'default' },
-  DISIAPKAN: { label: 'Siapkan & serah terima', variant: 'default' },
-  SIAP_DISERAHKAN: { label: 'Siap serah terima', variant: 'warning' },
-  DIPENUHI_SEBAGIAN: { label: 'Dipenuhi sebagian', variant: 'default' },
-  MENUNGGU_PENGADAAN: { label: 'Menunggu pengadaan', variant: 'default' },
-  MENUNGGU_BARANG: { label: 'Menunggu barang', variant: 'default' },
-  SELESAI: { label: 'Selesai', variant: 'success' },
-  DITOLAK: { label: 'Ditolak', variant: 'danger' },
-  DIBATALKAN: { label: 'Dibatalkan', variant: 'neutral' },
+  MENUNGGU: { label: 'Waiting for admin', variant: 'warning' },
+  DIPROSES: { label: 'Partly processed', variant: 'default' },
+  PERLU_PERBAIKAN: { label: 'Needs correction', variant: 'warning' },
+  APPROVAL_MANAGER: { label: 'Manager Approval', variant: 'default' },
+  APPROVAL_DIREKTUR: { label: 'Director Approval', variant: 'default' },
+  DISIAPKAN: { label: 'Prepare & hand over', variant: 'default' },
+  SIAP_DISERAHKAN: { label: 'Ready for handover', variant: 'warning' },
+  DIPENUHI_SEBAGIAN: { label: 'Partly fulfilled', variant: 'default' },
+  MENUNGGU_PENGADAAN: { label: 'Waiting for procurement', variant: 'default' },
+  MENUNGGU_BARANG: { label: 'Waiting for items', variant: 'default' },
+  SELESAI: { label: 'Done', variant: 'success' },
+  DITOLAK: { label: 'Rejected', variant: 'danger' },
+  DIBATALKAN: { label: 'Cancelled', variant: 'neutral' },
 }
 
 /** A Direktur approving while it still waits for the Manager: the Manager step is approved with it. */
@@ -261,7 +291,7 @@ export const APPROVAL_PERMISSIONS = ['item_request.approve_manager', 'item_reque
 /** STOCKWISE PPB (Manager → Direktur) and PO (Direktur) waiting for this user. */
 export interface PurchasingApprovals {
   ppb: { id: number; no_ppb: string; tgl_ppb: string; lines: number; peminta: string | null; divisi: string | null; status: string; step: 'MANAGER' | 'DIREKTUR' | null; items: string[] }[]
-  po: { id: number; number: string; vendor: string | null; total: number; items_count: number; from_ppb: string | null; date: string | null }[]
+  po: { id: number; number: string; vendor: string | null; total: number; items_count: number; off_pick: number; from_ppb: string | null; date: string | null }[]
   /** manual NPBG (not from a Request Barang): Manager → Direktur */
   npbg?: { id: number; no_npbg: string; tgl_npbg: string | null; pelanggan: string | null; peminta: string | null; divisi: string | null; step: 'MANAGER' | 'DIREKTUR' | null; items: string[] }[]
   total: number
@@ -281,10 +311,10 @@ export const APPROVAL_STATUSES: ItemRequestStatus[] = ['APPROVAL_MANAGER', 'APPR
 
 /** Who acts at each approval status, and what their approve button says. */
 export const STAGE_INFO: Partial<Record<ItemRequestStatus, { who: string; approve: string; hint: string }>> = {
-  APPROVAL_MANAGER: { who: 'Manager', approve: 'Approve', hint: 'Setujui jumlahnya (boleh dikurangi atau ditambah), lalu diteruskan ke Direktur.' },
-  APPROVAL_DIREKTUR: { who: 'Direktur', approve: 'Approve', hint: 'Sudah disetujui Manager. Setelah disetujui sistem mengeluarkan dari stok (NPBG) dan sisanya dibeli (PPB).' },
-  DISIAPKAN: { who: 'Gudang', approve: 'Siapkan & serah terima', hint: 'Siapkan barang sesuai NPBG yang disetujui. Kalau jumlah dikurangi, isi alasannya. Lalu Serah terima: foto, tanda tangan, selesai.' },
-  SIAP_DISERAHKAN: { who: 'Gudang', approve: 'Serah terima', hint: 'Siapkan barang sesuai NPBG yang disetujui. Kalau jumlah dikurangi, isi alasannya. Lalu Serah terima: foto, tanda tangan, selesai.' },
+  APPROVAL_MANAGER: { who: 'Manager', approve: 'Approve', hint: 'Check the warehouse picks (items & quantity), then approve: passed on to the Director.' },
+  APPROVAL_DIREKTUR: { who: 'Director', approve: 'Approve', hint: 'Already approved by Manager. Once approved the system issues from stock (Delivery Order) and buys the rest (Purchase Request).' },
+  DISIAPKAN: { who: 'Warehouse', approve: 'Prepare & hand over', hint: 'Prepare items according to the approved Delivery Order. If the quantity is reduced, fill in the reason. Then Handover: photo, signature, done.' },
+  SIAP_DISERAHKAN: { who: 'Warehouse', approve: 'Handover', hint: 'Prepare items according to the approved Delivery Order. If the quantity is reduced, fill in the reason. Then Handover: photo, signature, done.' },
 }
 
 /**
@@ -292,7 +322,8 @@ export const STAGE_INFO: Partial<Record<ItemRequestStatus, { who: string; approv
  * the detail and the links poll the server, and catch up as soon as the tab is
  * shown again — a new request shows up for admin gudang, a decision for the requester.
  */
-const LIVE = { refetchInterval: 10_000, refetchIntervalInBackground: false, refetchOnWindowFocus: true } as const
+// changes elsewhere come in through useLiveSync (seconds); this is only the fallback
+const LIVE = { refetchInterval: 60_000, refetchIntervalInBackground: false, refetchOnWindowFocus: true } as const
 
 export interface ItemRequestList extends Paginated<ItemRequest> {
   meta: Paginated<ItemRequest>['meta'] & {
@@ -344,7 +375,7 @@ export function useCreateItemRequest() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async (body: ItemRequestCreatePayload) => (await api.post<{ data: ItemRequestDetail }>('/api/item-requests', body)).data.data,
-    meta: { successMessage: 'Request terkirim ke admin gudang.' },
+    meta: { successMessage: 'Request sent to the warehouse admin.' },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['item-requests'] }),
   })
 }
@@ -353,7 +384,7 @@ export function useProcessItemRequest(id: number) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async (body: ProcessPayload) => (await api.post<{ data: ItemRequestDetail }>(`/api/item-requests/${id}/process`, body)).data.data,
-    meta: { successMessage: 'Diverifikasi, request dikirim ke approval.' },
+    meta: { successMessage: 'Verified, request sent to approval.' },
     onSuccess: () => Promise.all([
       qc.invalidateQueries({ queryKey: ['item-requests'] }),
       qc.invalidateQueries({ queryKey: ['npbg'] }),
@@ -381,7 +412,7 @@ export function useSetUrgency(id: number) {
     mutationFn: async (urgency: Urgency | null) => (await api.put<{ data: ItemRequestDetail }>(`/api/item-requests/${id}/urgency`, { urgency })).data.data,
     meta: { successMessage: false },
     onSuccess: (_d, u) => {
-      toast.success(u === 'URGENT' ? 'Ditandai urgent, tampil paling atas.' : 'Tanda urgent dilepas.')
+      toast.success(u === 'URGENT' ? 'Marked urgent, shown on top.' : 'Urgent mark removed.')
       return qc.invalidateQueries({ queryKey: ['item-requests'] })
     },
   })
@@ -390,12 +421,16 @@ export function useSetUrgency(id: number) {
 // ---------------------------------------------------------------- approval (Manager → Direktur → Gudang → serah terima)
 
 export interface ApprovalRow extends ItemRequest {
-  lines: Pick<ItemRequestLine, 'id' | 'item_id' | 'kode_barang' | 'deskripsi_barang' | 'qty' | 'satuan' | 'note' | 'decision' | 'npbg_id' | 'no_npbg' | 'approved_qty' | 'fulfilled_qty' | 'remaining' | 'available' | 'on_hand' | 'images' | 'deskripsi_peminta' | 'item_description'>[]
+  lines: Pick<ItemRequestLine, 'id' | 'item_id' | 'kode_barang' | 'deskripsi_barang' | 'qty' | 'satuan' | 'note' | 'decision' | 'npbg_id' | 'no_npbg' | 'approved_qty' | 'fulfilled_qty' | 'remaining' | 'available' | 'on_hand' | 'images' | 'deskripsi_peminta' | 'item_description' | 'short_reason'>[]
   can_approve: boolean
   can_handover: boolean
   can_fulfill?: boolean
   approve_as?: 'MANAGER' | 'DIREKTUR' | 'GUDANG' | null
+  /** picked up by a representative: who (Gudang scans their code) */
+  proxy?: RequestProxy | null
   last_step: ApprovalStep | null
+  /** admin gudang's verification: who picked the Master Produk items, and when */
+  verified_step?: ApprovalStep | null
   /** the NPBG waiting for its serah terima (Gudang hands it over from the Approval page) */
   fulfillments?: Pick<Fulfillment, 'id' | 'seq' | 'status' | 'no_npbg' | 'lines'>[]
 }
@@ -434,7 +469,7 @@ export function useDecideRequest(id: number) {
       (await api.post<{ data: ItemRequestDetail }>(`/api/item-requests/${id}/approval`, body)).data.data,
     meta: { successMessage: false },
     onSuccess: (d, b) => {
-      toast.success(b.action === 'REJECT' ? `${d.number} ditolak.` : b.action === 'RETURN' ? `${d.number} dikembalikan ke admin gudang.` : `${d.number}: ${d.status_label}.`)
+      toast.success(b.action === 'REJECT' ? `${d.number} rejected.` : b.action === 'RETURN' ? `${d.number} returned to the warehouse admin.` : `${d.number}: ${d.status_label}.`)
       return Promise.all([qc.invalidateQueries({ queryKey: ['item-requests'] }), qc.invalidateQueries({ queryKey: ['npbg'] })])
     },
   })
@@ -451,6 +486,8 @@ export interface HandoverPayload {
   handed?: Record<number, number>
   /** fulfillment lines whose part not handed over is closed (not needed any more) */
   drop?: number[]
+  /** picked up by a representative: the scanned QR text or the typed 6-digit code */
+  proxy_code?: string
   /** fulfillment line id → why less than the approved NPBG is handed over */
   reasons?: Record<number, string>
 }
@@ -463,7 +500,7 @@ export function useHandover(id: number, fulfillmentId?: number | null) {
       fulfillmentId ? `/api/item-requests/${id}/fulfillments/${fulfillmentId}/handover` : `/api/item-requests/${id}/handover`, body)).data.data,
     meta: { successMessage: false },
     onSuccess: (d) => {
-      toast.success(d.status === 'SELESAI' ? `${d.number} selesai, semua barang sudah diserahkan.` : `${d.number}: barang diserahkan, sisanya masih diproses.`)
+      toast.success(d.status === 'SELESAI' ? `${d.number} done, all items handed over.` : `${d.number}: items handed over, the rest still in process.`)
       return Promise.all([qc.invalidateQueries({ queryKey: ['item-requests'] }), qc.invalidateQueries({ queryKey: ['npbg'] })])
     },
   })
@@ -478,7 +515,7 @@ export function useFulfill(id: number) {
     meta: { successMessage: false },
     onSuccess: (d) => {
       const f = d.fulfillments?.find((x) => x.status === 'DISIAPKAN')
-      toast.success(f ? `NPBG ${f.no_npbg} dibuat, barang siap diserahkan.` : 'Kekurangan diteruskan ke Draft PPB.')
+      toast.success(f ? `Delivery Order ${f.no_npbg} created, items ready for handover.` : 'Shortage passed on to Draft Purchase Request.')
       return Promise.all([qc.invalidateQueries({ queryKey: ['item-requests'] }), qc.invalidateQueries({ queryKey: ['npbg'] }), qc.invalidateQueries({ queryKey: ['ppb-drafts'] })])
     },
   })
@@ -490,7 +527,7 @@ export function useCloseRemaining(id: number) {
   return useMutation({
     mutationFn: async (body: { reason: string; line_ids?: number[] }) =>
       (await api.post<{ data: ItemRequestDetail }>(`/api/item-requests/${id}/close`, body)).data.data,
-    meta: { successMessage: 'Sisa kebutuhan ditutup.' },
+    meta: { successMessage: 'Remaining need closed.' },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['item-requests'] }),
   })
 }
@@ -515,11 +552,49 @@ export function useHandoverFile(id: number, slot: 'handover' | 'signature', enab
   })
 }
 
+/** The requester: a representative picks the goods up (new code), or not any more. */
+/** A worker (data pekerja) who can pick up for the requester. */
+export interface ProxyPerson { name: string; divisi: string | null }
+
+export function useRequestProxy(id: number) {
+  const qc = useQueryClient()
+  const done = () => qc.invalidateQueries({ queryKey: ['item-requests'] })
+  return {
+    create: useMutation({
+      mutationFn: async (name: string) => (await api.post<{ data: ItemRequestDetail }>(`/api/item-requests/${id}/proxy`, { name })).data.data,
+      meta: { successMessage: 'Representative code created. Send its QR to the person collecting.' }, onSuccess: done,
+    }),
+    cancel: useMutation({
+      mutationFn: async () => (await api.delete<{ data: ItemRequestDetail }>(`/api/item-requests/${id}/proxy`)).data.data,
+      meta: { successMessage: 'Representative cancelled.' }, onSuccess: done,
+    }),
+     /** data pekerja names to pick the representative from */
+    people: async (q: string) => (await api.get<{ data: ProxyPerson[] }>(`/api/item-requests/${id}/proxy-people`, { params: { q } })).data.data,
+  }
+}
+
+/** The same from the public status page (the track token is the requester's). */
+export function usePublicRequestProxy(token: string) {
+  const qc = useQueryClient()
+  const done = () => qc.invalidateQueries({ queryKey: ['public-request-status'] })
+  return {
+    create: useMutation({
+      mutationFn: async (name: string) => (await api.post('/api/public/request-status/proxy', { token, name })).data,
+      meta: { successMessage: 'Representative code created. Send its QR to the person collecting.' }, onSuccess: done,
+    }),
+    cancel: useMutation({
+      mutationFn: async () => (await api.delete('/api/public/request-status/proxy', { params: { token } })).data,
+      meta: { successMessage: 'Representative cancelled.' }, onSuccess: done,
+    }),
+     people: async (q: string) => (await api.get<{ data: ProxyPerson[] }>('/api/public/request-status/proxy-people', { params: { token, q } })).data.data,
+  }
+}
+
 export function useCancelItemRequest(id: number) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async () => (await api.post<{ data: ItemRequestDetail }>(`/api/item-requests/${id}/cancel`)).data.data,
-    meta: { successMessage: 'Request dibatalkan.' },
+    meta: { successMessage: 'Request cancelled.' },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['item-requests'] }),
   })
 }
@@ -581,7 +656,7 @@ export function useItemRequestLinkMutations() {
     }),
     remove: useMutation({
       mutationFn: async (id: number) => api.delete(`/api/item-request-links/${id}`),
-      meta: { successMessage: 'Link dihapus.' },
+      meta: { successMessage: 'Link deleted.' },
       onSuccess: refresh,
     }),
   }
@@ -597,8 +672,26 @@ export function usePublicRequestForm(token: string) {
   })
 }
 
+/** The signed-in requester of the link form: their data from the account / data pekerja. */
+export interface PublicRequester {
+  name: string
+  username: string
+  contact: string | null
+  divisi: string | null
+  position: string | null
+}
+
+export function usePublicRequestLogin(token: string) {
+  return useMutation({
+    mutationFn: async (body: { username: string; password: string }) =>
+      (await api.post<{ data: { session: string; profile: PublicRequester } }>(`/api/public/item-request/${token}/login`, body)).data.data,
+    meta: { successMessage: false },
+  })
+}
+
 export interface PublicRequestPayload extends ItemRequestCreatePayload {
-  requester_name: string
+  /** from usePublicRequestLogin: who sends it */
+  session: string
   requester_contact?: string | null
   /** honeypot — hidden from people, bots fill it in */
   website?: string
@@ -617,7 +710,17 @@ export function useSubmitPublicRequest(token: string) {
 
 // ---------------------------------------------------------------- Cek Permintaan (no account)
 
+/** Pickup by a representative: who, until when; the code + QR text only for the requester. */
+export interface RequestProxy {
+  name: string
+  expires_at: string
+  code?: string
+  qr?: string
+}
+
 export interface PublicRequestStatus {
+  proxy?: RequestProxy | null
+  can_proxy?: boolean
   token: string
   number: string
   form_label: string
@@ -627,11 +730,16 @@ export interface PublicRequestStatus {
   divisi: string | null
   needed_date: string | null
   created_at: string
+  verify_note?: string | null
+  /** past Manager + Direktur approval */
+  approved?: boolean
   lines: {
     /** the item's own images (beside its name): GET public/request-status/image?token=&line=&slot= */
     id?: number; images?: string[]
-    deskripsi_barang: string; qty: number; satuan: string | null; decision: LineDecision | null; reject_reason: string | null
+    deskripsi_barang: string; qty: number; satuan: string | null; decision: LineDecision | null; reject_reason: string | null; short_reason?: string | null
     approved_qty?: number | string | null; fulfilled_qty?: number; line_status_label?: string
+    /** what the requester typed; the Master Produk item it was verified as (null before verification / rejected) */
+    asked?: string; item?: { code: string; name: string } | null
   }[]
   timeline: TimelineStep[]
   received_by: string | null
@@ -660,6 +768,24 @@ export function rememberTrack(token: string) {
   try {
     localStorage.setItem(TRACK_KEY, JSON.stringify([token, ...trackedTokens().filter((t) => t !== token)].slice(0, 30)))
   } catch { /* private mode: the link still works */ }
+}
+
+/** The link form's sign-in of this tab (any link, still valid): its session and the requester's name. */
+export function signedFormSession(): { session: string; name: string } | null {
+  try {
+    for (let i = 0; i < sessionStorage.length; i++) {
+      const k = sessionStorage.key(i)
+      if (!k?.startsWith('sw.request-form.')) continue
+      const v = JSON.parse(sessionStorage.getItem(k) ?? 'null') as { session?: string; at?: number; profile?: { name?: string } } | null
+      if (v?.session && Date.now() - (v.at ?? 0) < 3 * 3600_000) return { session: v.session, name: v.profile?.name ?? '' }
+    }
+  } catch { /* private mode */ }
+  return null
+}
+
+/** All requests of the signed-in requester (sent from any device): their track tokens. */
+export async function fetchMyRequestTokens(session: string) {
+  return (await api.post<{ data: { tokens: string[]; name: string } }>('/api/public/request-status/mine', { session })).data.data
 }
 
 export function forgetTrack(token: string) {

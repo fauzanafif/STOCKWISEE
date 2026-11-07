@@ -35,8 +35,8 @@ export function ResubmitPanel({ reason, by, rows, canResubmit, busy, onResubmit 
   const anyChange = Object.keys(changed).length > 0
   const send = () => {
     setErr(null)
-    if (bad) return invalidTo(setErr, `Jumlah ${bad.label} harus lebih dari 0.`)
-    if (anyChange && !note.trim()) return invalidTo(setErr, 'Jumlah diubah: tulis catatan revisinya.')
+    if (bad) return invalidTo(setErr, `Quantity ${bad.label} must be more than 0.`)
+    if (anyChange && !note.trim()) return invalidTo(setErr, 'Quantity changed: write the revision note.')
     onResubmit(changed, note.trim() || null)
   }
 
@@ -45,17 +45,17 @@ export function ResubmitPanel({ reason, by, rows, canResubmit, busy, onResubmit 
       <div className="flex gap-2">
         <Undo2 className="mt-0.5 size-4 shrink-0 text-orange-700" />
         <div>
-          <div className="font-semibold text-orange-900">Dikembalikan untuk revisi{by ? ` oleh ${by}` : ''}</div>
+          <div className="font-semibold text-orange-900">Returned for revision{by ? ` by ${by}` : ''}</div>
           {reason && <p className="text-orange-900/80">{reason}</p>}
-          {!canResubmit && <p className="mt-1 text-xs text-orange-900/70">Menunggu admin merevisi lalu mengajukan ulang.</p>}
+          {!canResubmit && <p className="mt-1 text-xs text-orange-900/70">Waiting for the admin to revise and resubmit.</p>}
         </div>
       </div>
       {canResubmit && (
         <>
           <div className="overflow-x-auto rounded-md border bg-card">
             <table className="w-full text-sm">
-              <thead className="bg-muted/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
-                <tr><th className="px-3 py-2 font-medium">Barang</th><th className="px-3 py-2 text-right font-medium">Jumlah</th></tr>
+              <thead className="bg-muted/40 text-left text-xs text-muted-foreground">
+                <tr><th className="px-3 py-2 font-medium">Item</th><th className="px-3 py-2 text-right font-medium">Quantity</th></tr>
               </thead>
               <tbody className="divide-y">
                 {rows.map((r) => {
@@ -63,14 +63,14 @@ export function ResubmitPanel({ reason, by, rows, canResubmit, busy, onResubmit 
                   const diff = changed[r.id] !== undefined
                   return (
                     <tr key={r.id}>
-                      <td className="px-3 py-2"><div>{r.label}</div>{r.code && <div className="font-mono text-xs text-muted-foreground">{r.code}</div>}</td>
+                      <td className="px-3 py-2"><div>{r.label}</div>{r.code && <div className="text-[13px] text-muted-foreground">{r.code}</div>}</td>
                       <td className="px-3 py-2 text-right">
                         <span className="inline-flex items-center gap-1.5">
-                          <Input className={'h-8 w-24 text-right tabular-nums' + (diff ? ' border-amber-400' : '')} inputMode="decimal" aria-label={`Jumlah ${r.label}`}
+                          <Input className={'h-8 w-24 text-right tabular-nums' + (diff ? ' border-amber-400' : '')} inputMode="decimal" aria-label={`Quantity ${r.label}`}
                             value={v} onChange={(e) => setQty((x) => ({ ...x, [r.id]: e.target.value }))} />
                           <span className="w-10 text-left text-xs text-muted-foreground">{r.unit ?? ''}</span>
                         </span>
-                        {diff && <div className="text-xs text-amber-700">semula {fmtQty(r.qty)}</div>}
+                        {diff && <div className="text-xs text-amber-700">original {fmtQty(r.qty)}</div>}
                       </td>
                     </tr>
                   )
@@ -80,9 +80,9 @@ export function ResubmitPanel({ reason, by, rows, canResubmit, busy, onResubmit 
           </div>
           <div className="flex flex-col gap-2 sm:flex-row">
             <Input className={'bg-card' + (anyChange && !note.trim() ? ' border-amber-400' : '')} value={note} maxLength={1000} onChange={(e) => setNote(e.target.value)}
-              placeholder={anyChange ? 'Catatan revisi (wajib, jumlah diubah)' : 'Catatan revisi (opsional)'} aria-label="Catatan revisi" />
+              placeholder={anyChange ? 'Revision notes (required, quantity changed)' : 'Revision notes (optional)'} aria-label="Revision notes" />
             <Button className="shrink-0" disabled={busy} onClick={send}>
-              {busy ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />} Ajukan ulang
+              {busy ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />} Resubmit
             </Button>
           </div>
           {err && <p className="text-xs text-destructive">{err}</p>}

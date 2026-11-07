@@ -290,6 +290,7 @@ class UserController extends Controller
             'site' => $u->site ? ['id' => $u->site->id, 'code' => $u->site->code, 'name' => $u->site->name] : null,
             'roles' => $u->roles->map(fn (Role $r) => ['slug' => $r->slug, 'name' => $r->name])->values(),
             'last_login_at' => $u->last_login_at,
+            'last_logout_at' => $u->last_logout_at,
             'created_at' => $u->created_at,
         ];
     }

@@ -62,7 +62,7 @@ export function StockCardItemPicker({ selected, onPick, projectId }: {
       <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
       <Input
         className="pl-9 pr-8"
- placeholder={selected ? `${selected.code} ${selected.description}` : 'Ketik kode atau nama barang (min 2 huruf)…'}
+ placeholder={selected ? `${selected.code} ${selected.description}` : 'Type item code or name (min 2 letters)…'}
         value={q}
         onFocus={() => setOpen(true)}
         onChange={(e) => { setQ(e.target.value); setOpen(true) }}
@@ -75,14 +75,14 @@ export function StockCardItemPicker({ selected, onPick, projectId }: {
         }}
       />
       {q && (
-        <button type="button" onClick={() => setQ('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" aria-label="Kosongkan">
+        <button type="button" onClick={() => setQ('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" aria-label="Clear">
           <X className="size-4" />
         </button>
       )}
       {showList && (
         <ul className="absolute z-20 mt-1 max-h-80 w-full overflow-auto rounded-md border bg-card shadow-lg">
-          {isFetching && data.length === 0 && <li className="px-3 py-2 text-sm text-muted-foreground">Mencari…</li>}
-          {!isFetching && data.length === 0 && <li className="px-3 py-2 text-sm text-muted-foreground">Tidak ada barang dengan kode / nama itu di Master Barang.</li>}
+          {isFetching && data.length === 0 && <li className="px-3 py-2 text-sm text-muted-foreground">Searching…</li>}
+          {!isFetching && data.length === 0 && <li className="px-3 py-2 text-sm text-muted-foreground">No item with that code / name in the Item Master.</li>}
           {data.map((it, i) => (
             <li key={it.id}>
               <button
@@ -93,11 +93,11 @@ export function StockCardItemPicker({ selected, onPick, projectId }: {
                 className={cn('flex w-full items-start justify-between gap-3 px-3 py-2 text-left text-sm disabled:cursor-not-allowed disabled:opacity-60', i === active ? 'bg-muted' : 'hover:bg-muted/60')}
               >
                 <span className="min-w-0">
-                  <span className="font-mono text-xs font-medium">{it.code}</span>
-                  {!it.is_active && <span className="ml-1.5 rounded bg-muted px-1 text-[10px] text-muted-foreground">nonaktif</span>}
-                  {inProject(it) && <span className="ml-1.5 rounded bg-amber-100 px-1 text-[10px] text-amber-800">sudah ada kartu di proyek ini</span>}
+                  <span className="text-[13px] font-medium">{it.code}</span>
+                  {!it.is_active && <span className="ml-1.5 rounded bg-muted px-1 text-[10px] text-muted-foreground">inactive</span>}
+                  {inProject(it) && <span className="ml-1.5 rounded bg-amber-100 px-1 text-[10px] text-amber-800">already has a card in this project</span>}
                   {!inProject(it) && it.cards.length > 0 && (
-                    <span className="ml-1.5 rounded bg-primary/10 px-1 text-[10px] text-primary">kartu di proyek lain: {it.cards.map((c) => c.project ?? 'tanpa proyek').join(', ')}</span>
+                    <span className="ml-1.5 rounded bg-primary/10 px-1 text-[10px] text-primary">cards in another project: {it.cards.map((c) => c.project ?? 'no project').join(', ')}</span>
                   )}
                   <span className="block whitespace-normal leading-snug">{it.description}</span>
                 </span>

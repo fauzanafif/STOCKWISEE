@@ -5,6 +5,7 @@ import { useItemLookup, type ItemLookupResult } from '@/features/inventory/api'
 import { saveOnce } from '@/lib/duplicate'
 import { Modal } from '@/components/ui/modal'
 import { Button } from '@/components/ui/button'
+import { UomEquivalent } from '@/components/UomEquivalent'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { PrintDocButton } from '@/components/PrintDocButton'
@@ -18,8 +19,8 @@ interface Props {
 function ItemSuggestions({ items, loading, onPick }: { items: ItemLookupResult[] | undefined; loading: boolean; onPick: (item: ItemLookupResult) => void }) {
   return (
     <ul className="absolute z-10 mt-1 max-h-56 w-full overflow-auto rounded-md border bg-card text-sm shadow-md">
-      {loading && <li className="px-3 py-2 text-muted-foreground">Mencari…</li>}
-      {!loading && (items?.length ?? 0) === 0 && <li className="px-3 py-2 text-muted-foreground">Tidak ada hasil.</li>}
+      {loading && <li className="px-3 py-2 text-muted-foreground">Searching…</li>}
+      {!loading && (items?.length ?? 0) === 0 && <li className="px-3 py-2 text-muted-foreground">No results.</li>}
       {items?.map((it) => (
         <li key={it.id}>
           <button
@@ -28,7 +29,7 @@ function ItemSuggestions({ items, loading, onPick }: { items: ItemLookupResult[]
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => onPick(it)}
           >
-            <span className="font-mono text-xs text-muted-foreground">{it.code}</span> {it.description}
+            <span className="text-[13px] text-muted-foreground">{it.code}</span> {it.description}
           </button>
         </li>
       ))}
@@ -84,7 +85,7 @@ export function PpbFormModal({ open, onClose }: Props) {
   function submit() {
     setErr(null)
     if (!noPpb.trim() || !tglPpb || !deskripsiBarang.trim() || !kuantitas) {
-      setErr('No PPB, Tanggal PPB, Deskripsi Barang, dan Kuantitas wajib diisi.')
+      setErr('Purchase Request No, Purchase Request Date, Item Description, and Quantity are required.')
       return
     }
     const payload: PpbCreatePayload = {
@@ -110,21 +111,21 @@ export function PpbFormModal({ open, onClose }: Props) {
 
   if (createdDoc) {
     return (
-      <Modal
+      <Modal form
         open={open}
         onClose={onClose}
-        title="PPB Tersimpan"
-        description={`No. PPB: ${createdDoc.no_ppb}`}
+        title="Purchase Request Saved"
+        description={`Purchase Request No.: ${createdDoc.no_ppb}`}
         className="max-w-md"
-        footer={<Button size="sm" onClick={onClose}>Selesai</Button>}
+        footer={<Button size="sm" onClick={onClose}>Done</Button>}
       >
         <div className="flex flex-col items-center gap-3 py-4 text-center">
           <CheckCircle2 className="size-10 text-emerald-600" />
           <p className="text-sm text-muted-foreground">
-            PPB berhasil disimpan. Cetak sekarang untuk dicetak di kertas khusus PPB.
+            Purchase Request saved. Print now on the special PPB paper.
           </p>
           <Button size="sm" variant="outline" onClick={() => setPrinting(true)}>
-            <Printer className="size-4" /> Cetak
+            <Printer className="size-4" /> Print
           </Button>
         </div>
       </Modal>
@@ -132,17 +133,17 @@ export function PpbFormModal({ open, onClose }: Props) {
   }
 
   return (
-    <Modal
+    <Modal page form
       open={open}
       onClose={onClose}
-      title="Tambah PPB"
-      description="PPB manual — dicatat langsung di Stockwise, bukan dari Sync Accurate."
+      title="Add Purchase Request"
+      description="Manual Purchase Request; recorded directly in Stockwise, not from Accurate Sync."
       className="max-w-2xl"
       footer={
         <>
-          <Button variant="outline" size="sm" onClick={onClose}>Batal</Button>
+          <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
           <Button size="sm" disabled={create.isPending} onClick={submit}>
-            {create.isPending ? 'Menyimpan…' : 'Simpan'}
+            {create.isPending ? 'Saving…' : 'Save'}
           </Button>
         </>
       }
@@ -150,48 +151,48 @@ export function PpbFormModal({ open, onClose }: Props) {
       <div className="space-y-4">
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
-            <Label>No PPB</Label>
-            <Input className="font-mono" value={noPpb} onChange={(e) => setNoPpb(e.target.value)} placeholder="mis. PPB/GDG/26/X/001" />
+            <Label>Purchase Request No</Label>
+            <Input className="" value={noPpb} onChange={(e) => setNoPpb(e.target.value)} placeholder="e.g. PPB/GDG/26/X/001" />
           </div>
           <div className="space-y-1.5">
-            <Label>Divisi Peminta</Label>
+            <Label>Requesting Division</Label>
             <Input value={divisi} onChange={(e) => setDivisi(e.target.value)} />
           </div>
         </div>
 
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
-            <Label>Tanggal PPB</Label>
+            <Label>Purchase Request Date</Label>
             <Input type="date" value={tglPpb} onChange={(e) => setTglPpb(e.target.value)} />
           </div>
           <div className="space-y-1.5">
-            <Label>Tanggal Diperlukan</Label>
+            <Label>Date Needed</Label>
             <Input type="date" value={tglDiperlukan} min={tglPpb || undefined} onChange={(e) => setTglDiperlukan(e.target.value)} />
           </div>
         </div>
 
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={itemBaru} onChange={(e) => { setItemBaru(e.target.checked); setActiveField(null) }} />
-          Barang belum ada di Master Barang (isi Kode &amp; Deskripsi Barang manual)
+          Item not in the Item Master yet (fill Item Code &amp; Description by hand)
         </label>
 
         <div className="grid grid-cols-2 gap-3">
           <div className="relative space-y-1.5">
-            <Label>Kode Barang</Label>
+            <Label>Item Code</Label>
             <Input
-              className="font-mono"
+              className=""
               value={kodeBarang}
               onChange={(e) => setKodeBarang(e.target.value)}
               onFocus={() => !itemBaru && setActiveField('kode')}
               onBlur={() => setTimeout(() => setActiveField((f) => (f === 'kode' ? null : f)), 150)}
-              placeholder={itemBaru ? 'Kode barang baru (bebas)' : 'mis. PUI.0019'}
+              placeholder={itemBaru ? 'New item code (free)' : 'e.g. PUI.0019'}
             />
             {!itemBaru && activeField === 'kode' && kodeBarang.trim().length >= 2 && (
               <ItemSuggestions items={suggestions} loading={searchingItems} onPick={pickItem} />
             )}
           </div>
           <div className="relative space-y-1.5">
-            <Label>Deskripsi Barang</Label>
+            <Label>Item Description</Label>
             <Input
               value={deskripsiBarang}
               onChange={(e) => setDeskripsiBarang(e.target.value)}
@@ -206,26 +207,27 @@ export function PpbFormModal({ open, onClose }: Props) {
 
         <div className="grid grid-cols-3 gap-3">
           <div className="space-y-1.5">
-            <Label>Kuantitas</Label>
+            <Label>Quantity</Label>
             <Input type="number" min={0} step="0.01" value={kuantitas} onChange={(e) => setKuantitas(e.target.value ? Number(e.target.value) : '')} />
           </div>
           <div className="space-y-1.5">
-            <Label>Satuan</Label>
+            <Label>Unit</Label>
             <Input value={satuan} onChange={(e) => setSatuan(e.target.value)} placeholder="PCS, SET, …" />
+            <UomEquivalent qty={Number(kuantitas) || 0} unit={satuan} itemCode={kodeBarang} />
           </div>
           <div className="space-y-1.5">
-            <Label>Peminta</Label>
+            <Label>Requester</Label>
             <Input value={peminta} onChange={(e) => setPeminta(e.target.value)} />
           </div>
         </div>
 
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
-            <Label>Catatan</Label>
+            <Label>Notes</Label>
             <Input value={catatan} onChange={(e) => setCatatan(e.target.value)} />
           </div>
           <div className="space-y-1.5">
-            <Label>Keterangan</Label>
+            <Label>Remarks</Label>
             <Input value={keterangan} onChange={(e) => setKeterangan(e.target.value)} />
           </div>
         </div>

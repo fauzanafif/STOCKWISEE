@@ -24,6 +24,8 @@ class NpbgResource extends JsonResource
             'deskripsi' => $this->deskripsi,
             'kuantitas' => $this->kuantitas,
             'satuan' => $this->satuan,
+            'unit_ratio' => (float) ($this->unit_ratio ?? 1),
+            'base_satuan' => $this->base_satuan,
             'peminta' => $this->peminta,
             'divisi' => $this->divisi,
             // Accurate format since Sept 2026 (AccurateLineFields); Klasifikasi = [Ship Via] is 'klasifikasi' above

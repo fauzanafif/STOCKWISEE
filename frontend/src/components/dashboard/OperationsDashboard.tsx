@@ -23,11 +23,11 @@ const stackLabel = (v: unknown) => (typeof v === 'number' && v > 0 ? fmt(v) : ''
 
 function monthLabel(ym: string): string {
   const [y, m] = ym.split('-').map(Number)
-  return new Date(y, m - 1, 1).toLocaleDateString('id-ID', { month: 'short', year: '2-digit' })
+  return new Date(y, m - 1, 1).toLocaleDateString('en-GB', { month: 'short', year: '2-digit' })
 }
 
 function fmtDate(d: string | null): string {
-  return d ? new Date(d.slice(0, 10) + 'T00:00:00').toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
+  return d ? new Date(d.slice(0, 10) + 'T00:00:00').toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
 }
 
 /** Legend in series order; the swatch carries the color, the text stays in text color. */
@@ -79,7 +79,7 @@ function TrackingRow({ r }: { r: TrackingSummaryRow }) {
               {fmt(r.attention)} {r.words[2].toLowerCase()}
             </span>
           )}
-          <span>{fmt(r.running)} berjalan · {fmt(r.total)} total</span>
+          <span>{fmt(r.running)} running · {fmt(r.total)} total</span>
           <ChevronRight className="size-4 opacity-0 transition group-hover:opacity-100" />
         </span>
       </div>
@@ -94,9 +94,9 @@ function TrackingRow({ r }: { r: TrackingSummaryRow }) {
 
 export function TrackingSummary({ rows }: { rows: TrackingSummaryRow[] }) {
   return (
-    <ChartCard title="Status Semua Tracking" subtitle="Per modul, dengan status Excel masing-masing. Klik untuk membuka modul." empty={rows.length === 0}>
+    <ChartCard title="All Tracking Status" subtitle="Per module, with each Excel status. Click to open the module." empty={rows.length === 0}>
       <div className="space-y-1">
-        <SwatchLegend items={[[STATE.done, 'Selesai'], [STATE.running, 'Berjalan'], [STATE.attention, 'Perlu tindakan']]} />
+        <SwatchLegend items={[[STATE.done, 'Done'], [STATE.running, 'Running'], [STATE.attention, 'Action needed']]} />
         <div className="-mx-2 divide-y">
           {rows.map((r) => <TrackingRow key={r.key} r={r} />)}
         </div>
@@ -110,7 +110,7 @@ export function TrackingSummary({ rows }: { rows: TrackingSummaryRow[] }) {
 export function PpbAging({ data }: { data: OperationsDashboardData['ppb_aging'] }) {
   const total = data.reduce((s, d) => s + d.requested + d.shortage, 0)
   return (
-    <ChartCard title="Umur PPB Menunggu Barang" subtitle={`${fmt(total)} baris belum lengkap (Requested / Shortage, tanpa Amend) menurut umur sejak tanggal PPB`} empty={total === 0}>
+    <ChartCard title="Age of Purchase Request Waiting for Items" subtitle={`${fmt(total)} incomplete rows (Requested / Shortage, without Amend) by age since the Purchase Request date`} empty={total === 0}>
       <ValueLegend items={[
         { color: SERIES.ppb, label: 'Requested', value: data.reduce((s, d) => s + d.requested, 0) },
         { color: SHORTAGE, label: 'Shortage', value: data.reduce((s, d) => s + d.shortage, 0) },
@@ -137,8 +137,8 @@ export function PurchaseFlow({ data }: { data: OperationsDashboardData['purchase
   const rows = data.map((d) => ({ ...d, label: monthLabel(d.month) }))
   const sum = (k: 'ppb' | 'po' | 'ri') => fmt(data.reduce((s, d) => s + d[k], 0))
   return (
-    <ChartCard title="Alur Pembelian per Bulan" subtitle="Jumlah baris barang PPB → PO → RI, 12 bulan penuh terakhir. RI termasuk penerimaan tanpa PPB." empty={data.every((d) => d.ppb + d.po + d.ri === 0)}>
-      <SwatchLegend line items={[[SERIES.ppb, `PPB · ${sum('ppb')} baris`], [SERIES.po, `PO · ${sum('po')} baris`], [SERIES.ri, `RI · ${sum('ri')} baris`]]} />
+    <ChartCard title="Purchasing Flow per Month" subtitle="Purchase Request → PO → Receipt item rows, last 12 full months. Receipt includes receipts without a Purchase Request." empty={data.every((d) => d.ppb + d.po + d.ri === 0)}>
+      <SwatchLegend line items={[[SERIES.ppb, `Purchase Request · ${sum('ppb')} rows`], [SERIES.po, `PO · ${sum('po')} rows`], [SERIES.ri, `Receipt · ${sum('ri')} rows`]]} />
       <ResponsiveContainer width="100%" height={260}>
         <LineChart data={rows} margin={{ top: 8, right: 16 }}>
           <CartesianGrid strokeDasharray="3 3" vertical={false} />
@@ -158,10 +158,10 @@ export function MaintenanceVehicles({ data }: { data: OperationsDashboardData['m
   // axis shows the plate, the tooltip the full "W 8747 PD (HINO DUTRO)"
   const rows = data.map((d) => ({ ...d, plate: d.name.replace(/\s*\(.*$/, '') || d.name }))
   return (
-    <ChartCard title="Kendaraan Paling Sering Maintenance" subtitle="Top 10 berdasarkan jumlah Sub SPK" empty={data.length === 0}>
+    <ChartCard title="Vehicles Most Often in Maintenance" subtitle="Top 10 by Sub SPK count" empty={data.length === 0}>
       <ValueLegend items={[
-        { color: STATE.done, label: 'Selesai', value: data.reduce((s, d) => s + d.completed, 0) },
-        { color: STATE.running, label: 'Belum selesai', value: data.reduce((s, d) => s + d.open, 0) },
+        { color: STATE.done, label: 'Done', value: data.reduce((s, d) => s + d.completed, 0) },
+        { color: STATE.running, label: 'Not finished', value: data.reduce((s, d) => s + d.open, 0) },
       ]} />
       <ResponsiveContainer width="100%" height={300}>
         <BarChart data={rows} layout="vertical" margin={{ top: 8, left: 0, right: 32 }}>
@@ -169,10 +169,10 @@ export function MaintenanceVehicles({ data }: { data: OperationsDashboardData['m
           <XAxis type="number" tick={{ fontSize: 10 }} allowDecimals={false} />
           <YAxis type="category" dataKey="plate" width={92} tick={{ fontSize: 10 }} interval={0} />
           <Tooltip formatter={tooltipNumber} cursor={{ fillOpacity: 0.3 }} labelFormatter={(_, p) => (p?.[0]?.payload as { name?: string } | undefined)?.name ?? ''} />
-          <Bar dataKey="completed" name="Selesai" stackId="a" fill={STATE.done} stroke="hsl(var(--card))" strokeWidth={1}>
+          <Bar dataKey="completed" name="Done" stackId="a" fill={STATE.done} stroke="hsl(var(--card))" strokeWidth={1}>
             <LabelList dataKey="completed" position="center" formatter={stackLabel} className="fill-white text-[10px] font-medium" />
           </Bar>
-          <Bar dataKey="open" name="Belum selesai" stackId="a" fill={STATE.running} stroke="hsl(var(--card))" strokeWidth={1} radius={[0, 4, 4, 0]}>
+          <Bar dataKey="open" name="Not finished" stackId="a" fill={STATE.running} stroke="hsl(var(--card))" strokeWidth={1} radius={[0, 4, 4, 0]}>
             <LabelList dataKey="open" position="right" formatter={stackLabel} className="fill-foreground text-[10px]" />
           </Bar>
         </BarChart>
@@ -184,7 +184,7 @@ export function MaintenanceVehicles({ data }: { data: OperationsDashboardData['m
 export function TyrePerMonth({ data }: { data: OperationsDashboardData['tyre_per_month'] }) {
   const rows = data.map((d) => ({ ...d, label: monthLabel(d.month) }))
   return (
-    <ChartCard title="Penggantian Ban per Bulan" subtitle="Jumlah ban diganti, 12 bulan penuh terakhir" empty={data.every((d) => d.count === 0)}>
+    <ChartCard title="Tyre Replacement per Month" subtitle="Tyres replaced, last 12 full months" empty={data.every((d) => d.count === 0)}>
       <ResponsiveContainer width="100%" height={318}>
         <BarChart data={rows} margin={{ top: 20, right: 8 }}>
           <CartesianGrid strokeDasharray="3 3" vertical={false} />
@@ -207,7 +207,7 @@ export function TyrePerMonth({ data }: { data: OperationsDashboardData['tyre_per
 export function PpbOldestCard({ ppb }: { ppb: OperationsDashboardData['attention']['ppb_oldest'] }) {
   if (!ppb) return null
   return (
-      <ChartCard title={<span className="inline-flex items-center gap-2"><Clock className="size-4 text-amber-600" />PPB Paling Lama Menunggu</span>} subtitle="Requested / Shortage tertua, belum ada barang lengkap" empty={ppb.length === 0}>
+      <ChartCard title={<span className="inline-flex items-center gap-2"><Clock className="size-4 text-amber-600" />Longest Waiting Purchase Request</span>} subtitle="Oldest Requested / Shortage, items not complete yet" empty={ppb.length === 0}>
         <ul className="-mx-2 divide-y text-sm">
           {ppb.map((p) => (
             <li key={p.id}>
@@ -217,14 +217,14 @@ export function PpbOldestCard({ ppb }: { ppb: OperationsDashboardData['attention
                   <div className="truncate text-xs text-muted-foreground" title={p.item}>{p.item}</div>
                 </div>
                 <div className="shrink-0 text-right">
-                  <Badge variant={p.age_days > 90 ? 'danger' : 'warning'}>{fmt(p.age_days)} hari</Badge>
+                  <Badge variant={p.age_days > 90 ? 'danger' : 'warning'}>{fmt(p.age_days)} days</Badge>
                   <div className="mt-0.5 text-xs tabular-nums text-muted-foreground">{fmt(p.received)}/{fmt(p.qty)} {p.unit ?? ''}</div>
                 </div>
               </Link>
             </li>
           ))}
         </ul>
-        <Link to="/ppb" className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline">Lihat semua PPB <ChevronRight className="size-3.5" /></Link>
+        <Link to="/ppb" className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline">View all Purchase Request <ChevronRight className="size-3.5" /></Link>
       </ChartCard>
   )
 }
@@ -233,7 +233,7 @@ export function PpbOldestCard({ ppb }: { ppb: OperationsDashboardData['attention
 export function LendOverdueCard({ lend }: { lend: OperationsDashboardData['attention']['lend_overdue'] }) {
   if (!lend) return null
   return (
-      <ChartCard title={<span className="inline-flex items-center gap-2"><AlertTriangle className="size-4 text-red-600" />Pinjaman Lewat Tempo</span>} subtitle="Barang dipinjamkan yang sudah melewati batas kembali" empty={lend.length === 0}>
+      <ChartCard title={<span className="inline-flex items-center gap-2"><AlertTriangle className="size-4 text-red-600" />Overdue Loans</span>} subtitle="Lent items past their return date" empty={lend.length === 0}>
         <ul className="-mx-2 divide-y text-sm">
           {lend.map((l) => (
             <li key={l.id}>
@@ -243,14 +243,14 @@ export function LendOverdueCard({ lend }: { lend: OperationsDashboardData['atten
                   <div className="truncate text-xs text-muted-foreground" title={l.item}>{fmt(l.qty)} {l.unit ?? ''} {l.item}</div>
                 </div>
                 <div className="shrink-0 text-right">
-                  <Badge variant="danger">{l.late_days != null ? `${fmt(l.late_days)} hari` : 'Deadline'}</Badge>
-                  <div className="mt-0.5 text-xs text-muted-foreground">tempo {fmtDate(l.due_date)}</div>
+                  <Badge variant="danger">{l.late_days != null ? `${fmt(l.late_days)} days` : 'Deadline'}</Badge>
+                  <div className="mt-0.5 text-xs text-muted-foreground">due {fmtDate(l.due_date)}</div>
                 </div>
               </Link>
             </li>
           ))}
         </ul>
-        <Link to="/lend" className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline">Lihat semua pinjaman <ChevronRight className="size-3.5" /></Link>
+        <Link to="/lend" className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline">View all loans <ChevronRight className="size-3.5" /></Link>
       </ChartCard>
   )
 }
@@ -260,7 +260,7 @@ export function LendOverdueCard({ lend }: { lend: OperationsDashboardData['atten
 /** Tracking modules only — purchasing (PPB / PO / RI) lives in ProcurementDashboard. */
 export function TrackingDashboard() {
   const { data, isLoading, error } = useOperationsDashboard()
-  if (isLoading) return <p className="text-sm text-muted-foreground">Memuat tracking…</p>
+  if (isLoading) return <p className="text-sm text-muted-foreground">Loading tracking…</p>
   if (error) return <p className="text-sm text-red-600">{apiErrorMessage(error)}</p>
   if (!data) return null
 

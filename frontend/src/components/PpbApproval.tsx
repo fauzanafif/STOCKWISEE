@@ -11,32 +11,41 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { BYPASS_TEXT, isAutoApproval } from '@/lib/approval'
 import { invalidTo } from '@/lib/notify'
+import { TONE_EDGE, type ActivityItem } from '@/components/doc/DocLayout'
 
-const fmt = (v: string | null) => (v ? new Date(v).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }) : '')
+const fmt = (v: string | null) => (v ? new Date(v).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' }) : '')
 
 /** Approval of a PPB before PO; red when Accurate made a PO before anyone approved. */
 export function PpbApprovalBadge({ approval }: { approval?: PpbApproval | null }) {
   if (!approval) return <span className="text-muted-foreground">-</span>
   if (approval.po_without_approval) {
-    return <Badge variant="danger" title="PO dibuat di Accurate sebelum PPB di-approve"><AlertTriangle className="mr-1 size-3" />PO tanpa approval</Badge>
+    return <Badge variant="danger" title="PO made in Accurate before the Purchase Request was approved"><AlertTriangle className="mr-1 size-3" />PO without approval</Badge>
   }
   // PPBs from before the approval rule: nothing to act on, so no badge competing for attention
-  if (approval.status === 'TIDAK_PERLU') return <span className="text-muted-foreground" title="PPB dibuat sebelum aturan approval berlaku">-</span>
+  if (approval.status === 'TIDAK_PERLU') return <span className="text-muted-foreground" title="Purchase Request made before the approval rule applied">-</span>
   const s = APPROVAL_STATUS[approval.status]
-  return <Badge variant={s.variant} title={approval.by ? `${s.label} oleh ${approval.by}${approval.at ? `, ${fmt(approval.at)}` : ''}` : undefined}>{s.label}</Badge>
+  return <Badge variant={s.variant} title={approval.by ? `${s.label} by ${approval.by}${approval.at ? `, ${fmt(approval.at)}` : ''}` : undefined}>{s.label}</Badge>
 }
 
-const LOG_LABEL: Record<string, { label: string; cls: string }> = {
-  DIAJUKAN: { label: 'Masuk, menunggu approval', cls: 'bg-amber-500' },
-  APPROVE_MANAGER: { label: 'Disetujui Manager', cls: 'bg-emerald-400' },
-  APPROVE: { label: 'Disetujui', cls: 'bg-emerald-500' },
-  RETURN: { label: 'Dikembalikan untuk revisi', cls: 'bg-orange-500' },
-  DIAJUKAN_ULANG: { label: 'Diajukan ulang (sudah direvisi)', cls: 'bg-amber-500' },
-  REJECT: { label: 'Ditolak', cls: 'bg-red-500' },
-  PO_TANPA_APPROVAL: { label: 'PO dibuat tanpa approval', cls: 'bg-red-600' },
+const LOG_LABEL: Record<string, { label: string; tone: ActivityItem['tone'] }> = {
+  DIAJUKAN: { label: 'In, waiting for approval', tone: 'wait' },
+  APPROVE_MANAGER: { label: 'Approved by Manager', tone: 'ok' },
+  APPROVE: { label: 'Approved', tone: 'ok' },
+  RETURN: { label: 'Returned for revision', tone: 'warn' },
+  DIAJUKAN_ULANG: { label: 'Resubmitted (revised)', tone: 'wait' },
+  REJECT: { label: 'Rejected', tone: 'bad' },
+  PO_TANPA_APPROVAL: { label: 'PO made without approval', tone: 'bad' },
 }
 
-/** PPB detail: approve / reject the whole PPB document in one click, and its approval log. */
+/** The PPB's approval log, for the detail page's activity panel. */
+export function ppbActivity(ppb: Ppb): ActivityItem[] {
+  return (ppb.approval_log ?? []).map((l) => {
+    const meta = l.action === 'APPROVE_MANAGER' && isAutoApproval(l.note) ? { label: BYPASS_TEXT, tone: 'info' as const } : LOG_LABEL[l.action] ?? { label: l.action, tone: 'info' as const }
+    return { id: l.id, label: meta.label, tone: meta.tone, who: l.user_name ?? 'Sistem', at: l.created_at, note: isAutoApproval(l.note) ? null : l.note }
+  })
+}
+
+/** PPB detail: approve / reject the whole PPB document in one click. */
 export function PpbApprovalCard({ ppb }: { ppb: Ppb }) {
   const { hasPermission } = useAuth()
   const decide = useDecidePpb(ppb.id)
@@ -53,11 +62,11 @@ export function PpbApprovalCard({ ppb }: { ppb: Ppb }) {
 
   // STOCKWISE PPB: Manager then Direktur (the server says whose step it is); Accurate's: one step
   const can = ppb.can_decide ?? (hasPermission('ppb.approve') && approval.status !== 'TIDAK_PERLU')
-  const stepLabel = approval.stockwise ? (approval.status === 'MENUNGGU_DIREKTUR' || (approval.status === 'MENUNGGU' && !hasPermission('ppb.approve_manager') && hasPermission('ppb.approve_director')) ? ' (Direktur)' : approval.status === 'MENUNGGU' ? ' (Manager)' : '') : ''
+  const stepLabel = approval.stockwise ? (approval.status === 'MENUNGGU_DIREKTUR' || (approval.status === 'MENUNGGU' && !hasPermission('ppb.approve_manager') && hasPermission('ppb.approve_director')) ? ' (Director)' : approval.status === 'MENUNGGU' ? ' (Manager)' : '') : ''
   const send = (action: 'APPROVE' | 'REJECT' | 'RETURN') => {
     setErr(null)
-    if (action === 'REJECT' && !note.trim()) return invalidTo(setErr, 'Isi alasan tolak.')
-    if (action === 'RETURN' && !note.trim()) return invalidTo(setErr, 'Catatan wajib diisi: tulis kenapa direvisi.')
+    if (action === 'REJECT' && !note.trim()) return invalidTo(setErr, 'Fill in the rejection reason.')
+    if (action === 'RETURN' && !note.trim()) return invalidTo(setErr, 'A note is required: write why it is revised.')
     decide.mutate({ action, note: note.trim() || null }, {
       onSuccess: () => { setRejecting(false); setNote('') },
       onError: (e) => setErr(apiErrorMessage(e)),
@@ -65,27 +74,28 @@ export function PpbApprovalCard({ ppb }: { ppb: Ppb }) {
   }
 
   return (
-    <Card className={approval.po_without_approval ? 'border-red-300' : approval.status === 'MENUNGGU' ? 'border-amber-300' : undefined}>
+    <Card className={approval.po_without_approval ? TONE_EDGE.bad : ['MENUNGGU', 'MENUNGGU_DIREKTUR'].includes(approval.status) ? TONE_EDGE.wait
+      : approval.status === 'DIKEMBALIKAN' ? TONE_EDGE.warn : approval.status === 'DITOLAK' ? TONE_EDGE.bad : approval.status === 'DISETUJUI' ? TONE_EDGE.ok : undefined}>
       <CardContent className="space-y-3 p-4 text-sm">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="space-y-0.5">
-            <div className="flex items-center gap-2 font-medium">{before ? 'Dokumen PPB' : <>Approval sebelum PO <PpbApprovalBadge approval={approval} /></>}</div>
+            <div className="flex items-center gap-2 font-medium">{before ? 'Purchase Request Document' : <>Approval before PO <PpbApprovalBadge approval={approval} /></>}</div>
             <div className="text-xs text-muted-foreground">
               {approval.status === 'TIDAK_PERLU'
-                ? 'PPB ini dibuat sebelum aturan approval berlaku.'
-                : `Berlaku untuk seluruh PPB ${ppb.no_ppb}${ppb.document_lines && ppb.document_lines > 1 ? ` (${ppb.document_lines} barang)` : ''}.${approval.stockwise ? ' PPB STOCKWISE: disetujui Manager, lalu Direktur.' : ''}`}
+                ? 'This Purchase Request was made before the approval rule applied.'
+                : `Applies to the whole Purchase Request ${ppb.no_ppb}${ppb.document_lines && ppb.document_lines > 1 ? ` (${ppb.document_lines} items)` : ''}.${approval.stockwise ? ' STOCKWISE Purchase Request: approved by Manager, then Director.' : ''}`}
               {approval.status === 'DISETUJUI' && ppb.approval_po && (
-                <> Masuk ke tabel PO sebagai <Link to={`/purchase-orders/${ppb.approval_po.id}`} className="font-mono text-primary hover:underline">{ppb.approval_po.number}</Link>{approval.stockwise ? ' — lengkapi vendor & harga di sana, lalu disetujui Direktur.' : ' (Menunggu PO, sampai PO dibuat di Accurate).'}</>
+                <> Goes to the PO table as <Link to={`/purchase-orders/${ppb.approval_po.id}`} className=" text-primary hover:underline">{ppb.approval_po.number}</Link>{approval.stockwise ? ' — complete the vendor & price there, then the Director approves.' : ' (Waiting for PO, until the PO is made in Accurate).'}</>
               )}
             </div>
           </div>
           {can && !rejecting && (
             <div className="flex gap-2">
               {approval.stockwise && ['MENUNGGU', 'MENUNGGU_DIREKTUR'].includes(approval.status) && (
-                <Button size="sm" variant="outline" className="border-orange-300 text-orange-700 hover:bg-orange-50" disabled={decide.isPending} onClick={() => { setRejecting('RETURN'); setErr(null) }}><Undo2 className="size-4" /> Revisi</Button>
+                <Button size="sm" variant="outline" className="border-orange-300 text-orange-700 hover:bg-orange-50" disabled={decide.isPending} onClick={() => { setRejecting('RETURN'); setErr(null) }}><Undo2 className="size-4" /> Revise</Button>
               )}
               {approval.status !== 'DITOLAK' && (
-                <Button size="sm" variant="outline" disabled={decide.isPending} onClick={() => { setRejecting('REJECT'); setErr(null) }}><X className="size-4" /> Tolak</Button>
+                <Button size="sm" variant="outline" disabled={decide.isPending} onClick={() => { setRejecting('REJECT'); setErr(null) }}><X className="size-4" /> Reject</Button>
               )}
               {approval.status !== 'DISETUJUI' && (
                 <Button size="sm" disabled={decide.isPending} onClick={() => send('APPROVE')}><Check className="size-4" /> Approve{stepLabel}</Button>
@@ -95,11 +105,11 @@ export function PpbApprovalCard({ ppb }: { ppb: Ppb }) {
         </div>
         {rejecting && (
           <div className="flex flex-wrap gap-2">
-            <Input className="min-w-0 flex-1" autoFocus placeholder={rejecting === 'RETURN' ? 'Kenapa direvisi? Apa yang perlu diubah? (wajib)' : 'Alasan tolak (wajib)'} value={note} maxLength={1000} onChange={(e) => setNote(e.target.value)} />
-            <Button size="sm" variant="outline" className="h-10" onClick={() => { setRejecting(false); setErr(null) }}>Batal</Button>
+            <Input className="min-w-0 flex-1" autoFocus placeholder={rejecting === 'RETURN' ? 'Why revise? What needs changing? (required)' : 'Rejection reason (required)'} value={note} maxLength={1000} onChange={(e) => setNote(e.target.value)} />
+            <Button size="sm" variant="outline" className="h-10" onClick={() => { setRejecting(false); setErr(null) }}>Cancel</Button>
             {rejecting === 'RETURN'
-              ? <Button size="sm" className="h-10 bg-orange-600 hover:bg-orange-700" disabled={decide.isPending} onClick={() => send('RETURN')}>Kirim revisi ke admin</Button>
-              : <Button size="sm" className="h-10 bg-red-600 hover:bg-red-700" disabled={decide.isPending} onClick={() => send('REJECT')}>Tolak PPB</Button>}
+              ? <Button size="sm" className="h-10 bg-orange-600 hover:bg-orange-700" disabled={decide.isPending} onClick={() => send('RETURN')}>Send revision to admin</Button>
+              : <Button size="sm" className="h-10 bg-red-600 hover:bg-red-700" disabled={decide.isPending} onClick={() => send('REJECT')}>Reject Purchase Request</Button>}
           </div>
         )}
         {err && <p className="text-xs text-destructive">{err}</p>}
@@ -109,44 +119,6 @@ export function PpbApprovalCard({ ppb }: { ppb: Ppb }) {
             onResubmit={(quantities, n) => resubmit.mutate({ quantities: Object.keys(quantities).length ? quantities : undefined, note: n })} />
         )}
 
-        {/* the approval covers every line of the document: show them all before anyone clicks */}
-        {(ppb.document_items?.length ?? 0) > 1 && (
-          <div>
-            <div className="mb-1 text-xs font-medium text-muted-foreground">Isi PPB ({ppb.document_items!.length} barang)</div>
-            <ul className="divide-y rounded-md border bg-card">
-              {ppb.document_items!.map((it, i) => (
-                <li key={it.id} className={`flex items-start gap-3 px-3 py-2 ${it.id === ppb.id ? 'bg-primary/5' : ''}`}>
-                  <span className="w-5 shrink-0 pt-0.5 text-right text-xs text-muted-foreground">{i + 1}</span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block">{it.deskripsi_barang ?? '-'}</span>
-                    <span className="block text-xs text-muted-foreground">
-                      <span className="font-mono">{it.kode_barang ?? '-'}</span>{it.peminta ? ` · ${it.peminta}` : ''}{it.catatan_baris ? ` · ${it.catatan_baris}` : ''}
-                    </span>
-                  </span>
-                  <span className="shrink-0 whitespace-nowrap font-medium tabular-nums">{it.kuantitas ?? '-'} {it.satuan ?? ''}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-
-        {(ppb.approval_log?.length ?? 0) > 0 && (
-          <div>
-            <div className="mb-1 text-xs font-medium text-muted-foreground">Log approval</div>
-            <ol className="space-y-2 border-l pl-4">
-              {ppb.approval_log!.map((l) => {
-                const meta = l.action === 'APPROVE_MANAGER' && isAutoApproval(l.note) ? { label: BYPASS_TEXT, cls: 'bg-sky-400' } : LOG_LABEL[l.action] ?? { label: l.action, cls: 'bg-muted-foreground' }
-                return (
-                  <li key={l.id} className="relative">
-                    <span className={`absolute -left-[1.3rem] top-1.5 size-2.5 rounded-full ${meta.cls}`} />
-                    <div><span className="font-medium">{meta.label}</span> <span className="text-muted-foreground">· {l.user_name ?? 'Sistem'} · {fmt(l.created_at)}</span></div>
-                    {l.note && <div className="text-muted-foreground">{l.note}</div>}
-                  </li>
-                )
-              })}
-            </ol>
-          </div>
-        )}
       </CardContent>
     </Card>
   )

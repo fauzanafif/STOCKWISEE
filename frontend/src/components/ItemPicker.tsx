@@ -10,15 +10,15 @@ export function ItemPicker({ onPick }: { onPick: (item: ItemLookupResult) => voi
   return (
     <div className="relative">
       <Input
-        placeholder="Cari barang (min 2 huruf)…"
+        placeholder="Search items (min 2 letters)…"
         value={q}
         onChange={(e) => setQ(e.target.value)}
       />
       {open && (
         <ul className="absolute z-10 mt-1 max-h-64 w-full overflow-auto rounded-md border bg-card shadow-md">
-          {isFetching && <li className="px-3 py-2 text-sm text-muted-foreground">Mencari…</li>}
+          {isFetching && <li className="px-3 py-2 text-sm text-muted-foreground">Searching…</li>}
           {!isFetching && (data?.length ?? 0) === 0 && (
-            <li className="px-3 py-2 text-sm text-muted-foreground">Tidak ada hasil.</li>
+            <li className="px-3 py-2 text-sm text-muted-foreground">No results.</li>
           )}
           {data?.map((it) => (
             <li key={it.id}>
@@ -30,10 +30,10 @@ export function ItemPicker({ onPick }: { onPick: (item: ItemLookupResult) => voi
                   setQ('')
                 }}
               >
-                <span className="font-mono text-xs text-muted-foreground">{it.code}</span>{' '}
+                <span className="text-[13px] text-muted-foreground">{it.code}</span>{' '}
                 {it.description}
                 <span className="ml-2 text-xs text-muted-foreground">
-                  (tersedia {it.stock_known ? it.available : '?'})
+                  (available {it.stock_known ? it.available : '?'})
                 </span>
               </button>
             </li>
