@@ -81,6 +81,10 @@ class NpbgController extends Controller
      */
     public function store(Request $request): JsonResponse
     {
+        // goods leave the warehouse only through Item Request → Delivery Order (the admin may make the request for someone)
+        if (! config('stockwise.manual_npbg')) {
+            throw \Illuminate\Validation\ValidationException::withMessages(['npbg' => 'Delivery Order manual ditutup: barang keluar gudang harus lewat Item Request → Delivery Order. Admin gudang bisa membuat Item Request atas nama peminta (Request for).']);
+        }
         $data = $request->validate([
             'pelanggan' => ['required', 'string', 'max:200'],
             'alamat_kirim' => ['nullable', 'string', 'max:255'],
@@ -92,6 +96,9 @@ class NpbgController extends Controller
             'kuantitas' => ['required', 'numeric', 'min:0.01'],
             'satuan' => ['nullable', 'string', 'max:30'],
             'no_seri' => ['nullable', 'string'],
+            // an item with serial numbers (Master Barang "SN"): the units going out, picked from those in stock
+            'serials' => ['nullable', 'array', 'max:'.\App\Services\RiSerialExcel::MAX_ROWS],
+            'serials.*' => ['string', 'max:100'],
             'peminta' => ['nullable', 'string', 'max:150'],
             'deskripsi' => ['nullable', 'string', 'max:500'],
             'keterangan' => ['nullable', 'string'],
@@ -104,15 +111,20 @@ class NpbgController extends Controller
         $kembaliBekas = (bool) ($data['kembali_bekas'] ?? false);
         $allowDuplicate = (bool) ($data['allow_duplicate'] ?? false);
         unset($data['kembali_bekas'], $data['allow_duplicate']);
+        $serials = $data['serials'] ?? null;
+        unset($data['serials']);
         abort_if($kembaliBekas && ! $request->user()->hasPermission('used_return.update'), 403,
             'Tidak punya akses Pengembalian Bekas — hilangkan centang "Kembali bekas".');
 
         $data['tgl_npbg'] ??= now()->toDateString();
 
         // never the same NPBG twice (two admins, one request): checked and saved under one lock per item
-        $npbg = \App\Support\DuplicateGuard::locked('npbg', $data['kode_barang'] ?? $data['deskripsi_barang'], fn () => \Illuminate\Support\Facades\DB::transaction(function () use ($data, $request, $kembaliBekas, $allowDuplicate) {
+        $npbg = \App\Support\DuplicateGuard::locked('npbg', $data['kode_barang'] ?? $data['deskripsi_barang'], fn () => \Illuminate\Support\Facades\DB::transaction(function () use ($data, $request, $kembaliBekas, $allowDuplicate, $serials) {
             \App\Support\DuplicateGuard::refuse(\App\Support\DuplicateGuard::npbg($data), $allowDuplicate);
             $item = filled($data['kode_barang'] ?? null) ? \App\Models\Item::where('code', $data['kode_barang'])->first() : null;
+            if ($item?->manage_sn) {
+                $data['no_seri'] = \App\Support\RiSerials::join(app(\App\Services\SerialStock::class)->pick($item->code, (float) $data['kuantitas'], $serials ?? []));
+            }
             $uom = app(\App\Services\UomConverter::class)->snapshot($item, $data['satuan'] ?? null, $data['deskripsi_barang'], 'satuan');
             $npbg = Npbg::create($data + [
                 'no_npbg' => $this->numbers->next('NPBG', 'MANUAL'),
@@ -337,6 +349,16 @@ class NpbgController extends Controller
         $q = \Illuminate\Support\Facades\DB::table(\App\Services\Tracking\UsedReturnSheets::OTHER)->select('status')->orderBy('id')->limit(1);
 
         return $npbgId === null ? $q->whereColumn('npbg_id', 'npbg.id') : $q->where('npbg_id', $npbgId);
+    }
+
+    /** GET /api/npbg/serials?kode_barang= — the serial numbers of an item still in stock (Accurate + STOCKWISE, kept in step). */
+    public function serials(Request $request, \App\Services\SerialStock $stock): JsonResponse
+    {
+        $data = $request->validate(['kode_barang' => ['required', 'string', 'max:60'], 'item_request_id' => ['nullable', 'integer']]);
+        $item = \App\Models\Item::where('code', $data['kode_barang'])->first(['id', 'code', 'manage_sn']);
+
+        // verifying a request: the serials it already holds stay pickable
+        return response()->json(['data' => $item ? $stock->available($item->code, null, $data['item_request_id'] ?? null) : [], 'meta' => ['manage_sn' => (bool) $item?->manage_sn]]);
     }
 
     public function update(Request $request, Npbg $npbg): NpbgResource

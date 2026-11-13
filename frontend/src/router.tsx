@@ -3,6 +3,7 @@ import { recordLocation } from '@/lib/navHistory'
 import { RequireAuth, RequirePermission, RequireRole } from '@/auth/guards'
 import { AppLayout } from '@/components/AppLayout'
 import { DashboardPage } from '@/pages/DashboardPage'
+import { AnalyticsPage } from '@/pages/AnalyticsPage'
 import { VendorsPage } from '@/pages/VendorsPage'
 import { EmployeesPage } from '@/pages/EmployeesPage'
 import { ItemCategoriesPage } from '@/pages/ItemCategoriesPage'
@@ -24,12 +25,13 @@ import { StockCardProjectsPage } from '@/pages/StockCardProjectsPage'
 import { StockCardProjectPage } from '@/pages/StockCardProjectPage'
 import { PoDetailPage } from '@/pages/PoDetailPage'
 import { PoListPage } from '@/pages/PoListPage'
-import { PoDraftPage, PoQuotationPage, PoReadyPage } from '@/pages/PoFlowPages'
+import { PoDraftPage, PoReadyPage } from '@/pages/PoFlowPages'
 import { PpbDetailPage } from '@/pages/PpbDetailPage'
 import { PpbListPage } from '@/pages/PpbListPage'
 import { RiDetailPage } from '@/pages/RiDetailPage'
 import { RiListPage } from '@/pages/RiListPage'
 import { SyncPage } from '@/pages/SyncPage'
+import { UserLogPage } from '@/pages/UserLogPage'
 import { AccurateOnlinePage } from '@/pages/AccurateOnlinePage'
 import { BorrowPage } from '@/pages/tracking/BorrowPage'
 import { LendPage } from '@/pages/tracking/LendPage'
@@ -52,6 +54,16 @@ import { PpbDraftListPage, PpbDraftPage } from '@/pages/PpbDraftPage'
 import { PurchaseReturnListPage } from '@/pages/PurchaseReturnListPage'
 import { PurchaseReturnNewPage } from '@/pages/PurchaseReturnNewPage'
 import { PurchaseReturnDetailPage } from '@/pages/PurchaseReturnDetailPage'
+import { MrpDashboardPage } from '@/pages/mrp/MrpDashboardPage'
+import { BomListPage } from '@/pages/mrp/BomListPage'
+import { BomDetailPage } from '@/pages/mrp/BomDetailPage'
+import { MoListPage } from '@/pages/mrp/MoListPage'
+import { MoDetailPage } from '@/pages/mrp/MoDetailPage'
+import { ProductionHistoryPage } from '@/pages/mrp/ProductionHistoryPage'
+import { DisassemblyDashboardPage } from '@/pages/disassembly/DisassemblyDashboardPage'
+import { DisassemblyListPage } from '@/pages/disassembly/DisassemblyListPage'
+import { DisassemblyDetailPage } from '@/pages/disassembly/DisassemblyDetailPage'
+import { DisassemblyHistoryPage } from '@/pages/disassembly/DisassemblyHistoryPage'
 import { RequestStatusPage } from '@/pages/RequestStatusPage'
 import { APPROVAL_PERMISSIONS } from '@/features/itemRequests/api'
 import { ModuleDashboardPage } from '@/pages/ModuleDashboardPage'
@@ -80,6 +92,7 @@ export const router = createBrowserRouter([
         element: <AppLayout />,
         children: [
           { path: '/', element: <DashboardPage /> },
+          { path: '/analytics', element: <AnalyticsPage /> },
           {
             element: <RequirePermission permission={['item_request.create', 'item_request.view']} />,
             children: [
@@ -145,6 +158,34 @@ export const router = createBrowserRouter([
             children: [{ path: '/item-categories', element: <ItemCategoriesPage /> }],
           },
           {
+            // Manufacturing (BoM + Manufacturing Order); the Tracking sheet stays at /manufacturing
+            element: <RequirePermission permission={['mrp.view']} />,
+            children: [
+              { path: '/mrp', element: <Navigate to="/mrp/dashboard" replace /> },
+              { path: '/mrp/dashboard', element: <MrpDashboardPage /> },
+              { path: '/mrp/orders', element: <MoListPage /> },
+              { path: '/mrp/orders/:id', element: <MoDetailPage /> },
+              { path: '/mrp/history', element: <ProductionHistoryPage /> },
+              { path: '/mrp/boms', element: <BomListPage /> },
+              { path: '/mrp/boms/:id', element: <BomDetailPage /> },
+            ],
+          },
+          {
+            element: <RequirePermission permission={['mrp.bom.manage']} />,
+            children: [{ path: '/mrp/boms/new', element: <BomDetailPage key="new" /> }],
+          },
+          {
+            // Disassembly (unbuild): one product taken apart into its BoM components
+            element: <RequirePermission permission={['disassembly.view']} />,
+            children: [
+              { path: '/disassembly', element: <Navigate to="/disassembly/dashboard" replace /> },
+              { path: '/disassembly/dashboard', element: <DisassemblyDashboardPage /> },
+              { path: '/disassembly/orders', element: <DisassemblyListPage /> },
+              { path: '/disassembly/orders/:id', element: <DisassemblyDetailPage /> },
+              { path: '/disassembly/history', element: <DisassemblyHistoryPage /> },
+            ],
+          },
+          {
             element: <RequirePermission permission={['purchase_return.view']} />,
             children: [
               { path: '/purchase-returns', element: <PurchaseReturnListPage /> },
@@ -179,18 +220,14 @@ export const router = createBrowserRouter([
             ],
           },
           {
-            // PPB Siap PO → Penawaran Harga (vendor prices) → the Direktur picks → Draft PO (one PO per vendor)
-            element: <RequirePermission permission={['po.create']} />,
+            // PPB Siap PO → RFQ (vendor prices, Director picks, Draft PO)
+            element: <RequirePermission permission={['po.create', 'po.approve_director']} />,
             children: [
               { path: '/purchase-orders/siap-po', element: <PoReadyPage /> },
               { path: '/purchase-orders/draft', element: <PoDraftPage /> },
-              { path: '/purchase-orders/draft-harga', element: <Navigate to="/purchase-orders/penawaran" replace /> },
+              { path: '/purchase-orders/draft-harga', element: <Navigate to="/purchase-orders/draft" replace /> },
+              { path: '/purchase-orders/penawaran', element: <Navigate to="/purchase-orders/draft" replace /> },
             ],
-          },
-          {
-            // the Direktur picks the vendors here too
-            element: <RequirePermission permission={['po.create', 'po.approve_director']} />,
-            children: [{ path: '/purchase-orders/penawaran', element: <PoQuotationPage /> }],
           },
           {
             element: <RequirePermission permission="po.view" />,
@@ -262,6 +299,10 @@ export const router = createBrowserRouter([
               // Safety Stock digabung ke halaman di atas (tab); link/bookmark lama tetap jalan
               { path: '/safety-stocks', element: <Navigate to="/inventory/analysis?tab=safety" replace /> },
             ],
+          },
+          {
+            element: <RequirePermission permission="audit_log.view" />,
+            children: [{ path: '/activity/users', element: <UserLogPage /> }],
           },
           {
             element: <RequirePermission permission="sync.accurate.view" />,

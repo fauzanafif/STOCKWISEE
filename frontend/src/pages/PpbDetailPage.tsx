@@ -11,6 +11,8 @@ import { DetailFallback } from '@/components/DetailFallback'
 import { QtyProgress } from '@/components/QtyProgress'
 import { Activity, DocPage, DocSection, MetaList, SyncNote } from '@/components/doc/DocLayout'
 import { cn } from '@/lib/utils'
+import { SmartButtons } from '@/components/documents/SmartButtons'
+import { Chatter } from '@/components/documents/Chatter'
 
 function fmtDate(v: string | null) {
   return v ? new Date(v).toLocaleDateString('en-GB', { dateStyle: 'medium' }) : '—'
@@ -29,6 +31,7 @@ export function PpbDetailPage() {
 
   return (
     <DocPage
+      chatter={<Chatter type="purchase_request" id={ppbId} />}
       back={{ to: '/ppb', label: 'Purchase Request List' }}
       kind="Purchase Request"
       number={ppb.no_ppb ?? '—'}
@@ -50,6 +53,7 @@ export function PpbDetailPage() {
         <SyncNote at={ppb.accurate_synced_at} />
       </>}
     >
+      <SmartButtons type="purchase_request" id={ppbId} />
       <PpbApprovalCard ppb={ppb} />
 
       <DocSection title="Item">

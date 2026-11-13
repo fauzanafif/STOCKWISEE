@@ -17,6 +17,8 @@ import { DetailFallback } from '@/components/DetailFallback'
 import { openImage } from '@/components/ui/lightbox'
 import { DocPage, DocSection, MetaList, TONE_EDGE } from '@/components/doc/DocLayout'
 import { cn } from '@/lib/utils'
+import { SmartButtons } from '@/components/documents/SmartButtons'
+import { Chatter } from '@/components/documents/Chatter'
 
 const fmtDate = (v: string | null) => (v ? new Date(v).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '-')
 const fmtQty = (n: number) => n.toLocaleString('id-ID', { maximumFractionDigits: 2 })
@@ -106,6 +108,7 @@ export function PurchaseReturnDetailPage() {
 
   return (
     <DocPage
+      chatter={<Chatter type="purchase_return" id={Number(id)} />}
       back={{ to: '/purchase-returns', label: 'Return' }}
       kind="Return"
       number={r.number}
@@ -137,6 +140,7 @@ export function PurchaseReturnDetailPage() {
         </DocSection>
       </>}
     >
+      <SmartButtons type="purchase_return" id={Number(id)} />
       {canManage && <NextStep r={r} />}
 
       <DocSection title="Return reason">

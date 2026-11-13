@@ -32,7 +32,24 @@ class StockLedgerService
         // Accurate is the system of record — AccurateDerivedAnalysis). Unlike
         // STOCK_ADJUSTMENT it is NOT a physical count: last_counted_at is untouched.
         'ACCURATE_SYNC' => 0,
+        // Manufacturing Order (App\Services\Mrp\ProductionService), posted only when the MO is validated
+        'MRP_CONSUME' => -1,     // component used in production
+        'MRP_SCRAP' => -1,       // component wasted in production (not also counted as consumed)
+        'MRP_PRODUCE' => 1,      // finished product received into stock
+        'MRP_REVERSE_IN' => 1,   // reversal of a consume / scrap
+        'MRP_REVERSE_OUT' => -1, // reversal of a finished product receipt
+        // Disassembly Order (App\Services\Disassembly\DisassemblyService), posted only when it is validated
+        'DISASSEMBLY_OUT' => -1,         // the product taken apart leaves stock
+        'DISASSEMBLY_IN' => 1,           // a good recovered component enters stock
+        'DISASSEMBLY_REVERSE_IN' => 1,   // reversal: the product back
+        'DISASSEMBLY_REVERSE_OUT' => -1, // reversal: the recovered component out again
     ];
+
+    /** The MRP movement types: what StockwiseNet keeps on top of Accurate's qty until the MO is entered in Accurate. */
+    public const MRP_TYPES = ['MRP_CONSUME', 'MRP_SCRAP', 'MRP_PRODUCE', 'MRP_REVERSE_IN', 'MRP_REVERSE_OUT'];
+
+    /** The Disassembly movement types: kept on top of Accurate's qty until the order is entered in Accurate. */
+    public const DISASSEMBLY_TYPES = ['DISASSEMBLY_OUT', 'DISASSEMBLY_IN', 'DISASSEMBLY_REVERSE_IN', 'DISASSEMBLY_REVERSE_OUT'];
 
     /**
      * Apply one movement.

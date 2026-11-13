@@ -12,6 +12,8 @@ import { DocText } from '@/components/DocLink'
 import { BackLink } from '@/components/BackLink'
 import { DetailFallback } from '@/components/DetailFallback'
 import { openImage, showUrl } from '@/components/ui/lightbox'
+import { SmartButtons } from '@/components/documents/SmartButtons'
+import { Chatter } from '@/components/documents/Chatter'
 
 function fmtDate(v: string | null) {
   return v ? new Date(v).toLocaleDateString('en-GB', { dateStyle: 'medium' }) : '—'
@@ -42,6 +44,7 @@ export function RiDetailPage() {
 
   return (
     <DocPage
+      chatter={<Chatter type="receipt" id={riId} />}
       back={{ to: '/ri', label: 'Receipt List' }}
       kind="Receipt"
       number={ri.no_ri ?? '—'}
@@ -79,6 +82,7 @@ export function RiDetailPage() {
         <SyncNote at={ri.accurate_synced_at} />
       </>}
     >
+      <SmartButtons type="receipt" id={riId} />
       {many ? (
         // an RI of several items (e.g. from a PO): every line of it, this one marked
         <DocSection title="Items received" count={ri.lines!.length} flush>

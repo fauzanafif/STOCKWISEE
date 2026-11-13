@@ -74,7 +74,9 @@ class DatasetExporter
 
         $book = new Spreadsheet;
         $sheet = $book->getActiveSheet();
-        $sheet->setTitle(substr($title ?: 'Data', 0, 31));
+        // a sheet name may not hold : \ / ? * [ ] and is at most 31 characters (cut on whole characters, not bytes)
+        $sheetName = trim((string) preg_replace('~[:\\\\/?*\[\]]+~', ' ', $title ?: 'Data'));
+        $sheet->setTitle(rtrim(mb_substr($sheetName !== '' ? $sheetName : 'Data', 0, 31)));
         $lastColIdx = max(count($headers), 1);
         $lastCol = Coordinate::stringFromColumnIndex($lastColIdx);
 

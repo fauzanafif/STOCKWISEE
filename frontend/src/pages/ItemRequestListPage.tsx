@@ -5,7 +5,7 @@ import { AlertTriangle, ChevronLeft, ChevronRight, Link2, Plus, Search, Send, X 
 import { useAuth } from '@/auth/AuthContext'
 import { apiErrorMessage } from '@/lib/api'
 import {
-  REQUEST_STATUS, useCreateItemRequest, useItemRequests, useMyRequestProfile, useRequestForms,
+  REQUEST_STATUS, useCreateItemRequest, useItemRequests, useMyRequestProfile, useRequestForms, useRequesters, type RequesterOption,
   type FormType, type ItemRequest, type ItemRequestStatus,
 } from '@/features/itemRequests/api'
 import { FormExtraFields } from '@/components/itemRequests/FormExtraFields'
@@ -102,9 +102,49 @@ function Pager({ page, lastPage, total, perPage, onPage, onPerPage }: {
   )
 }
 
+/**
+ * "Request for": the warehouse admin types a request for someone else (goods only leave through Item Request →
+ * Delivery Order, there is no manual Delivery Order): a Data Pekerja person, or just a name.
+ */
+function RequestFor({ value, name, onPick, onName }: { value: RequesterOption | null; name: string; onPick: (p: RequesterOption | null) => void; onName: (n: string) => void }) {
+  const [q, setQ] = useState('')
+  const people = useRequesters(q, !value)
+  if (value) {
+    return (
+      <div className="flex items-center justify-between gap-2 rounded-md border bg-card px-3 py-2">
+        <div className="min-w-0"><div className="font-medium">{value.name}</div><div className="text-xs text-muted-foreground">{[value.divisi, value.position, value.has_account ? 'has an account' : 'no account'].filter(Boolean).join(' · ')}</div></div>
+        <Button variant="ghost" size="sm" aria-label="Change requester" onClick={() => onPick(null)}><X className="size-4" /></Button>
+      </div>
+    )
+  }
+  return (
+    <div className="space-y-1.5">
+      <div className="relative">
+        <Input placeholder="Search Data Pekerja (min 2 letters)…" value={q} onChange={(e) => setQ(e.target.value)} />
+        {q.trim().length >= 2 && (
+          <ul className="absolute z-20 mt-1 max-h-60 w-full overflow-auto rounded-md border bg-card shadow-md">
+            {(people.data ?? []).length === 0 && <li className="px-3 py-2 text-sm text-muted-foreground">{people.isFetching ? 'Searching…' : 'Not in Data Pekerja — type the name below.'}</li>}
+            {(people.data ?? []).map((p) => (
+              <li key={p.id}><button type="button" className="block w-full px-3 py-2 text-left text-sm hover:bg-muted" onClick={() => { onPick(p); setQ('') }}>
+                {p.name} <span className="text-xs text-muted-foreground">{[p.divisi, p.position].filter(Boolean).join(' · ')}</span>
+              </button></li>
+            ))}
+          </ul>
+        )}
+      </div>
+      <Input placeholder="…or the requester's name" value={name} maxLength={150} onChange={(e) => onName(e.target.value)} />
+    </div>
+  )
+}
+
 function NewRequestModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const navigate = useNavigate()
   const create = useCreateItemRequest()
+  const { hasPermission } = useAuth()
+  const canForOthers = hasPermission('item_request.process')
+  const [forOther, setForOther] = useState(false)
+  const [person, setPerson] = useState<RequesterOption | null>(null)
+  const [otherName, setOtherName] = useState('')
   const [formType, setFormType] = useState<FormType>('ATK')
   const forms = useRequestForms()
   const [detail, setDetail] = useState('')
@@ -132,7 +172,9 @@ function NewRequestModal({ open, onClose }: { open: boolean; onClose: () => void
     setErr(null)
     const lineErr = linesError(lines)
     if (lineErr) return invalidTo(setErr, lineErr)
+    if (forOther && !person && !otherName.trim()) return invalidTo(setErr, 'Choose who the request is for, or type the name.')
     create.mutate({
+      on_behalf: forOther ? (person ? { employee_id: person.id } : { name: otherName.trim() }) : null,
       form_type: formType, form_detail: form?.detail_label ? detail.trim() || null : null,
       divisi: divisi.trim() || null, contact: contact.trim() || null, needed_date: neededDate || null, lines: toPayloadLines(lines),
     }, {
@@ -150,15 +192,27 @@ function NewRequestModal({ open, onClose }: { open: boolean; onClose: () => void
         <Button size="sm" onClick={submit} disabled={create.isPending}><Send className="size-4" /> {create.isPending ? 'Sending…' : 'Send request'}</Button>
       </>}>
       <div className="space-y-4">
+        {canForOthers && (
+          <section className="space-y-2 rounded-lg border p-3">
+            <div className="flex flex-wrap gap-1 text-sm">
+              <button type="button" onClick={() => setForOther(false)} className={cn('rounded-full px-3 py-1', !forOther ? 'bg-primary/10 font-medium text-primary' : 'text-muted-foreground hover:text-foreground')}>For myself</button>
+              <button type="button" onClick={() => setForOther(true)} className={cn('rounded-full px-3 py-1', forOther ? 'bg-primary/10 font-medium text-primary' : 'text-muted-foreground hover:text-foreground')}>Request for someone else</button>
+            </div>
+            {forOther && <RequestFor value={person} name={otherName} onName={setOtherName} onPick={(p) => {
+              setPerson(p)
+              if (p) { setContact(p.contact ?? ''); if (p.divisi) setDivisi(p.divisi) }
+            }} />}
+          </section>
+        )}
         <section className="grid gap-3 rounded-lg border bg-muted/20 p-3 sm:grid-cols-2 lg:grid-cols-4">
           <div className="space-y-1.5">
             <Label htmlFor="new-name">Requester name</Label>
-            <Input id="new-name" value={me.data?.name ?? ''} readOnly disabled placeholder={me.isLoading ? 'Loading…' : ''} />
+            <Input id="new-name" value={forOther ? person?.name ?? otherName : me.data?.name ?? ''} readOnly disabled placeholder={me.isLoading ? 'Loading…' : ''} />
           </div>
           <div className="space-y-1.5"><Label htmlFor="new-contact">Phone / WA No.</Label><Input id="new-contact" inputMode="tel" value={contact} maxLength={50} onChange={(e) => setContact(e.target.value)} placeholder="e.g. 0812…" /></div>
           <div className="space-y-1.5">
             <Label htmlFor="new-position">Position</Label>
-            <Input id="new-position" value={me.data?.position ?? ''} readOnly disabled />
+            <Input id="new-position" value={forOther ? person?.position ?? '' : me.data?.position ?? ''} readOnly disabled />
           </div>
           <div className="hidden lg:block" />
           <div className="space-y-1.5">

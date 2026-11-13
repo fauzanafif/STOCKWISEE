@@ -18,6 +18,23 @@ abstract class TestCase extends BaseTestCase
         Cache::flush();
     }
 
+    /**
+     * Runs after the app boots but before RefreshDatabase wipes the database. With the
+     * config cache on (bootstrap/cache/config.php), phpunit.xml's sqlite settings are
+     * ignored and the tests would migrate:fresh the PRODUCTION database — refuse that.
+     */
+    protected function setUpTraits()
+    {
+        $connection = config('database.default');
+        $driver = config("database.connections.{$connection}.driver");
+        $database = (string) config("database.connections.{$connection}.database");
+        if ($driver !== 'sqlite' && ! str_ends_with($database, '_test')) {
+            throw new \RuntimeException("Tes ditolak: koneksi '{$connection}' ke database '{$database}' bukan database uji (cache konfigurasi aktif?). Jalankan tes di salinan tanpa bootstrap/cache/config.php.");
+        }
+
+        return parent::setUpTraits();
+    }
+
     /** Create a user with the given role slug and authenticate as them (Sanctum). */
     protected function actingAsRole(string $roleSlug, array $attributes = []): User
     {

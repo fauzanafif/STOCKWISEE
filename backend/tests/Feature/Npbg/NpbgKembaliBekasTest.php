@@ -11,6 +11,12 @@ use Tests\TestCase;
 /** NPBG "Kembali Bekas" tick → a row in Tracking Pengembalian Bekas, sheet "Spare Part Lain". */
 class NpbgKembaliBekasTest extends TestCase
 {
+    protected function setUp(): void
+    {
+        parent::setUp();
+        config(['stockwise.manual_npbg' => true]); // the closed manual Delivery Order, for documents already pending
+    }
+
     use RefreshDatabase;
 
     protected $seed = true;

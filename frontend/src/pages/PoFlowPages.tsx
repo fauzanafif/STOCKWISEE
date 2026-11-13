@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { ArrowRight, BadgeCheck, Loader2, Pencil, Plus, Send, Trash2, TriangleAlert, Undo2, X } from 'lucide-react'
+import { Link, useNavigate } from 'react-router-dom'
+import { ArrowRight, BadgeCheck, Loader2, Lock, Pencil, Plus, Send, Trash2, TriangleAlert, Undo2, X } from 'lucide-react'
 import { apiErrorMessage } from '@/lib/api'
 import { usePoDraftActions, usePoDraftLines, usePoLineUnits, type PoDraftLine, type PoQuote, type PoStage } from '@/features/poDrafts/api'
-import { useVendors } from '@/features/purchasing/api'
+import { useSaveVendor, useVendors } from '@/features/purchasing/api'
 import { useAuth } from '@/auth/AuthContext'
 import { PageHeader } from '@/components/PageHeader'
 import { InBaseUom } from '@/components/UomEquivalent'
@@ -87,11 +87,10 @@ const th = 'px-3 py-2.5 font-medium'
 const td = 'px-3 py-2.5'
 
 /** The steps of the flow, on top of each page: where the items are now. */
-function FlowSteps({ at, counts }: { at: 'siap' | 'penawaran' | 'draft'; counts?: Partial<Record<PoStage, number>> }) {
+function FlowSteps({ at, counts }: { at: 'siap' | 'rfq'; counts?: Partial<Record<PoStage, number>> }) {
   const steps = [
     { key: 'siap', to: '/purchase-orders/siap-po', label: 'Approved Purchase Request Items', n: counts?.SIAP },
-    { key: 'penawaran', to: '/purchase-orders/penawaran', label: 'RFQ', n: counts ? (counts.PENAWARAN ?? 0) + (counts.MENUNGGU_DIREKTUR ?? 0) : undefined },
-    { key: 'draft', to: '/purchase-orders/draft', label: 'Draft PO', n: counts?.DIPILIH },
+    { key: 'rfq', to: '/purchase-orders/draft', label: 'RFQ', n: counts ? (counts.PENAWARAN ?? 0) + (counts.MENUNGGU_DIREKTUR ?? 0) + (counts.DIPILIH ?? 0) : undefined },
   ] as const
   return (
     <ol className="flex flex-wrap items-center gap-1.5 text-sm">
@@ -107,8 +106,6 @@ function FlowSteps({ at, counts }: { at: 'siap' | 'penawaran' | 'draft'; counts?
   )
 }
 
-/** How far a line has moved along the flow. */
-const RANK: Record<PoStage, number> = { SIAP: 0, PENAWARAN: 1, MENUNGGU_DIREKTUR: 2, DIPILIH: 3, PO: 4 }
 type Progress = 'todo' | 'done' | 'all'
 
 /** What was already handled stays on the page: Not yet shows the work, Done shows the rest with its status. */
@@ -178,8 +175,15 @@ const PPB_HEAD = ['Purchase Request No', 'Purchase Request Date', 'Code', 'Item'
 /** Vendors picked for the table: any of them, added one by one. */
 function VendorPicker({ picked, onChange, exclude = [], label = 'Add vendor' }: { picked: number[]; onChange: (ids: number[]) => void; exclude?: number[]; label?: string }) {
   const { data: vendors } = useVendors({ limit: 2000, is_active: '1' })
+  const saveVendor = useSaveVendor()
+  const [creating, setCreating] = useState(false)
+  const [newName, setNewName] = useState('')
   const list = vendors ?? []
   const nameOf = (id: number) => list.find((v) => v.id === id)?.name ?? `#${id}`
+  const create = () => {
+    if (!newName.trim()) return
+    saveVendor.mutate({ name: newName.trim() }, { onSuccess: (v) => { onChange([...picked, v.id]); setNewName(''); setCreating(false) } })
+  }
   return (
     <div className="flex flex-wrap items-center gap-1.5">
       {picked.map((id) => (
@@ -191,6 +195,17 @@ function VendorPicker({ picked, onChange, exclude = [], label = 'Add vendor' }: 
         <option value="">{label}…</option>
         {list.filter((v) => !picked.includes(v.id) && !exclude.includes(v.id)).map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
       </Select>
+      {creating ? (
+        <div className="flex items-center gap-1">
+          <Input className="h-8 w-44" placeholder="Vendor name" value={newName} onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && create()} autoFocus />
+          <Button size="sm" className="h-8" disabled={saveVendor.isPending} onClick={create}>{saveVendor.isPending ? <Loader2 className="size-3 animate-spin" /> : 'Save'}</Button>
+          <button type="button" className="text-muted-foreground hover:text-foreground" onClick={() => { setCreating(false); setNewName('') }}><X className="size-4" /></button>
+        </div>
+      ) : (
+        <button type="button" className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground" onClick={() => setCreating(true)}>
+          <Plus className="size-3" /> New vendor
+        </button>
+      )}
     </div>
   )
 }
@@ -224,101 +239,10 @@ export function PoTodoList() {
         <VendorPicker picked={vendors} onChange={setVendors} />
         <div className="flex items-center gap-3">
           <span className="text-sm text-muted-foreground">{c.live.length ? `${c.live.length} items · ${vendors.length} vendors` : ''}</span>
-          <Button disabled={!c.live.length || act.toDraftTable.isPending} onClick={go}>{act.toDraftTable.isPending ? <Loader2 className="size-4 animate-spin" /> : <ArrowRight className="size-4" />} Add to Draft PO</Button>
+          <Button disabled={!c.live.length || act.toDraftTable.isPending} onClick={go}>{act.toDraftTable.isPending ? <Loader2 className="size-4 animate-spin" /> : <ArrowRight className="size-4" />} Add to RFQ</Button>
         </div>
       </div>
     </div>
-  )
-}
-
-/** Draft PO: items in rows, vendors in columns; the price goes at their crossing, saved as it is typed. */
-function PriceMatrix({ lines }: { lines: PoDraftLine[] }) {
-  const act = usePoDraftActions()
-  const c = useChecks(lines)
-  const [typed, setTyped] = useState<Record<string, string>>({})
-  const vendors = useMemo(() => {
-    const by = new Map<number, string>()
-    for (const l of lines) {
-      for (const v of l.draft_vendors ?? []) by.set(v.id, v.name)
-      for (const q of l.quotes) by.set(q.vendor_id, q.vendor_name ?? '')
-    }
-    return [...by].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name))
-  }, [lines])
-  const ids = lines.map((l) => l.id)
-  const fail = (e: unknown) => toast.fromError(e, apiErrorMessage(e))
-  const save = (l: PoDraftLine, vendor: number, key: string) => {
-    const text = typed[key]
-    if (text === undefined) return
-    const q = l.quotes.find((x) => x.vendor_id === vendor)
-    const forget = () => setTyped((t) => { const n = { ...t }; delete n[key]; return n })
-    if (text.trim() === '') {
-      if (q) act.clearPrice.mutate({ id: l.id, quoteId: q.id }, { onSuccess: forget, onError: fail })
-      else forget()
-      return
-    }
-    const price = num(text)
-    if (!(price >= 0)) { toast.invalid('The price must be a number.'); forget(); return }
-    if (q && q.unit_price === price) { forget(); return }
-    act.setPrice.mutate({ id: l.id, vendor_id: vendor, unit_price: price }, { onSuccess: forget, onError: fail })
-  }
-  const submit = async () => {
-    const bare = c.live.find((l) => l.quotes.length === 0)
-    if (bare) return invalidTo(() => {}, `Set at least one price for ${bare.description}.`)
-    if (await confirmDialog({ title: 'Submit to Director?', message: `${c.live.length} items submitted. The Director picks the vendor for each item.`, confirmLabel: 'Submit' }))
-      act.submitQuotation.mutate(c.live.map((l) => l.id), { onSuccess: c.clear })
-  }
-  return (
-    <Card className="overflow-hidden">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-2.5">
-        <h2 className="text-sm font-semibold">Set prices <span className="font-normal text-muted-foreground">({lines.length} items)</span></h2>
-        <VendorPicker picked={[]} exclude={vendors.map((v) => v.id)} onChange={(v) => act.addVendors.mutate({ line_ids: ids, vendor_ids: v }, { onError: fail })} />
-      </div>
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="border-b bg-muted text-left text-xs text-muted-foreground">
-            <tr>
-              <th className="sticky left-0 z-10 w-10 bg-muted px-3 py-2.5"><Check on={c.allOn} onChange={c.toggleAll} label="Select all to price" /></th>
-              <th className={cn(th, 'sticky left-10 z-10 min-w-[16rem] bg-muted')}>Item</th>
-              <th className={cn(th, 'whitespace-nowrap text-right')}>Qty</th>
-              {vendors.map((v) => (
-                <th key={v.id} className={cn(th, 'min-w-[10rem] border-l text-right text-foreground')}>
-                  <span className="inline-flex items-center gap-1">{v.name}
-                    <button type="button" aria-label={`Remove column ${v.name}`} className="text-muted-foreground hover:text-destructive" onClick={() => act.dropVendor.mutate({ vendor: v.id, line_ids: ids }, { onError: fail })}><X className="size-3" /></button>
-                  </span>
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y">
-            {lines.map((l) => {
-              const low = l.quotes.length > 1 ? Math.min(...l.quotes.map((q) => q.unit_price)) : null
-              return (
-                <tr key={l.id} className={c.picked.has(l.id) ? 'bg-primary/5' : undefined}>
-                  <td className="sticky left-0 z-10 bg-card px-3 py-2"><Check on={c.picked.has(l.id)} onChange={() => c.toggle(l.id)} label={`Select ${l.description} to price`} /></td>
-                  <td className="sticky left-10 z-10 bg-card px-3 py-2"><div className="font-medium">{l.description}</div><div className="text-xs text-muted-foreground">{[l.item_code, l.ppb?.no_ppb].filter(Boolean).join(' · ')}</div></td>
-                  <td className={cn(td, 'whitespace-nowrap text-right tabular-nums')}>{fmtQty(l.qty)} <span className="text-xs text-muted-foreground">{l.unit ?? ''}</span><InBaseUom qty={l.qty} ratio={l.unit_ratio} base={l.base_unit} /></td>
-                  {vendors.map((v) => {
-                    const q = l.quotes.find((x) => x.vendor_id === v.id)
-                    const key = `${l.id}:${v.id}`
-                    return (
-                      <td key={v.id} className="border-l px-2 py-1.5 text-right">
-                        <Input className="ml-auto h-8 w-32 text-right tabular-nums" inputMode="decimal" placeholder="Price" aria-label={`Price ${v.name} for ${l.description}`}
-                          value={typed[key] ?? (q ? String(q.unit_price) : '')} onChange={(e) => setTyped((t) => ({ ...t, [key]: e.target.value }))} onBlur={() => save(l, v.id, key)} />
-                        {q && low === q.unit_price && <div className="mt-0.5 text-[11px] text-emerald-700">Cheapest</div>}
-                      </td>
-                    )
-                  })}
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
-      </div>
-      <div className="flex items-center justify-between gap-2 border-t p-2.5">
-        <span className="text-sm text-muted-foreground">{c.live.length ? `${c.live.length} items selected` : ''}</span>
-        <Button disabled={!c.live.length || act.submitQuotation.isPending} onClick={() => void submit()}><Send className="size-4" /> Submit to Director</Button>
-      </div>
-    </Card>
   )
 }
 
@@ -370,193 +294,11 @@ export function PoReadyPage() {
       <div className="sticky bottom-2 flex items-center justify-between gap-2 rounded-lg border bg-card p-2.5 shadow-md">
         <span className="text-sm text-muted-foreground">{c.live.length ? `${c.live.length} items selected` : ''}</span>
         <Button disabled={!c.live.length || act.toQuotation.isPending}
-          onClick={() => act.toQuotation.mutate(c.live.map((l) => l.id), { onSuccess: () => { c.clear(); navigate('/purchase-orders/penawaran') } })}>
+          onClick={() => act.toQuotation.mutate(c.live.map((l) => l.id), { onSuccess: () => { c.clear(); navigate('/purchase-orders/draft') } })}>
           {act.toQuotation.isPending ? <Loader2 className="size-4 animate-spin" /> : <ArrowRight className="size-4" />} Move to RFQ
         </Button>
       </div>
     </div>
-  )
-}
-
-// ------------------------------------------------------------------ 2. Penawaran Harga
-
-type QTab = 'penawaran' | 'direktur' | 'riwayat'
-const Q_TABS: { key: QTab; stage: PoStage; label: string }[] = [
-  { key: 'penawaran', stage: 'PENAWARAN', label: 'Quotes (Purchasing)' },
-  { key: 'direktur', stage: 'MENUNGGU_DIREKTUR', label: 'Director Pick' },
-  { key: 'riwayat', stage: 'DIPILIH', label: 'History' },
-]
-
-/**
- * Penawaran Harga: where purchasing talks with the vendors — per item each vendor's price, availability and
- * ETA, as an NPBG-like table — then submits it; the Direktur picks one vendor per item (tagged).
- */
-export function PoQuotationPage() {
-  const { hasPermission } = useAuth()
-  const purchasing = hasPermission('po.create')
-  const director = hasPermission('po.approve_director')
-  const [params, setParams] = useSearchParams()
-  const tab = (Q_TABS.find((t) => t.key === params.get('tab'))?.key ?? (purchasing ? 'penawaran' : 'direktur')) as QTab
-  const stage = Q_TABS.find((t) => t.key === tab)!.stage
-  const [search, setSearch] = useState('')
-  const { data, isLoading } = usePoDraftLines({ search: search.trim() || undefined, done: 1 })
-  const [progress, setProgress] = useState<Progress>('todo')
-  const all = data?.data ?? []
-  const todo = all.filter((l) => l.stage === stage)
-  const done = all.filter((l) => RANK[l.stage] > RANK[stage])
-  // every item the Director picked: still changeable first, then the ones already in a PO
-  const history = all.filter((l) => l.stage === 'DIPILIH' || (l.stage === 'PO' && l.quotes.some((q) => q.chosen)))
-  const rows = tab === 'riwayat' ? history : tab === 'direktur' || progress === 'todo' ? todo : progress === 'done' ? done : [...todo, ...done]
-  const c = useChecks(todo)
-  const act = usePoDraftActions()
-  const [quoting, setQuoting] = useState<number | null>(null)
-  const [returning, setReturning] = useState<PoDraftLine | null>(null)
-  const [changing, setChanging] = useState<number | null>(null)
-  const quoted = rows.find((r) => r.id === quoting) ?? null
-  const changed = rows.find((r) => r.id === changing && r.stage === 'DIPILIH') ?? null
-  const tabs = Q_TABS.filter((t) => purchasing || t.key !== 'penawaran')
-  const editable = purchasing && stage === 'PENAWARAN'
-
-  return (
-    <div className="space-y-4">
-      <PageHeader title="RFQ"
-        subtitle={editable ? 'Record the price, availability, and ETA from each vendor for the selected items, then submit to the Director to pick the vendor.'
-          : 'Compare vendor quotes for each item. The Director picks one vendor per item; the pick is tagged and moves on to Draft PO.'} />
-      {purchasing && <FlowSteps at="penawaran" counts={data?.meta.stages} />}
-      <div className="flex flex-col gap-3 border-b md:flex-row md:items-end md:justify-between">
-        <div className="-mb-px flex overflow-x-auto" role="tablist">
-          {tabs.map((t) => (
-            <button key={t.key} type="button" role="tab" aria-selected={tab === t.key} onClick={() => { setParams({ tab: t.key }); c.clear(); setProgress('todo') }}
-              className={cn('whitespace-nowrap border-b-2 px-4 pb-2.5 pt-1 text-sm font-medium', tab === t.key ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground')}>
-              {t.label}{(t.key === 'riwayat' ? history.length : data?.meta.stages[t.stage] ?? 0) > 0 && <span className="ml-1.5 rounded-full bg-muted px-1.5 text-xs tabular-nums">{t.key === 'riwayat' ? history.length : data?.meta.stages[t.stage]}</span>}
-            </button>
-          ))}
-        </div>
-        <Input className="mb-2 md:w-72" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search item / Purchase Request no. / vendor" aria-label="Search" />
-      </div>
-      {tab === 'penawaran' && <ProgressFilter value={progress} onChange={setProgress} todo={todo.length} done={done.length} />}
-
-      <Card className="overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="whitespace-nowrap border-b bg-muted/40 text-left text-xs text-muted-foreground">
-              <tr>
-                {editable && <th className="w-10 px-3 py-2.5"><Check on={c.allOn} onChange={c.toggleAll} label="Select all" /></th>}
-                {PPB_HEAD.map((h) => <th key={h} className={cn(th, h === 'Qty' && 'text-right')}>{h}</th>)}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((l) => (
-                <QuoteRows key={l.id} l={l} checkable={editable} on={c.picked.has(l.id)} onCheck={() => c.toggle(l.id)}
-                  editable={purchasing && l.stage === 'PENAWARAN'} picking={director && l.stage === 'MENUNGGU_DIREKTUR'} onQuote={() => setQuoting(l.id)} onReturn={() => setReturning(l)}
-                  showLog={tab === 'riwayat'} onChange={director && tab === 'riwayat' && l.stage === 'DIPILIH' ? () => setChanging(l.id) : undefined} />
-              ))}
-              {rows.length === 0 && <Empty cols={editable ? 10 : 9} loading={isLoading} text={
-                tab === 'riwayat' ? 'No Director picks yet.' : tab === 'penawaran' && progress === 'done' ? 'Nothing handled yet.' : stage === 'PENAWARAN' ? 'No items in RFQ yet. Select from Approved Purchase Request Items.'
-                  : 'No quotes are waiting for a Director pick.'} />}
-            </tbody>
-          </table>
-        </div>
-      </Card>
-
-      {editable && progress !== 'done' && (
-        <div className="sticky bottom-2 flex items-center justify-between gap-2 rounded-lg border bg-card p-2.5 shadow-md">
-          <span className="text-sm text-muted-foreground">{c.live.length ? `${c.live.length} items selected` : ''}</span>
-          <div className="flex flex-wrap gap-2">
-            <Button variant="outline" disabled={!c.live.length || act.backToReady.isPending}
-              onClick={async () => { if (await confirmDialog({ message: `Return ${c.live.length} items to Approved Purchase Request Items? Recorded prices stay saved.` })) act.backToReady.mutate(c.live.map((l) => l.id), { onSuccess: c.clear }) }}>
-              <Undo2 className="size-4" /> Return to Approved Purchase Request Items
-            </Button>
-            <Button disabled={!c.live.length || act.submitQuotation.isPending}
-              onClick={async () => {
-                const bare = c.live.find((l) => l.quotes.length === 0)
-                if (bare) return invalidTo(() => {}, `Record at least one vendor price for ${bare.description}.`)
-                if (await confirmDialog({ title: 'Submit to Director?', message: `${c.live.length} items submitted. The Director picks the vendor for each item.`, confirmLabel: 'Submit' }))
-                  act.submitQuotation.mutate(c.live.map((l) => l.id), { onSuccess: c.clear })
-              }}>
-              <Send className="size-4" /> Submit to Director
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {quoted && <QuoteModal l={quoted} onClose={() => setQuoting(null)} />}
-      {returning && <ReturnModal l={returning} onClose={() => setReturning(null)} />}
-      {changed && <ChangePickModal l={changed} onClose={() => setChanging(null)} />}
-    </div>
-  )
-}
-
-/** One item: its PPB row, then each vendor's offer under it (cheapest first, the Direktur's pick tagged). */
-function QuoteRows({ l, checkable, on, onCheck, editable, picking, onQuote, onReturn, showLog, onChange }: {
-  l: PoDraftLine; checkable: boolean; on: boolean; onCheck: () => void; editable: boolean; picking: boolean; onQuote: () => void; onReturn: () => void
-  showLog?: boolean; onChange?: () => void
-}) {
-  const act = usePoDraftActions()
-  const low = l.quotes[0]?.unit_price
-  const cols = checkable ? 10 : 9
-  return (
-    <>
-      <tr className={cn('border-t-2 border-border', on && 'bg-primary/5')}>
-        {checkable && <td className={td}>{l.stage === 'PENAWARAN' && <Check on={on} onChange={onCheck} label={`Select ${l.description}`} />}</td>}
-        <PpbCells l={l} />
-      </tr>
-      <tr className={on ? 'bg-primary/5' : undefined}>
-        <td colSpan={cols} className="px-3 pb-3 pt-0">
-          <div className="mb-1.5 flex items-center gap-2 text-xs text-muted-foreground">Status <StageStatus l={l} /></div>
-          {l.return_note && editable && <p className="mb-2 rounded-md bg-orange-50 px-3 py-1.5 text-xs text-orange-800">Returned by Director: {l.return_note}</p>}
-          <div className="flex flex-col gap-2 lg:flex-row lg:items-start">
-          <div className="min-w-0 flex-1 overflow-x-auto rounded-md border">
-            <table className="w-full text-xs">
-              <thead className="whitespace-nowrap bg-muted/30 text-left text-[11px] text-muted-foreground">
-                <tr>
-                  <th className="px-2.5 py-1.5 font-medium">Vendor</th>
-                  <th className="px-2.5 py-1.5 text-right font-medium">Unit price</th>
-                  <th className="px-2.5 py-1.5 text-right font-medium">Total ({fmtQty(l.qty)})</th>
-                  <th className="px-2.5 py-1.5 font-medium">Availability</th>
-                  <th className="px-2.5 py-1.5 font-medium">ETA</th>
-                  <th className="px-2.5 py-1.5 font-medium">Price update</th>
-                  <th className="px-2.5 py-1.5 font-medium">Notes</th>
-                  <th className="w-px px-2.5 py-1.5" />
-                </tr>
-              </thead>
-              <tbody className="divide-y">
-                {l.quotes.map((q) => (
-                  <tr key={q.id} className={q.chosen ? 'bg-emerald-50' : undefined}>
-                    <td className="px-2.5 py-1.5">
-                      <span className="font-medium">{q.vendor_name}</span>
-                      {q.chosen && <span className="ml-1.5 inline-flex items-center gap-1 rounded bg-emerald-600 px-1.5 py-0.5 text-[11px] font-semibold text-white"><BadgeCheck className="size-3" />Director Pick</span>}
-                      {!q.chosen && l.quotes.length > 1 && q.unit_price === low && <span className="ml-1.5 rounded bg-emerald-100 px-1.5 py-0.5 text-[11px] font-medium text-emerald-800">Cheapest</span>}
-                    </td>
-                    <td className="whitespace-nowrap px-2.5 py-1.5 text-right tabular-nums">{rupiah(q.unit_price)}<VsLast price={q.unit_price} last={l.price_history[0]?.unit_price} /></td>
-                    <td className="whitespace-nowrap px-2.5 py-1.5 text-right tabular-nums">{rupiah(q.unit_price * l.qty)}</td>
-                    <td className="px-2.5 py-1.5">{q.availability ?? '—'}</td>
-                    <td className="whitespace-nowrap px-2.5 py-1.5">{fmtDate(q.eta)}</td>
-                    <td className="px-2.5 py-1.5"><PriceUpdates q={q} item={l.description} /></td>
-                    <td className="px-2.5 py-1.5 text-muted-foreground">{q.note ?? ''}</td>
-                    <td className="whitespace-nowrap px-2.5 py-1">
-                      {picking && !q.chosen && <Button size="sm" className="h-7 bg-emerald-600 px-2.5 text-xs text-white hover:bg-emerald-700" disabled={act.choose.isPending}
-                        onClick={() => act.choose.mutate({ id: l.id, quote_id: q.id })}>Select</Button>}
-                      {editable && <button type="button" className="rounded p-1 text-muted-foreground hover:text-destructive" aria-label={`Delete price ${q.vendor_name}`}
-                        onClick={async () => { if (await confirmDialog({ message: `Delete the price from ${q.vendor_name}?`, danger: true })) act.removeQuote.mutate({ id: l.id, quoteId: q.id }) }}><Trash2 className="size-3.5" /></button>}
-                    </td>
-                  </tr>
-                ))}
-                {l.quotes.length === 0 && <tr><td colSpan={8} className="px-2.5 py-3 text-center text-muted-foreground">No vendor quotes yet.</td></tr>}
-              </tbody>
-            </table>
-          </div>
-          <PriceHistory l={l} />
-          </div>
-          <div className="mt-1.5 flex flex-wrap gap-3 text-xs">
-            {editable && <button type="button" onClick={onQuote} className="inline-flex items-center gap-1 font-medium text-primary hover:underline"><Plus className="size-3.5" />{l.quotes.length ? 'Add / change vendor quote' : 'Record vendor quote'}</button>}
-            {picking && <button type="button" onClick={onReturn} className="inline-flex items-center gap-1 font-medium text-orange-700 hover:underline"><Undo2 className="size-3.5" />Return to purchasing</button>}
-            {onChange && <button type="button" onClick={onChange} className="inline-flex items-center gap-1 font-medium text-primary hover:underline"><Pencil className="size-3.5" />Change pick</button>}
-          </div>
-          {showLog && <PickLog l={l} />}
-        </td>
-      </tr>
-    </>
   )
 }
 
@@ -642,183 +384,278 @@ function PickLog({ l }: { l: PoDraftLine }) {
   )
 }
 
-/** History: change the Director's pick to another vendor that quoted, or send the item back; both need a reason. */
-function ChangePickModal({ l, onClose }: { l: PoDraftLine; onClose: () => void }) {
+// ------------------------------------------------------------------ 2. RFQ price matrix
+
+type VendorLines = { vendorId: number; name: string; lines: PoDraftLine[] }
+type Ask = { kind: 'change'; line: PoDraftLine; quote: PoQuote } | { kind: 'return'; line: PoDraftLine }
+
+const STAGE_ORDER: Partial<Record<PoStage, number>> = { PENAWARAN: 0, MENUNGGU_DIREKTUR: 1, DIPILIH: 2, PO: 3 }
+
+const NotPickTag = () => <span className="mt-1 inline-flex items-center gap-1 rounded bg-amber-500 px-1.5 py-0.5 text-[11px] font-semibold text-amber-950"><TriangleAlert className="size-3" />Not Director Pick</span>
+const PickTag = () => <span className="mt-1 inline-flex items-center gap-1 rounded bg-emerald-600 px-1.5 py-0.5 text-[11px] font-semibold text-white"><BadgeCheck className="size-3" />Director Pick<Lock className="size-3" /></span>
+
+/** A Director pick is locked: changing it or sending the item back needs a written reason, kept in the pick log. */
+function ReasonModal({ ask, onClose }: { ask: Ask; onClose: () => void }) {
   const act = usePoDraftActions()
-  const current = l.quotes.find((q) => q.chosen)?.id ?? null
-  const [quoteId, setQuoteId] = useState<number | null>(current)
   const [reason, setReason] = useState('')
   const [err, setErr] = useState<string | null>(null)
+  const change = ask.kind === 'change'
   const busy = act.changePick.isPending || act.returnQuotation.isPending
-  const reasonOk = () => {
-    if (reason.trim().length >= 5) return true
-    invalidTo(setErr, 'Write a reason of at least 5 characters.')
-    return false
-  }
+  const from = ask.line.quotes.find((q) => q.chosen)
   const save = () => {
     setErr(null)
-    if (quoteId === null || quoteId === current) return invalidTo(setErr, 'Select a different vendor.')
-    if (reasonOk()) act.changePick.mutate({ id: l.id, quote_id: quoteId, reason: reason.trim() }, { onSuccess: onClose, onError: (e) => setErr(apiErrorMessage(e)) })
-  }
-  const sendBack = async () => {
-    setErr(null)
-    if (!reasonOk()) return
-    if (await confirmDialog({ title: 'Return to purchasing?', message: 'The current pick is removed and the item goes back to RFQ.', confirmLabel: 'Return' }))
-      act.returnQuotation.mutate({ id: l.id, note: reason.trim() }, { onSuccess: onClose, onError: (e) => setErr(apiErrorMessage(e)) })
+    if (reason.trim().length < 5) return invalidTo(setErr, 'Write a reason of at least 5 characters.')
+    const opts = { onSuccess: onClose, onError: (e: unknown) => setErr(apiErrorMessage(e)) }
+    if (ask.kind === 'change') act.changePick.mutate({ id: ask.line.id, quote_id: ask.quote.id, reason: reason.trim() }, opts)
+    else act.returnQuotation.mutate({ id: ask.line.id, note: reason.trim() }, opts)
   }
   return (
-    <Modal open onClose={onClose} title="Change Director pick" className="max-w-lg" description={`${l.description} · ${fmtQty(l.qty)} ${l.unit ?? ''}`}
+    <Modal open onClose={onClose} title={change ? 'Change Director pick?' : 'Return to purchasing?'} className="max-w-md"
+      description={ask.line.description}
       footer={<>
         <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
-        <Button variant="outline" size="sm" className="border-orange-300 text-orange-700 hover:bg-orange-50" disabled={busy} onClick={sendBack}>Return to purchasing</Button>
-        <Button size="sm" disabled={busy} onClick={save}>{act.changePick.isPending && <Loader2 className="size-4 animate-spin" />} Save change</Button>
+        <Button size="sm" disabled={busy} onClick={save}>{busy && <Loader2 className="size-4 animate-spin" />} {change ? 'Change pick' : 'Return'}</Button>
       </>}>
       <div className="space-y-3">
-        <div className="divide-y rounded-lg border" role="radiogroup" aria-label="Vendor">
-          {l.quotes.map((q) => (
-            <label key={q.id} className={cn('flex cursor-pointer items-start gap-2.5 px-3 py-2.5 text-sm', quoteId === q.id && 'bg-primary/5')}>
-              <input type="radio" name="pick-vendor" className="mt-0.5 size-4 accent-primary" checked={quoteId === q.id} onChange={() => setQuoteId(q.id)} />
-              <span className="min-w-0 flex-1">
-                <span className="font-medium">{q.vendor_name}</span>
-                {q.id === current && <span className="ml-1.5 rounded bg-emerald-100 px-1.5 py-0.5 text-[11px] font-medium text-emerald-800">Current pick</span>}
-                <span className="block text-xs text-muted-foreground">{[q.availability, q.eta && `ETA ${fmtDate(q.eta)}`].filter(Boolean).join(' · ')}</span>
-              </span>
-              <span className="shrink-0 text-right tabular-nums"><span className="block">{rupiah(q.unit_price)}</span><span className="block text-xs text-muted-foreground">{rupiah(q.unit_price * l.qty)}</span></span>
-            </label>
-          ))}
-        </div>
-        <div className="space-y-1.5"><Label htmlFor="pick-reason">Reason *</Label>
-          <Textarea id="pick-reason" rows={3} value={reason} maxLength={500} onChange={(e) => setReason(e.target.value)} /></div>
+        {from && (
+          <div className="flex items-center justify-between gap-2 rounded-md border bg-emerald-50 px-3 py-2 text-sm dark:bg-emerald-950/40">
+            <span className="font-medium">{from.vendor_name}</span><span className="tabular-nums">{rupiah(from.unit_price)}</span>
+          </div>
+        )}
+        {ask.kind === 'change' && (
+          <div className="flex items-center justify-between gap-2 rounded-md border bg-primary/5 px-3 py-2 text-sm">
+            <span className="inline-flex items-center gap-1.5 font-medium"><ArrowRight className="size-3.5" />{ask.quote.vendor_name}</span><span className="tabular-nums">{rupiah(ask.quote.unit_price)}</span>
+          </div>
+        )}
+        <div className="space-y-1.5"><Label htmlFor="ask-reason">Reason *</Label>
+          <Textarea id="ask-reason" rows={3} value={reason} maxLength={500} onChange={(e) => setReason(e.target.value)} autoFocus /></div>
         {err && <p className="text-sm text-destructive">{err}</p>}
       </div>
     </Modal>
   )
 }
 
-function ReturnModal({ l, onClose }: { l: PoDraftLine; onClose: () => void }) {
-  const act = usePoDraftActions()
-  const [note, setNote] = useState('')
-  return (
-    <Modal open onClose={onClose} title="Return to purchasing?" className="max-w-md" description={l.description}
-      footer={<><Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
-        <Button size="sm" disabled={act.returnQuotation.isPending} onClick={() => act.returnQuotation.mutate({ id: l.id, note: note.trim() || null }, { onSuccess: onClose })}>Return</Button></>}>
-      <div className="space-y-1.5"><Label htmlFor="rt-note">Notes <span className="font-normal text-muted-foreground">(optional)</span></Label>
-        <Textarea id="rt-note" rows={3} value={note} maxLength={500} onChange={(e) => setNote(e.target.value)} placeholder="e.g. find another vendor, price too high" autoFocus /></div>
-    </Modal>
-  )
-}
-
-// ------------------------------------------------------------------ 3. Draft PO
-
-type VendorLines = { vendorId: number; name: string; lines: PoDraftLine[] }
-
-const NotPickTag = () => <span className="mt-1 inline-flex items-center gap-1 rounded bg-amber-500 px-1.5 py-0.5 text-[11px] font-semibold text-amber-950"><TriangleAlert className="size-3" />Not Director Pick</span>
-
-/** Draft PO: a matrix of the items the Direktur decided (rows) against every vendor that quoted (columns), prices in the cells. */
+/** RFQ: one price matrix for every role. Purchasing types prices, the Director clicks a price to pick it (green, locked), purchasing then makes the PO. */
 export function PoDraftPage() {
+  const { hasPermission } = useAuth()
+  const purchasing = hasPermission('po.create')
+  const director = hasPermission('po.approve_director')
   const [search, setSearch] = useState('')
   const { data, isLoading } = usePoDraftLines({ search: search.trim() || undefined, done: 1 })
   const [progress, setProgress] = useState<Progress>('todo')
-  // picked from To do, waiting for their prices
-  const pricing = useMemo(() => (data?.data ?? []).filter((l) => l.stage === 'PENAWARAN'), [data])
-  const todo = useMemo(() => (data?.data ?? []).filter((l) => l.stage === 'DIPILIH' && l.quotes.some((q) => q.chosen)), [data])
-  const done = useMemo(() => (data?.data ?? []).filter((l) => l.stage === 'PO'), [data])
-  const rows = useMemo(() => (progress === 'todo' ? todo : progress === 'done' ? done : [...todo, ...done]), [progress, todo, done])
+  const allLines = data?.data ?? []
+  const active = useMemo(() => allLines.filter((l) => l.stage === 'PENAWARAN' || l.stage === 'MENUNGGU_DIREKTUR' || l.stage === 'DIPILIH'), [allLines])
+  const done = useMemo(() => allLines.filter((l) => l.stage === 'PO'), [allLines])
+  const rows = useMemo(() => {
+    const list = progress === 'todo' ? active : progress === 'done' ? done : [...active, ...done]
+    return [...list].sort((a, b) => (STAGE_ORDER[a.stage] ?? 9) - (STAGE_ORDER[b.stage] ?? 9))
+  }, [progress, active, done])
+  const pricingIds = useMemo(() => active.filter((l) => l.stage === 'PENAWARAN').map((l) => l.id), [active])
   const vendors = useMemo(() => {
     const by = new Map<number, string>()
-    for (const l of rows) for (const q of l.quotes) by.set(q.vendor_id, q.vendor_name ?? '')
+    for (const l of rows) {
+      for (const v of l.draft_vendors ?? []) by.set(v.id, v.name)
+      for (const q of l.quotes) by.set(q.vendor_id, q.vendor_name ?? '')
+    }
     return [...by].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name))
   }, [rows])
-  const c = useChecks(todo)
-  // the vendor used per item: the Direktur's pick unless purchasing picks another cell
+  const checkable = (l: PoDraftLine) => purchasing && (l.stage === 'PENAWARAN' || (l.stage === 'DIPILIH' && l.quotes.some((q) => q.chosen)))
+  const c = useChecks(rows.filter(checkable))
+  const priced = c.live.filter((l) => l.stage === 'PENAWARAN')
+  const ordering = c.live.filter((l) => l.stage === 'DIPILIH')
   const [vendorOf, setVendorOf] = useState<Record<number, number>>({})
-  const quoteOf = (l: PoDraftLine) => l.quotes.find((q) => q.vendor_id === (l.po?.vendor_id ?? vendorOf[l.id])) ?? l.quotes.find((q) => q.chosen) ?? l.quotes[0]
-  // one PO = one vendor: the ticked items split per the vendor used
+  const usedQuote = (l: PoDraftLine) => l.quotes.find((q) => q.vendor_id === (l.po?.vendor_id ?? vendorOf[l.id])) ?? l.quotes.find((q) => q.chosen)
   const groups = useMemo(() => {
     const by = new Map<number, VendorLines>()
-    for (const l of c.live) {
+    for (const l of ordering) {
       const q = l.quotes.find((x) => x.vendor_id === vendorOf[l.id]) ?? l.quotes.find((x) => x.chosen)!
       const g = by.get(q.vendor_id) ?? { vendorId: q.vendor_id, name: q.vendor_name ?? '', lines: [] }
       g.lines.push(l)
       by.set(q.vendor_id, g)
     }
     return [...by.values()].sort((a, b) => a.name.localeCompare(b.name))
-  }, [c.live, vendorOf])
-  const total = c.live.reduce((t, l) => t + quoteOf(l).unit_price * l.qty, 0)
-  const offPick = c.live.filter((l) => !quoteOf(l).chosen).length
+  }, [ordering, vendorOf])
+  const total = ordering.reduce((t, l) => t + (usedQuote(l)?.unit_price ?? 0) * l.qty, 0)
+  const offPick = ordering.filter((l) => !usedQuote(l)?.chosen).length
+  const [typed, setTyped] = useState<Record<string, string>>({})
   const [queue, setQueue] = useState<VendorLines[]>([])
   const [made, setMade] = useState(0)
+  const [addingItem, setAddingItem] = useState(false)
+  const [editingItem, setEditingItem] = useState<PoDraftLine | null>(null)
+  const [quoting, setQuoting] = useState<number | null>(null)
+  const [ask, setAsk] = useState<Ask | null>(null)
+  const [logOpen, setLogOpen] = useState<Set<number>>(new Set())
   const navigate = useNavigate()
+  const act = usePoDraftActions()
+  const quoted = allLines.find((r) => r.id === quoting && r.stage === 'PENAWARAN') ?? null
+  const fail = (e: unknown) => toast.fromError(e, apiErrorMessage(e))
+
+  const save = (l: PoDraftLine, vendor: number, key: string) => {
+    const text = typed[key]
+    if (text === undefined) return
+    const q = l.quotes.find((x) => x.vendor_id === vendor)
+    const forget = () => setTyped((t) => { const n = { ...t }; delete n[key]; return n })
+    if (text.trim() === '') {
+      if (q) act.clearPrice.mutate({ id: l.id, quoteId: q.id }, { onSuccess: forget, onError: fail })
+      else forget()
+      return
+    }
+    const price = num(text)
+    if (!(price >= 0)) { toast.invalid('The price must be a number.'); forget(); return }
+    if (q && q.unit_price === price) { forget(); return }
+    act.setPrice.mutate({ id: l.id, vendor_id: vendor, unit_price: price }, { onSuccess: forget, onError: fail })
+  }
+  const removeItem = async (l: PoDraftLine) => {
+    if (await confirmDialog({ message: `Remove "${l.description}" from RFQ?`, danger: true }))
+      act.removeItem.mutate(l.id)
+  }
+  const submit = async () => {
+    const bare = priced.find((l) => l.quotes.length === 0)
+    if (bare) return invalidTo(() => {}, `Set at least one price for ${bare.description}.`)
+    if (await confirmDialog({ title: 'Submit to Director?', message: `${priced.length} items submitted. The Director picks the vendor for each item.`, confirmLabel: 'Submit' }))
+      act.submitQuotation.mutate(priced.map((l) => l.id), { onSuccess: c.clear })
+  }
+  const backToReady = async () => {
+    if (await confirmDialog({ message: `Return ${priced.length} items to Approved Purchase Request Items?` }))
+      act.backToReady.mutate(priced.map((l) => l.id), { onSuccess: c.clear })
+  }
+  const toggleLog = (id: number) => setLogOpen((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n })
+
+  const cell = (l: PoDraftLine, v: { id: number; name: string }, low: number | null) => {
+    const q = l.quotes.find((x) => x.vendor_id === v.id)
+    const key = `${l.id}:${v.id}`
+    const tip = q ? [q.availability, q.eta && `ETA ${fmtDate(q.eta)}`, q.note].filter(Boolean).join(' · ') || undefined : undefined
+    if (l.stage === 'PENAWARAN' && purchasing) {
+      return (
+        <td key={v.id} className="border-l px-2 py-1.5 text-right align-top" title={tip}>
+          <Input className="ml-auto h-8 w-32 text-right tabular-nums" inputMode="decimal" placeholder="Price" aria-label={`Price ${v.name} for ${l.description}`}
+            value={typed[key] ?? (q ? String(q.unit_price) : '')} onChange={(e) => setTyped((t) => ({ ...t, [key]: e.target.value }))} onBlur={() => save(l, v.id, key)} />
+          {q && low === q.unit_price && <div className="mt-0.5 text-[11px] text-emerald-700">Cheapest</div>}
+          {q && <div className="mt-0.5"><PriceUpdates q={q} item={l.description} /></div>}
+        </td>
+      )
+    }
+    if (!q) return <td key={v.id} className="border-l px-3 py-2.5 text-right align-top text-muted-foreground">—</td>
+    const used = (l.stage === 'DIPILIH' || l.stage === 'PO') && usedQuote(l)?.id === q.id
+    const action =
+      l.stage === 'MENUNGGU_DIREKTUR' && director ? { label: `Pick ${v.name} for ${l.description}`, hover: 'hover:bg-emerald-100 dark:hover:bg-emerald-900/40', run: () => act.choose.mutate({ id: l.id, quote_id: q.id }) }
+        : l.stage === 'DIPILIH' && director && !q.chosen ? { label: `Change pick to ${v.name} for ${l.description}`, hover: 'hover:bg-emerald-100 dark:hover:bg-emerald-900/40', run: () => setAsk({ kind: 'change', line: l, quote: q }) }
+          : l.stage === 'DIPILIH' && purchasing ? { label: `Use ${v.name} for ${l.description}`, hover: 'hover:bg-amber-50 dark:hover:bg-amber-950/40', run: () => { setVendorOf((m) => ({ ...m, [l.id]: v.id })); if (!c.picked.has(l.id)) c.toggle(l.id) } }
+            : null
+    const body = (
+      <>
+        <div className={cn('whitespace-nowrap tabular-nums', (q.chosen || used) && 'font-semibold')}>{rupiah(q.unit_price)}</div>
+        {l.stage !== 'PO' && <div><VsLast price={q.unit_price} last={l.price_history[0]?.unit_price} /></div>}
+        {q.chosen ? <PickTag /> : used ? <NotPickTag /> : low === q.unit_price && <div className="mt-0.5 text-[11px] text-emerald-700">Cheapest</div>}
+      </>
+    )
+    return (
+      <td key={v.id} title={tip} className={cn('border-l p-0 text-right align-top', q.chosen ? 'bg-emerald-50 dark:bg-emerald-950/40' : used && 'bg-amber-100 dark:bg-amber-950/50')}>
+        {action
+          ? <button type="button" aria-label={action.label} disabled={act.choose.isPending} onClick={action.run}
+            className={cn('block w-full cursor-pointer px-3 pb-1 pt-2.5 text-right transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-500 disabled:opacity-60', action.hover)}>{body}</button>
+          : <div className="px-3 pb-1 pt-2.5">{body}</div>}
+        <div className="px-3 pb-2"><PriceUpdates q={q} item={l.description} /></div>
+      </td>
+    )
+  }
 
   return (
     <div className="space-y-4">
-      <PageHeader title="Draft PO" subtitle="Tick the items to make a PO. The vendor follows the Director pick; if you select another vendor, that item is tagged at approval." />
-      <FlowSteps at="draft" counts={data?.meta.stages} />
-      {pricing.length > 0 && <PriceMatrix lines={pricing} />}
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <Input className="sm:w-80" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search item / Purchase Request no. / vendor" aria-label="Search" />
-        <ProgressFilter value={progress} onChange={setProgress} todo={todo.length} done={done.length} />
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <PageHeader title="RFQ" subtitle="Set vendor prices, the Director picks the vendor, then create the PO." />
+        {purchasing && <Button size="sm" onClick={() => setAddingItem(true)}><Plus className="size-4" /> Add Item</Button>}
       </div>
+      <FlowSteps at="rfq" counts={data?.meta.stages} />
+
       <Card className="overflow-hidden">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-2.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-sm font-semibold">Price Matrix <span className="font-normal text-muted-foreground">({rows.length} items)</span></h2>
+            <Input className="h-8 sm:w-72" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search item / Purchase Request no. / vendor" aria-label="Search" />
+            <ProgressFilter value={progress} onChange={setProgress} todo={active.length} done={done.length} />
+          </div>
+          {purchasing && pricingIds.length > 0 && (
+            <VendorPicker picked={[]} exclude={vendors.map((v) => v.id)} onChange={(v) => act.addVendors.mutate({ line_ids: pricingIds, vendor_ids: v }, { onError: fail })} />
+          )}
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="border-b bg-muted text-left text-xs text-muted-foreground">
               <tr>
-                <th className="sticky left-0 z-10 w-10 bg-muted px-3 py-2.5"><Check on={c.allOn} onChange={c.toggleAll} label="Select all" /></th>
+                <th className="sticky left-0 z-10 w-10 bg-muted px-3 py-2.5">{purchasing && <Check on={c.allOn} onChange={c.toggleAll} label="Select all" />}</th>
                 <th className={cn(th, 'sticky left-10 z-10 min-w-[16rem] bg-muted')}>Item</th>
                 <th className={cn(th, 'whitespace-nowrap text-right')}>Qty</th>
                 <th className={cn(th, 'whitespace-nowrap')}>Status</th>
-                {vendors.map((v) => <th key={v.id} className={cn(th, 'min-w-[9.5rem] border-l text-right text-foreground')}>{v.name}</th>)}
+                {vendors.map((v) => (
+                  <th key={v.id} className={cn(th, 'min-w-[10rem] border-l text-right text-foreground')}>
+                    <span className="inline-flex items-center gap-1">{v.name}
+                      {purchasing && pricingIds.length > 0 && (
+                        <button type="button" aria-label={`Remove column ${v.name}`} className="text-muted-foreground hover:text-destructive" onClick={() => act.dropVendor.mutate({ vendor: v.id, line_ids: pricingIds }, { onError: fail })}><X className="size-3" /></button>
+                      )}
+                    </span>
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody className="divide-y">
               {rows.map((l) => {
-                const low = Math.min(...l.quotes.map((q) => q.unit_price))
+                const low = l.quotes.length > 1 ? Math.min(...l.quotes.map((q) => q.unit_price)) : null
+                const editable = purchasing && l.stage === 'PENAWARAN'
+                const hasLog = l.pick_log.length > 0 || l.quotes.some((q) => q.chosen)
                 return (
-                  <tr key={l.id}>
-                    <td className="sticky left-0 z-10 bg-card px-3 py-2.5">{l.stage === 'DIPILIH' && <Check on={c.picked.has(l.id)} onChange={() => c.toggle(l.id)} label={`Select ${l.description}`} />}</td>
-                    <td className="sticky left-10 z-10 bg-card px-3 py-2.5">
+                  <tr key={l.id} className={c.picked.has(l.id) ? 'bg-primary/5' : undefined}>
+                    <td className="sticky left-0 z-10 bg-card px-3 py-2.5 align-top">{checkable(l) && <Check on={c.picked.has(l.id)} onChange={() => c.toggle(l.id)} label={`Select ${l.description}`} />}</td>
+                    <td className="sticky left-10 z-10 bg-card px-3 py-2.5 align-top">
                       <div className="font-medium">{l.description}</div>
-                      <div className="text-xs text-muted-foreground">{[l.item_code, l.ppb?.no_ppb].filter(Boolean).join(' · ')}</div>
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+                        <span>{[l.item_code, l.ppb?.no_ppb].filter(Boolean).join(' · ') || (l.item_id ? '' : 'manual')}</span>
+                        {editable && <button type="button" onClick={() => setQuoting(l.id)} className="text-primary hover:underline">Quotes</button>}
+                        {editable && !l.ppb && <button type="button" onClick={() => setEditingItem(l)} className="hover:text-primary" aria-label={`Edit ${l.description}`}><Pencil className="size-3" /></button>}
+                        {editable && !l.ppb && <button type="button" onClick={() => void removeItem(l)} className="hover:text-destructive" aria-label={`Remove ${l.description}`}><Trash2 className="size-3" /></button>}
+                        {director && (l.stage === 'MENUNGGU_DIREKTUR' || l.stage === 'DIPILIH') && (
+                          <button type="button" onClick={() => setAsk({ kind: 'return', line: l })} className="inline-flex items-center gap-0.5 text-orange-700 hover:underline"><Undo2 className="size-3" />Return</button>
+                        )}
+                        {hasLog && <button type="button" onClick={() => toggleLog(l.id)} className="hover:text-primary hover:underline" aria-expanded={logOpen.has(l.id)}>Log</button>}
+                      </div>
+                      {l.return_note && l.stage === 'PENAWARAN' && <p className="mt-1 rounded bg-orange-50 px-2 py-1 text-xs text-orange-800">Returned by Director: {l.return_note}</p>}
+                      {logOpen.has(l.id) && <PickLog l={l} />}
                     </td>
-                    <td className={cn(td, 'whitespace-nowrap text-right tabular-nums')}>{fmtQty(l.qty)} <span className="text-xs text-muted-foreground">{l.unit ?? ''}</span></td>
-                    <td className={td}><StageStatus l={l} /></td>
-                    {vendors.map((v) => {
-                      const q = l.quotes.find((x) => x.vendor_id === v.id)
-                      if (!q) return <td key={v.id} className="border-l px-3 py-2.5 text-right text-muted-foreground">—</td>
-                      const used = quoteOf(l).vendor_id === v.id
-                      return (
-                        <td key={v.id} className={cn('border-l px-3 py-2.5 text-right align-top', q.chosen && 'bg-emerald-50 dark:bg-emerald-950/40', used && !q.chosen && 'bg-amber-100 dark:bg-amber-950/50')}
-                          title={[q.availability, q.eta && `ETA ${fmtDate(q.eta)}`, q.note].filter(Boolean).join(' · ') || undefined}>
-                          <label className="flex cursor-pointer items-center justify-end gap-2">
-                            <input type="radio" disabled={l.stage === 'PO'} className="size-3.5 accent-primary" name={`vendor-${l.id}`} checked={used} aria-label={`Use ${v.name} for ${l.description}`}
-                              onChange={() => { setVendorOf((m) => ({ ...m, [l.id]: v.id })); if (!c.picked.has(l.id)) c.toggle(l.id) }} />
-                            <span className={cn('whitespace-nowrap tabular-nums', used && 'font-semibold')}>{rupiah(q.unit_price)}</span>
-                          </label>
-                          {q.chosen
-                            ? <span className="mt-1 inline-flex items-center gap-1 rounded bg-emerald-600 px-1.5 py-0.5 text-[11px] font-semibold text-white"><BadgeCheck className="size-3" />Director Pick</span>
-                            : used ? <NotPickTag />
-                            : l.quotes.length > 1 && q.unit_price === low && <div className="mt-0.5 text-[11px] text-muted-foreground">Cheapest</div>}
-                          <div className="mt-0.5"><PriceUpdates q={q} item={l.description} /></div>
-                        </td>
-                      )
-                    })}
+                    <td className={cn(td, 'whitespace-nowrap text-right align-top tabular-nums')}>{fmtQty(l.qty)} <span className="text-xs text-muted-foreground">{l.unit ?? ''}</span><InBaseUom qty={l.qty} ratio={l.unit_ratio} base={l.base_unit} /></td>
+                    <td className={cn(td, 'align-top')}><StageStatus l={l} /></td>
+                    {vendors.map((v) => cell(l, v, low))}
                   </tr>
                 )
               })}
               {rows.length === 0 && (
                 <tr><td colSpan={4 + vendors.length} className="px-3 py-12 text-center text-muted-foreground">
-                  {isLoading ? <Loader2 className="mx-auto size-5 animate-spin" /> : progress === 'done' ? 'No PO made yet.' : <>No items with a Director vendor pick yet. Submit first from <Link to="/purchase-orders/penawaran" className="text-primary hover:underline">RFQ</Link>.</>}
+                  {isLoading ? <Loader2 className="mx-auto size-5 animate-spin" />
+                    : progress === 'done' ? 'No PO made yet.'
+                      : <>No items yet. Move items from <Link to="/purchase-orders/siap-po" className="text-primary hover:underline">Approved Purchase Request Items</Link>, or add a manual item.</>}
                 </td></tr>
               )}
             </tbody>
           </table>
         </div>
       </Card>
-      <div className="sticky bottom-2 z-20 flex items-center justify-between gap-2 rounded-lg border bg-card p-2.5 shadow-md">
-        <span className="text-sm text-muted-foreground">{c.live.length ? <>{c.live.length} items · {groups.length} vendor · <span className="font-medium tabular-nums text-foreground">{rupiah(total)}</span>{offPick > 0 && <span className="ml-2 font-medium text-amber-800 dark:text-amber-300">{offPick} not Director pick</span>}</> : ''}</span>
-        <Button disabled={!c.live.length} onClick={() => { setMade(0); setQueue(groups) }}><Send className="size-4" /> {groups.length > 1 ? `Create ${groups.length} Draft PO` : 'Create Draft PO'}</Button>
-      </div>
+
+      {c.live.length > 0 && (
+        <div className="sticky bottom-2 z-20 flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-card p-2.5 shadow-md">
+          <span className="text-sm text-muted-foreground">
+            {priced.length > 0 && <>{priced.length} items to submit</>}
+            {priced.length > 0 && ordering.length > 0 && ' · '}
+            {ordering.length > 0 && <>{ordering.length} items for PO · {groups.length} vendor · <span className="font-medium tabular-nums text-foreground">{rupiah(total)}</span>{offPick > 0 && <span className="ml-2 font-medium text-amber-800 dark:text-amber-300">{offPick} not Director pick</span>}</>}
+          </span>
+          <div className="flex flex-wrap gap-2">
+            {priced.length > 0 && <>
+              <Button variant="outline" disabled={act.backToReady.isPending} onClick={() => void backToReady()}><Undo2 className="size-4" /> Return to Approved Items</Button>
+              <Button disabled={act.submitQuotation.isPending} onClick={() => void submit()}><Send className="size-4" /> Submit to Director</Button>
+            </>}
+            {ordering.length > 0 && <Button onClick={() => { setMade(0); setQueue(groups) }}><Send className="size-4" /> {groups.length > 1 ? `Create ${groups.length} Draft PO` : 'Create Draft PO'}</Button>}
+          </div>
+        </div>
+      )}
+
       {queue[0] && (
         <CreatePoModal key={queue[0].vendorId} vendorId={queue[0].vendorId} vendorName={queue[0].name} lines={queue[0].lines} left={queue.length - 1}
           onClose={() => setQueue([])}
@@ -827,7 +664,70 @@ export function PoDraftPage() {
             c.clear(); setQueue([]); navigate(made === 0 ? `/purchase-orders/${po.id}` : '/purchase-orders')
           }} />
       )}
+      {addingItem && <AddItemModal onClose={() => setAddingItem(false)} />}
+      {editingItem && <EditItemModal item={editingItem} onClose={() => setEditingItem(null)} />}
+      {quoted && <QuoteModal l={quoted} onClose={() => setQuoting(null)} />}
+      {ask && <ReasonModal ask={ask} onClose={() => setAsk(null)} />}
     </div>
+  )
+}
+
+/** Add Item: only items of an approved Purchase Request can enter the RFQ; tick them and they join the matrix. */
+function AddItemModal({ onClose }: { onClose: () => void }) {
+  const act = usePoDraftActions()
+  const { data, isLoading } = usePoDraftLines({})
+  const rows = (data?.data ?? []).filter((l) => l.stage === 'SIAP')
+  const c = useChecks(rows)
+  const add = () => act.toQuotation.mutate(c.live.map((l) => l.id), { onSuccess: onClose })
+  return (
+    <Modal page open onClose={onClose} title="Add Item to RFQ" description="Only items of an approved Purchase Request can be added. Tick the items that need prices."
+      footer={<>
+        <span className="mr-auto text-sm text-muted-foreground">{c.live.length ? `${c.live.length} items selected` : ''}</span>
+        <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
+        <Button size="sm" disabled={!c.live.length || act.toQuotation.isPending} onClick={add}>{act.toQuotation.isPending ? <Loader2 className="size-4 animate-spin" /> : <ArrowRight className="size-4" />} Add to RFQ</Button>
+      </>}>
+      <div className="overflow-x-auto rounded-lg border">
+        <table className="w-full text-sm">
+          <thead className="whitespace-nowrap border-b bg-muted/40 text-left text-xs text-muted-foreground">
+            <tr><th className="w-10 px-3 py-2.5"><Check on={c.allOn} onChange={c.toggleAll} label="Select all" /></th>{PPB_HEAD.map((h) => <th key={h} className={cn(th, h === 'Qty' && 'text-right')}>{h}</th>)}</tr>
+          </thead>
+          <tbody className="divide-y">
+            {rows.map((l) => <tr key={l.id} className={c.picked.has(l.id) ? 'bg-primary/5' : undefined}><td className={td}><Check on={c.picked.has(l.id)} onChange={() => c.toggle(l.id)} label={`Select ${l.description}`} /></td><PpbCells l={l} /></tr>)}
+            {rows.length === 0 && <Empty cols={10} loading={isLoading} text="No approved Purchase Request items are waiting." />}
+          </tbody>
+        </table>
+      </div>
+    </Modal>
+  )
+}
+
+
+function EditItemModal({ item, onClose }: { item: PoDraftLine; onClose: () => void }) {
+  const act = usePoDraftActions()
+  const [description, setDescription] = useState(item.description)
+  const [qty, setQty] = useState(String(item.qty))
+  const [err, setErr] = useState<string | null>(null)
+  const save = () => {
+    setErr(null)
+    if (!description.trim()) return invalidTo(setErr, 'Fill in the item description.')
+    if (!qty.trim() || !(num(qty) > 0)) return invalidTo(setErr, 'Qty must be greater than 0.')
+    act.updateItem.mutate({ id: item.id, description: description.trim(), qty: num(qty) }, {
+      onSuccess: () => onClose(),
+      onError: (e) => setErr(apiErrorMessage(e)),
+    })
+  }
+  return (
+    <Modal open onClose={onClose} title="Edit Item" className="max-w-md"
+      footer={<><Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
+        <Button size="sm" disabled={act.updateItem.isPending} onClick={save}>{act.updateItem.isPending && <Loader2 className="size-4 animate-spin" />} Save</Button></>}>
+      <div className="space-y-3">
+        <div className="space-y-1"><Label>Description *</Label>
+          <Input value={description} onChange={(e) => setDescription(e.target.value)} /></div>
+        <div className="space-y-1"><Label>Qty *</Label>
+          <Input className="w-40 text-right tabular-nums" inputMode="decimal" value={qty} onChange={(e) => setQty(e.target.value)} /></div>
+        {err && <p className="text-sm text-destructive">{err}</p>}
+      </div>
+    </Modal>
   )
 }
 

@@ -37,7 +37,52 @@ class StockwiseNet
         foreach ($approved as $id => $q) {
             $net[(int) $id] = round(($net[(int) $id] ?? 0.0) - (float) $q, 2);
         }
+        foreach (self::manufacturing() as $id => $q) {
+            $net[(int) $id] = round(($net[(int) $id] ?? 0.0) + (float) $q, 2);
+        }
+        foreach (self::disassembly() as $id => $q) {
+            $net[(int) $id] = round(($net[(int) $id] ?? 0.0) + (float) $q, 2);
+        }
 
         return $net;
+    }
+
+    /**
+     * Manufacturing Orders validated in STOCKWISE (components out, finished goods in, reversals) until the MO is
+     * marked as entered in Accurate: from then on Accurate's own qty carries it, so it is no longer added here
+     * (counting it twice). Nothing while the MRP tables are not migrated.
+     *
+     * @return array<int, float> item id => net qty
+     */
+    public static function manufacturing(): array
+    {
+        if (! \Illuminate\Support\Facades\Schema::hasTable('mrp_productions')) {
+            return [];
+        }
+
+        return DB::table('stock_movements as m')
+            ->join('mrp_productions as p', fn ($j) => $j->on('p.id', '=', 'm.reference_id')->where('m.reference_type', (new \App\Models\MrpProduction)->getMorphClass()))
+            ->whereIn('m.movement_type', StockLedgerService::MRP_TYPES)->whereNull('p.accurate_recorded_at')
+            ->groupBy('m.item_id')->selectRaw('m.item_id, SUM(m.direction * m.qty) q')->pluck('q', 'item_id')
+            ->map(fn ($q) => (float) $q)->all();
+    }
+
+    /**
+     * Disassembly Orders validated in STOCKWISE (product out, good components in, reversals) until the order is
+     * marked as entered in Accurate: from then on Accurate's qty carries them. Empty while the table is absent.
+     *
+     * @return array<int, float> item id => net qty
+     */
+    public static function disassembly(): array
+    {
+        if (! \Illuminate\Support\Facades\Schema::hasTable('disassembly_orders')) {
+            return [];
+        }
+
+        return DB::table('stock_movements as m')
+            ->join('disassembly_orders as o', fn ($j) => $j->on('o.id', '=', 'm.reference_id')->where('m.reference_type', (new \App\Models\DisassemblyOrder)->getMorphClass()))
+            ->whereIn('m.movement_type', StockLedgerService::DISASSEMBLY_TYPES)->whereNull('o.accurate_recorded_at')
+            ->groupBy('m.item_id')->selectRaw('m.item_id, SUM(m.direction * m.qty) q')->pluck('q', 'item_id')
+            ->map(fn ($q) => (float) $q)->all();
     }
 }

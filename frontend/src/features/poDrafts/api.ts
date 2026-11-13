@@ -87,7 +87,7 @@ export function usePoLineUnits(lines: { id: number; item_id: number | null }[]) 
 
 export function usePoDraftActions() {
   const qc = useQueryClient()
-  const done = () => { qc.invalidateQueries({ queryKey: ['po-draft-lines'] }); qc.invalidateQueries({ queryKey: ['reminders'] }) }
+  const done = () => { qc.invalidateQueries({ queryKey: ['po-draft-lines'] }); qc.invalidateQueries({ queryKey: ['reminders'] }); qc.invalidateQueries({ queryKey: ['vendors'] }) }
   const useMove = (path: string, message: string) => useMutation({
     mutationFn: async (line_ids: number[]) => (await api.post<{ data: { moved: number } }>(`/api/po-draft-lines/${path}`, { line_ids })).data.data,
     meta: { successMessage: message },
@@ -135,7 +135,7 @@ export function usePoDraftActions() {
     }),
     choose: useMutation({
       mutationFn: async ({ id, quote_id }: { id: number; quote_id: number }) => (await api.post<{ data: PoDraftLine }>(`/api/po-draft-lines/${id}/choose`, { quote_id })).data.data,
-      meta: { successMessage: 'Vendor picked. Moved to History.' },
+      meta: { successMessage: 'Vendor picked.' },
       onSuccess: done,
     }),
     changePick: useMutation({
@@ -153,6 +153,17 @@ export function usePoDraftActions() {
         (await api.post<{ data: { id: number; number: string; total: number; lines: number } }>('/api/po-draft-lines/submit', body)).data.data,
       meta: { successMessage: 'Draft PO created and submitted to the Director.' },
       onSuccess: () => { done(); qc.invalidateQueries({ queryKey: ['purchase-orders'] }) },
+    }),
+    updateItem: useMutation({
+      mutationFn: async ({ id, ...body }: { id: number; description?: string; qty?: number; unit_id?: number | null }) =>
+        (await api.put<{ data: PoDraftLine }>(`/api/po-draft-lines/${id}`, body)).data.data,
+      meta: { successMessage: 'Item updated.' },
+      onSuccess: done,
+    }),
+    removeItem: useMutation({
+      mutationFn: async (id: number) => (await api.delete(`/api/po-draft-lines/${id}`)).data,
+      meta: { successMessage: 'Item removed from RFQ.' },
+      onSuccess: done,
     }),
   }
 }

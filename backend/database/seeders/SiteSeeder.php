@@ -9,6 +9,8 @@ class SiteSeeder extends Seeder
 {
     public function run(): void
     {
+        ProductionGuard::refuse(static::class);
+
         // NC-5: SDA mengelola inventory penuh; BPN hanya membuat Material Request dulu.
         $sites = [
             ['code' => 'SIG-SDA', 'name' => 'SIG Sidoarjo', 'is_inventory_managed' => true],

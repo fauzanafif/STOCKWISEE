@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { CheckCircle2, Printer } from 'lucide-react'
-import { useCreateNpbg, useNpbgKlasifikasi, type Npbg, type NpbgCreatePayload } from '@/features/npbg/api'
+import { useCreateNpbg, useNpbgKlasifikasi, useNpbgSerials, type Npbg, type NpbgCreatePayload } from '@/features/npbg/api'
+import { SerialPicker } from '@/components/npbg/SerialPicker'
 import { useItemLookup, type ItemLookupResult } from '@/features/inventory/api'
 import { saveOnce } from '@/lib/duplicate'
 import { useAuth } from '@/auth/AuthContext'
@@ -72,6 +73,12 @@ export function NpbgFormModal({ open, onClose }: Props) {
 
   const lookupQuery = activeField === 'kode' ? kodeBarang : activeField === 'deskripsi' ? deskripsiBarang : ''
   const { data: suggestions, isFetching: searchingItems } = useItemLookup(lookupQuery)
+  // an item with serial numbers: its serials in stock, picked one per unit
+  const [picked, setPicked] = useState<string[]>([])
+  const sn = useNpbgSerials(activeField === 'kode' ? '' : kodeBarang.trim())
+  const usesSn = !!sn.data?.meta.manage_sn
+  const need = Number.isInteger(Number(kuantitas)) ? Number(kuantitas) : 0
+  useEffect(() => { setPicked([]) }, [kodeBarang])
 
   useEffect(() => {
     if (!open) return
@@ -95,6 +102,14 @@ export function NpbgFormModal({ open, onClose }: Props) {
       setErr('Customer, Item Description, and Quantity are required.')
       return
     }
+    if (usesSn && !Number.isInteger(Number(kuantitas))) {
+      setErr(`${kodeBarang} uses serial numbers: the quantity must be a whole number.`)
+      return
+    }
+    if (usesSn && picked.length !== Number(kuantitas)) {
+      setErr(`${kodeBarang} uses serial numbers: select ${Number(kuantitas)} serial number(s) (now ${picked.length}).`)
+      return
+    }
     const payload: NpbgCreatePayload = {
       pelanggan: pelanggan.trim(),
       alamat_kirim: alamatKirim.trim() || null,
@@ -105,7 +120,8 @@ export function NpbgFormModal({ open, onClose }: Props) {
       deskripsi_barang: deskripsiBarang.trim(),
       kuantitas: Number(kuantitas),
       satuan: satuan.trim() || null,
-      no_seri: noSeri.trim() || null,
+      no_seri: usesSn ? null : noSeri.trim() || null,
+      ...(usesSn ? { serials: picked } : {}),
       peminta: peminta.trim() || null,
       deskripsi: catatan.trim() || null,
       keterangan: keterangan.trim() || null,
@@ -236,9 +252,12 @@ export function NpbgFormModal({ open, onClose }: Props) {
           </div>
           <div className="space-y-1.5">
             <Label>Serial No.</Label>
-            <Input value={noSeri} onChange={(e) => setNoSeri(e.target.value)} />
+            {usesSn
+              ? <Input value={picked.join(' ; ')} readOnly placeholder="Select below" aria-label="Selected serial numbers" />
+              : <Input value={noSeri} onChange={(e) => setNoSeri(e.target.value)} />}
           </div>
         </div>
+        {usesSn && <SerialPicker serials={sn.data?.data ?? []} loading={sn.isFetching} need={need} picked={picked} onChange={setPicked} />}
 
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">

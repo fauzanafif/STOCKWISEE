@@ -21,6 +21,8 @@ class UserSeeder extends Seeder
 
     public function run(): void
     {
+        ProductionGuard::refuse(static::class);
+
         $sda = Site::where('code', 'SIG-SDA')->first();
         $bpn = Site::where('code', 'SIG-BPN')->first();
 

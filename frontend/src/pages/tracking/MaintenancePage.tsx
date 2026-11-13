@@ -6,7 +6,7 @@ import { useAuth } from '@/auth/AuthContext'
 import { DocNumberInput } from '@/components/tracking/AccurateInputs'
 import { CompactPhotoSlot, ExcelStatusBadge } from '@/components/tracking/EvidencePhoto'
 import { InlineSaveBadge } from '@/components/tracking/InlineSaveBadge'
-import { InlineSheet, RowActions, Td, rowClass, today, useSheetRow } from '@/components/tracking/InlineSheet'
+import { InlineSheet, RowActions, Td, rowClass, today, TodayNow, useSheetRow } from '@/components/tracking/InlineSheet'
 import { NoteCell, type RowNote } from '@/components/RowNotes'
 import { PageHeader } from '@/components/PageHeader'
 import { confirmDialog } from '@/components/ui/confirm'
@@ -19,7 +19,6 @@ import { confirmDialog } from '@/components/ui/confirm'
  */
 
 const ENTITY = 'maintenance_sub'
-const fmtDate = (v: string | null | undefined) => (v ? new Date(v).toLocaleDateString('en-GB') : '—')
 const STATUS_HINT: Record<string, string> = {
   REQUESTED: 'Request exists',
  ON_GOING: 'NPBG No. exists; in progress',
@@ -178,7 +177,7 @@ export function MaintenancePage() {
         exportPermission="maintenance.view"
         toolbarExtra={
           <div className="flex flex-wrap gap-x-4 text-xs text-muted-foreground">
-            <span>Today: <b className="text-foreground">{fmtDate(head.today)}</b></span>
+            <span>Today: <b className="text-foreground"><TodayNow date={head.today} /></b></span>
             {head.next && <span>Next SPK No.: <b className=" text-foreground">{head.next}</b></span>}
           </div>
         }

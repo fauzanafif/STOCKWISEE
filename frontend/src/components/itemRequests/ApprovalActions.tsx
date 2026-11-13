@@ -13,6 +13,8 @@ import { Modal } from '@/components/ui/modal'
 import { Textarea } from '@/components/ui/textarea'
 import { invalidTo } from '@/lib/notify'
 import { LineImagesCell } from '@/components/itemRequests/RequestImages'
+import { SerialPicker } from '@/components/npbg/SerialPicker'
+import { useNpbgSerials } from '@/features/npbg/api'
 
 interface Target {
   id: number
@@ -213,6 +215,15 @@ export function ApprovalActions({ req, onDone, onPrepare, handover }: {
   )
 }
 
+/** The serials of one item in stock, to pick those handed over. */
+function LineSerials({ code, need, picked, onChange, requestId }: { code: string; need: number; picked: string[]; onChange: (v: string[]) => void; requestId: number }) {
+  // the serials this request holds (picked while verifying) are listed too
+  const sn = useNpbgSerials(code, requestId)
+  // its own serials (already on this NPBG) stay selectable
+  const list = [...picked.filter((p) => !(sn.data?.data ?? []).some((s) => s.serial === p)).map((serial) => ({ serial, source: 'ACCURATE' as const, expired: null })), ...(sn.data?.data ?? [])]
+  return <SerialPicker serials={list} loading={sn.isLoading} need={need} picked={picked} onChange={onChange} />
+}
+
 /**
  * Siapkan & serah terima, one step on the gudang's phone: 1 how much is really handed over (less than
  * prepared goes back to stock), 2 photo of the goods being handed over, 3 who receives it, 4 the receiver signs.
@@ -247,16 +258,23 @@ export function HandoverDialog({ open, onClose, req, onDone, fulfillment, handed
     try { setPhoto(await photoToDataUrl(f, 1600)) } catch (e) { setErr((e as Error).message) } finally { setReading(false) }
   }
 
-  const ready = !!photo && !!signature && (byProxy ? digits.length === 6 : receiver.trim() !== '')
   const qtyOf: Record<number, number> = Object.fromEntries((fulfillment?.lines ?? []).map((l) => [l.id, fixed?.[l.id] ?? l.qty]))
+  // items with serial numbers: the serials of the units handed over, one per unit
+  const snLines = (fulfillment?.lines ?? []).filter((l) => l.manage_sn && l.kode_barang && (qtyOf[l.id] ?? 0) > 0)
+  const [serials, setSerials] = useState<Record<number, string[]>>(() => Object.fromEntries(snLines.map((l) => [l.id, l.serials ?? []])))
+  const snDone = snLines.every((l) => (serials[l.id] ?? []).length === qtyOf[l.id])
+  const ready = !!photo && !!signature && snDone && (byProxy ? digits.length === 6 : receiver.trim() !== '')
   const submit = () => {
     setErr(null)
+    const short = snLines.find((l) => (serials[l.id] ?? []).length !== qtyOf[l.id])
+    if (short) return invalidTo(setErr, `Select ${qtyOf[short.id]} serial number(s) for ${short.deskripsi ?? short.kode_barang}.`)
     if (!photo) return invalidTo(setErr, 'Take the handover proof photo first.')
     if (byProxy && digits.length !== 6) return invalidTo(setErr, 'Scan the representative QR or type the code (6 digits).')
     if (!byProxy && !receiver.trim()) return invalidTo(setErr, 'Fill in the recipient name.')
     if (!signature) return invalidTo(setErr, 'Ask the recipient to sign.')
     handover.mutate({ photo, signature, received_by: byProxy ? (req.proxy?.name ?? 'Wakil') : receiver.trim(), proxy_code: byProxy ? digits : undefined,
-      handed: fulfillment ? qtyOf : undefined, drop: drop?.length ? drop : undefined, reasons: reasons && Object.keys(reasons).length ? reasons : undefined }, {
+      handed: fulfillment ? qtyOf : undefined, drop: drop?.length ? drop : undefined, reasons: reasons && Object.keys(reasons).length ? reasons : undefined,
+      serials: snLines.length ? Object.fromEntries(snLines.map((l) => [l.id, serials[l.id] ?? []])) : undefined }, {
       onSuccess: () => { onClose(); onDone?.() },
       onError: (e) => setErr(apiErrorMessage(e)),
     })
@@ -293,6 +311,17 @@ export function HandoverDialog({ open, onClose, req, onDone, fulfillment, handed
                   <Button type="button" variant="outline" className="w-full" onClick={() => setScanning(true)}><ScanLine className="size-4" /> Scan representative QR</Button>
                 )}
                 <Input inputMode="numeric" maxLength={6} value={digits} onChange={(e) => setCode(e.target.value)} placeholder="or type the 6-digit code" aria-label="Representative code" className="text-center tracking-[0.3em]" />
+              </div>
+            ))}
+          </section>
+        )}
+        {snLines.length > 0 && (
+          <section className="space-y-2">
+            <StepTitle n={++n} done={snDone}>Serial numbers</StepTitle>
+            {snLines.map((l) => (
+              <div key={l.id} className="space-y-1">
+                <div className="text-sm font-medium">{l.deskripsi} <span className="font-normal text-muted-foreground">· {l.kode_barang} · {qtyOf[l.id]} {l.satuan ?? ''}</span></div>
+                <LineSerials code={l.kode_barang!} requestId={req.id} need={qtyOf[l.id]} picked={serials[l.id] ?? []} onChange={(v) => setSerials((s) => ({ ...s, [l.id]: v }))} />
               </div>
             ))}
           </section>

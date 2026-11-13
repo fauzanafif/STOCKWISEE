@@ -112,4 +112,11 @@ return [
 
     // Important Request: largest file per upload (MB); sent in chunks, so the PHP upload limit does not cap it
     'important_request_max_mb' => (int) env('IMPORTANT_REQUEST_MAX_MB', 20),
+
+    /*
+    | The warehouse is the only door: goods leave only through Item Request → Delivery Order (NPBG). A Delivery
+    | Order typed by hand (without an Item Request) is closed; one already submitted is still decided as before.
+    | Kept as a switch only so the old flow's tests can still exercise those pending documents.
+    */
+    'manual_npbg' => (bool) env('STOCKWISE_MANUAL_NPBG', false),
 ];

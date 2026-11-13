@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
 use App\Http\Resources\UserResource;
 use App\Models\User;
+use App\Support\ActivityLogger;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -44,6 +45,7 @@ class AuthController extends Controller
         $lockKey = 'login-locked:'.$key;
         if (RateLimiter::tooManyAttempts($lockKey, 1)) {
             $minutes = (int) ceil(RateLimiter::availableIn($lockKey) / 60);
+            ActivityLogger::record('LOGIN_FAILED', $request, ['user_name' => mb_substr($login, 0, 120), 'module' => 'Auth', 'description' => 'Login ditolak: terlalu banyak percobaan gagal', 'status' => 429]);
             throw ValidationException::withMessages([
                 'username' => ["Terlalu banyak percobaan login yang gagal. Coba lagi dalam {$minutes} menit."],
             ])->status(429);
@@ -52,6 +54,7 @@ class AuthController extends Controller
         $user = User::where('username', $login)->orWhere('email', $login)->first();
 
         if (! $user || ! Hash::check((string) $request->string('password'), $user->password)) {
+            ActivityLogger::record('LOGIN_FAILED', $request, ['user' => $user, 'user_name' => mb_substr($login, 0, 120), 'module' => 'Auth', 'description' => 'Login gagal: username/password salah', 'status' => 422]);
             // the 15 minutes run from the 5th failure, not from the first one
             if (RateLimiter::hit($failedKey, self::LOCKOUT_SECONDS) >= self::MAX_FAILED_LOGINS) {
                 RateLimiter::clear($failedKey);
@@ -65,6 +68,7 @@ class AuthController extends Controller
         RateLimiter::clear($failedKey);
 
         if (! $user->is_active) {
+            ActivityLogger::record('LOGIN_FAILED', $request, ['user' => $user, 'module' => 'Auth', 'description' => 'Login ditolak: akun nonaktif', 'status' => 422]);
             throw ValidationException::withMessages([
                 'username' => ['Akun dinonaktifkan. Hubungi administrator.'],
             ]);
@@ -82,6 +86,8 @@ class AuthController extends Controller
             ['app'],
             $ttlHours > 0 ? now()->addHours($ttlHours) : null,
         )->plainTextToken;
+
+        ActivityLogger::record('LOGIN', $request, ['user' => $user, 'module' => 'Auth', 'description' => 'Login', 'status' => 200]);
 
         return response()->json([
             'token' => $token,
@@ -121,6 +127,7 @@ class AuthController extends Controller
 
     public function logout(Request $request): JsonResponse
     {
+        ActivityLogger::record('LOGOUT', $request, ['module' => 'Auth', 'description' => 'Logout', 'status' => 200]);
         $request->user()->currentAccessToken()->delete();
         $request->user()->forceFill(['last_logout_at' => now()])->save();
 

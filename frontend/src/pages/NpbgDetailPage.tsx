@@ -21,6 +21,8 @@ import { ResubmitPanel } from '@/components/approval/ResubmitPanel'
 import { invalidTo } from '@/lib/notify'
 import { Badge } from '@/components/ui/badge'
 import { Activity, DocPage, DocSection, FieldGrid, MetaList, SyncNote, TONE_EDGE, type ActivityItem } from '@/components/doc/DocLayout'
+import { SmartButtons } from '@/components/documents/SmartButtons'
+import { Chatter } from '@/components/documents/Chatter'
 
 function fmtDate(v: string | null) {
   return v ? new Date(v).toLocaleDateString('en-GB', { dateStyle: 'medium' }) : '—'
@@ -109,6 +111,7 @@ export function NpbgDetailPage() {
 
   return (
     <DocPage
+      chatter={<Chatter type="delivery_order" id={npbgId} />}
       back={{ to: '/npbg', label: 'Delivery Order List' }}
       kind="Delivery Order"
       number={npbg.no_npbg ?? '—'}
@@ -142,6 +145,7 @@ export function NpbgDetailPage() {
         <SyncNote at={npbg.accurate_synced_at} manual={!npbg.accurate_synced_at && !!npbg.is_manual} />
       </>}
     >
+      <SmartButtons type="delivery_order" id={npbgId} />
       {editing && <EditForm npbg={npbg} onDone={() => setEditing(false)} />}
       {npbg.approval && <NpbgApprovalCard npbg={npbg} />}
 

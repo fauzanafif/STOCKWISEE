@@ -30,6 +30,9 @@ return Application::configure(basePath: dirname(__DIR__))
         // Office network only while storage/framework/public-access-off exists (stockwise:public on|off)
         $middleware->prepend(\App\Http\Middleware\BlockPublicTunnel::class);
 
+        // User Log: every change a signed-in user sends (create / edit / delete / actions), with its outcome
+        $middleware->appendToGroup('api', \App\Http\Middleware\LogUserActivity::class);
+
         $middleware->alias([
             'permission' => CheckPermission::class,
             // Sync Agent token check (App\Console\Commands\Accurate\AgentTokenCommand) —

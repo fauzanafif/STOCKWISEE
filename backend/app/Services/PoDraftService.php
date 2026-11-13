@@ -178,7 +178,7 @@ class PoDraftService
         }
     }
 
-    /** the items waiting for their PO (STOCKWISE PPBs only: Accurate's get their PO in Accurate) */
+    /** the items waiting for their PO (STOCKWISE PPBs + manual items without a PPB) */
     public static function waiting(): Builder
     {
         $nos = DB::table('ppb')->join('purchase_order_items as i', 'i.approved_ppb_id', '=', 'ppb.id')
@@ -187,7 +187,63 @@ class PoDraftService
 
         return PurchaseOrderItem::query()->where('line_status', PpbApprovalService::WAITING)
             ->whereHas('purchaseOrder', fn ($p) => $p->where('status', PpbApprovalService::WAITING))
-            ->whereHas('approvedPpb', fn ($p) => $p->whereIn('no_ppb', $stockwise));
+            ->where(fn ($q) => $q
+                ->whereHas('approvedPpb', fn ($p) => $p->whereIn('no_ppb', $stockwise))
+                ->orWhereNull('approved_ppb_id'));
+    }
+
+    /** Update a waiting item's description, qty or unit. */
+    public function updateItem(User $user, PurchaseOrderItem $item, array $data): void
+    {
+        $this->expectWaiting($item);
+        $update = [];
+        if (array_key_exists('description', $data)) {
+            $update['description_raw'] = mb_substr(trim($data['description']), 0, 400);
+        }
+        if (array_key_exists('qty', $data)) {
+            $update['qty'] = round((float) $data['qty'], 2);
+        }
+        if (array_key_exists('unit_id', $data)) {
+            $unitId = ! empty($data['unit_id']) ? (int) $data['unit_id'] : null;
+            $update['unit_id'] = $unitId;
+            if ($item->item_id && $unitId) {
+                $master = \App\Models\Item::with('unit')->find($item->item_id);
+                if ($master && (int) $master->unit_id !== $unitId) {
+                    try {
+                        $r = app(UomConverter::class)->documentRatio($master, \App\Models\Unit::findOrFail($unitId));
+                        $update['unit_ratio'] = $r;
+                        $update['base_unit'] = UomConverter::isOne($r) ? null : $master->unit?->code;
+                    } catch (\Exception) {
+                    }
+                } else {
+                    $update['unit_ratio'] = null;
+                    $update['base_unit'] = null;
+                }
+            }
+        }
+        if ($update) {
+            $item->update($update);
+        }
+    }
+
+    /** Remove an item from the draft (SIAP or PENAWARAN only). Cleans up empty shell POs. */
+    public function removeItem(PurchaseOrderItem $item): void
+    {
+        $this->expectWaiting($item);
+        if (! in_array($item->quote_stage, [null, 'PENAWARAN'], true)) {
+            throw ValidationException::withMessages(['line' => 'Item sudah diajukan ke Direktur. Kembalikan dulu ke Penawaran.']);
+        }
+        DB::transaction(function () use ($item) {
+            $poId = $item->purchase_order_id;
+            DB::table('purchase_order_item_vendors')->where('purchase_order_item_id', $item->id)->delete();
+            $item->quotes()->delete();
+            $item->pickLogs()->delete();
+            $item->delete();
+            $po = PurchaseOrder::find($poId);
+            if ($po && $po->status === PpbApprovalService::WAITING && $po->items()->count() === 0) {
+                $po->delete();
+            }
+        });
     }
 
     /** A vendor's price for a waiting item (one per vendor: saved again = changed). */

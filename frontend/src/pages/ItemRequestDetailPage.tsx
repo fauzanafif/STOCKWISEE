@@ -14,6 +14,8 @@ import { ApprovalActions, HandoverQty, type HandoverDraft } from '@/components/i
 import { StepsBar } from '@/components/itemRequests/RequestTimeline'
 import { useUnits, type ItemLookupResult } from '@/features/inventory/api'
 import { UomEquivalent } from '@/components/UomEquivalent'
+import { VerifySerials } from '@/components/itemRequests/VerifySerials'
+import { askedText } from '@/lib/askedText'
 import { RequestStatusBadge } from '@/pages/ItemRequestListPage'
 import { BackLink } from '@/components/BackLink'
 import { ItemPicker } from '@/components/ItemPicker'
@@ -31,6 +33,8 @@ import { openImage } from '@/components/ui/lightbox'
 import { DetailFallback } from '@/components/DetailFallback'
 import { LineImagesCell, RequestImages } from '@/components/itemRequests/RequestImages'
 import { QtyProgress } from '@/components/QtyProgress'
+import { SmartButtons } from '@/components/documents/SmartButtons'
+import { Chatter } from '@/components/documents/Chatter'
 
 const fmtDate = (v: string | null) => (v ? new Date(v).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '-')
 const fmtDateTime = (v: string | null) => (v ? new Date(v).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-')
@@ -49,13 +53,19 @@ interface Choice {
   qtys: Record<number, string>
   /** given less than asked (e.g. 9 of 10, 1 kept in stock): why — required then */
   reason?: string
+  /** items with serial numbers: the serials picked per item (its id → serials), held for this request */
+  serials?: Record<number, string[]>
+  /** how many serials each of those items needs (its id → count) */
+  snNeed?: Record<number, number | null>
 }
 
 /** "1,5" / "1.5" → 1.5; 0 when empty or not a number (a qty field) */
 const qtyOf = (v: string | undefined) => { const n = num(v ?? ''); return Number.isFinite(n) && n > 0 ? n : 0 }
 const round2 = (n: number) => Math.round(n * 100) / 100
-/** what a master item can give from stock now (unknown stock counts as none) */
-const inStock = (item: StockRecommendation) => (item.stock_known ? Math.max(0, item.available ?? 0) : 0)
+/** how many of the item's own unit one unit asked makes (1 DUS = 5 RIM); 1 when it is the same unit */
+const ratioOf = (item: StockRecommendation) => (item.unit_ratio && item.unit_ratio > 0 ? item.unit_ratio : 1)
+/** what a master item can give from stock now, in the unit asked (unknown stock counts as none) */
+const inStock = (item: StockRecommendation) => (item.stock_known ? Math.max(0, item.available ?? 0) / ratioOf(item) : 0)
 
 /**
  * How many of each picked item: from stock first (in the order picked), the rest on the first item —
@@ -86,22 +96,26 @@ function split(choice: Choice) {
   return { total: round2(total), stock: round2(stock), buy: round2(total - stock) }
 }
 
-/** Stock of a master item, as a short colored text. */
+/** Stock of a master item in its own unit, as a short colored text; $qty is in the unit asked. */
 function stockText(item: StockRecommendation, qty: number) {
   if (!item.stock_known) return <span className="text-muted-foreground">stock ?</span>
   const a = item.available ?? 0
-  return <span className={a >= qty ? 'text-emerald-700' : a > 0 ? 'text-amber-700' : 'text-red-600'}>stock {fmtQty(a)}</span>
+  const need = qty * ratioOf(item)
+  return <span className={a >= need ? 'text-emerald-700' : a > 0 ? 'text-amber-700' : 'text-red-600'}>stock {fmtQty(a)} {item.unit ?? ''}</span>
 }
 
 /** The master item already saved on a line, as a pick option. */
 const savedItem = (l: ItemRequestLine): StockRecommendation | null => (l.item_id ? {
   id: l.item_id, code: l.kode_barang ?? '', description: l.item_description ?? l.deskripsi_barang, unit: l.satuan,
   available: l.available ?? null, stock_known: l.available != null, score: 0,
+  unit_ratio: l.asked_ratio ?? null, unit_problem: l.asked_unit_problem ?? null,
 } : null)
 
 /** One requested item to verify: which Master Produk item(s) and how many — stock decides NPBG / PPB later. */
-function OpenLine({ line, requestId, choice, onChange, onPick, saving }: {
+function OpenLine({ line, requestId, choice, onChange, onPatch, onPick, saving }: {
   line: ItemRequestLine; requestId: number; choice: Choice; onChange: (c: Choice) => void
+  /** change from the latest choice (several updates in one render never overwrite each other) */
+  onPatch: (f: (c: Choice) => Choice) => void
   /** save the pick at once (the Item table below follows) */
   onPick: (itemId: number) => void
   saving: boolean
@@ -122,7 +136,7 @@ function OpenLine({ line, requestId, choice, onChange, onPick, saving }: {
     const on = choice.items.some((i) => i.id === item.id)
     const items = on ? choice.items.filter((i) => i.id !== item.id) : [...choice.items, item]
     if (!on && item.id !== line.item_id && choice.items.length === 0) onPick(item.id)
-    onChange({ items, qtys: distribute(items, needed) })
+    onChange({ ...choice, items, qtys: distribute(items, needed) })
   }
   const fromLookup = (it: ItemLookupResult) => {
     const r: StockRecommendation = { id: it.id, code: it.code, description: it.description, unit: it.unit, available: it.available, stock_known: it.stock_known, score: 0 }
@@ -186,7 +200,11 @@ function OpenLine({ line, requestId, choice, onChange, onPick, saving }: {
                   <input type="checkbox" className="size-4 shrink-0 accent-primary" checked={isSelected} onChange={() => toggleItem(r)} />
                   <span className="w-5 shrink-0 text-right text-xs tabular-nums text-muted-foreground">{i + 1}</span>
                   <span className="min-w-0 flex-1 break-words">{r.description}<span className="ml-1.5 text-[13px] text-muted-foreground">{r.code}</span></span>
-                  <span className="shrink-0 text-xs">{stockText(r, isSelected ? q : needed)}</span>
+                  <span className="shrink-0 text-right text-xs">
+                    {stockText(r, isSelected ? q : needed)}
+                    {askedUnit && r.unit && askedUnit !== r.unit && r.unit_ratio && <span className="block text-[11px] text-muted-foreground">1 {askedUnit} = {fmtQty(r.unit_ratio)} {r.unit}</span>}
+                    {!isSelected && r.unit_ratio == null && r.unit_problem && <span className="block text-[11px] text-red-600">no {askedUnit} ratio</span>}
+                  </span>
                 </label>
                 {isSelected && (
                   // phone: its own row under the name; wider: on the right
@@ -194,14 +212,27 @@ function OpenLine({ line, requestId, choice, onChange, onPick, saving }: {
                     <Input className={cn('h-8 w-20 text-right tabular-nums', capped?.id === r.id && 'border-red-400 focus-visible:border-red-500 focus-visible:ring-red-200')} inputMode="decimal"
                       aria-label={`Quantity ${r.description}`} aria-invalid={capped?.id === r.id} title={`Maximum ${fmtQty(maxFor(r.id))}`}
                       value={choice.qtys[r.id] ?? ''} onChange={(e) => setQty(r.id, e.target.value)} onBlur={() => setCapped(null)} />
-                    <span className="w-36 text-xs leading-tight text-muted-foreground">
-                      {capped?.id === r.id ? <span className="font-medium text-red-600">Maks {fmtQty(capped.max)}: total may not exceed {fmtQty(needed)} {askedUnit}</span>
-                        : q <= 0 ? 'fill in the quantity' : askedUnit && r.unit && askedUnit !== r.unit ? <UomEquivalent qty={q} unit={askedUnit} itemId={r.id} /> : <>
-                        {fromStock > 0 && <span className="text-emerald-700">{fmtQty(fromStock)} from stock</span>}
+                    <span className="w-10 text-xs font-medium text-muted-foreground">{askedUnit}</span>
+                    <span className="w-40 text-xs leading-tight text-muted-foreground">
+                      {capped?.id === r.id ? <span className="font-medium text-red-600">Max {fmtQty(capped.max)}: total may not exceed {fmtQty(needed)} {askedUnit}</span>
+                        : r.unit_problem && r.unit_ratio == null ? <span className="font-medium text-red-600">{r.unit_problem}</span>
+                        : q <= 0 ? 'fill in the quantity' : <>
+                        {askedUnit && r.unit && askedUnit !== r.unit && (r.unit_ratio
+                          ? <span className="block font-medium tabular-nums text-primary">= {fmtQty(round2(q * r.unit_ratio))} {r.unit}</span>
+                          : <UomEquivalent qty={q} unit={askedUnit} itemId={r.id} />)}
+                        {fromStock > 0 && <span className="text-emerald-700">{fmtQty(round2(fromStock))} from stock</span>}
                         {fromStock > 0 && q > fromStock && ' · '}
                         {q > fromStock && <span className="text-amber-700">{fmtQty(round2(q - fromStock))} purchased</span>}
                       </>}
                     </span>
+                  </div>
+                )}
+                {isSelected && r.code && q > 0 && (
+                  <div className="basis-full sm:pl-8">
+                    <VerifySerials code={r.code} itemId={r.id} itemUnit={r.unit} qty={q} unit={askedUnit} requestId={requestId}
+                      picked={choice.serials?.[r.id] ?? []}
+                      onChange={(v) => onPatch((c) => ({ ...c, serials: { ...c.serials, [r.id]: v } }))}
+                      onNeed={(n) => onPatch((c) => ((c.snNeed?.[r.id] ?? null) === n ? c : { ...c, snNeed: { ...c.snNeed, [r.id]: n } }))} />
                   </div>
                 )}
               </div>
@@ -290,7 +321,9 @@ const BEFORE_ALLOCATION = ['MENUNGGU', 'DIPROSES', 'PERLU_PERBAIKAN', 'APPROVAL_
 function estimate(l: ItemRequestLine, status: string): { npbg: number; ppb: number } | null {
   if (!BEFORE_ALLOCATION.includes(status) || l.decision === 'TOLAK') return null
   const need = Number(l.approved_qty ?? l.qty)
-  const fromStock = l.item_id ? Math.min(need, Math.max(0, l.available ?? 0)) : 0
+  // still to verify: the qty is in the unit asked (1 DUS), the stock in the item's own unit (RIM)
+  const ratio = l.decision === null && l.asked_ratio ? l.asked_ratio : 1
+  const fromStock = l.item_id ? Math.min(need, Math.max(0, l.available ?? 0) / ratio) : 0
   return { npbg: Math.round(fromStock * 100) / 100, ppb: Math.round((need - fromStock) * 100) / 100 }
 }
 
@@ -319,20 +352,28 @@ function LineName({ line, requestId }: { line: ItemRequestLine; requestId: numbe
   const matched = !!line.item_description
   // For Item Request (not PPB/PO), always show the original requester's description
   // For PPB/PO, show the matched item description from Master Produk
-  const displayName = line.deskripsi_peminta ?? line.deskripsi_barang
+  // "HVS A4 1 DUS": what was asked, in the unit asked (from the verification to the approval)
+  const displayName = askedText(line)
   return (
     <div className="min-w-0">
       <div className="break-words font-medium">{displayName}</div>
       <div className="break-words text-xs text-muted-foreground">
-        {[line.kode_barang, line.satuan, matched && line.item_description && line.item_description !== displayName ? `cocok: ${line.item_description}` : null, line.note].filter(Boolean).join(' · ')}
+        {[line.kode_barang, matched && line.item_description && line.item_description !== displayName ? `cocok: ${line.item_description}` : null, line.note].filter(Boolean).join(' · ')}
       </div>
       {line.requested_qty != null && line.unit_ratio != null && <div className="mt-0.5 text-xs tabular-nums text-primary">Requested {fmtQty(line.requested_qty)} {line.requested_unit} = {fmtQty(line.qty)} {line.satuan}</div>}
+      {line.decision === null && line.asked_unit_problem && <div className="mt-0.5 text-xs text-red-600">{line.asked_unit_problem}</div>}
       {line.uom_unmapped && <div className="mt-0.5 text-xs text-amber-700">Requested in "{line.requested_unit}", not in the UOM master: counted as written</div>}
       {line.short_reason && <div className="mt-0.5 text-xs text-amber-700">Given less: {line.short_reason}</div>}
+      {(line.serials?.length ?? 0) > 0 && <div className="mt-0.5 break-words text-xs text-violet-700">SN: <span className="font-mono">{line.serials!.join(', ')}</span></div>}
       {/* phone (cards): the images under the name */}
       {(line.images?.length ?? 0) > 0 && <RequestImages requestId={requestId} lineId={line.id} slots={line.images} size="size-11" className="mt-1.5 gap-1 sm:hidden" />}
     </div>
   )
+}
+
+/** a unit beside a quantity: small and muted */
+function Unit({ u }: { u: string | null | undefined }) {
+  return u ? <span className="text-[11px] font-normal text-muted-foreground">{u}</span> : null
 }
 
 /**
@@ -344,16 +385,22 @@ function ItemsTable({ req, selectedLineId, onSelectLine }: { req: ItemRequestDet
   // during the Manager / Direktur approval nothing is handed over yet: no Diserahkan / Sisa columns
   const handing = decided && !['APPROVAL_MANAGER', 'APPROVAL_DIREKTUR'].includes(req.status)
   const left = (l: ItemRequestLine) => l.remaining
-  const approvedCell = (l: ItemRequestLine) => (l.approved_qty != null ? fmtQty(l.approved_qty) : '')
+  const approvedCell = (l: ItemRequestLine) => (l.approved_qty != null ? <>{fmtQty(l.approved_qty)} <Unit u={l.satuan} /></> : '')
+  // a line still to verify holds what was asked (1 DUS); once verified, the item's own unit (5 RIM)
+  const pending = (l: ItemRequestLine) => l.decision === null && !!l.asked_unit
+  const requestedCell = (l: ItemRequestLine) => pending(l) ? <>
+    {fmtQty(l.qty)} <Unit u={l.asked_unit} />
+    {l.item_id && l.asked_ratio && l.asked_unit !== l.satuan && <span className="block text-[11px] font-normal text-primary">= {fmtQty(Math.round(Number(l.qty) * l.asked_ratio * 100) / 100)} {l.satuan}</span>}
+  </> : <>{fmtQty(l.qty)} <Unit u={l.satuan} /></>
   // the stock of Master Produk (it drops with the serah terima); what is held for prepared NPBG under it
   const stockOf = (l: ItemRequestLine) => {
     const stock = l.on_hand ?? l.available
     if (stock == null) return ''
     const held = l.on_hand != null && l.available != null ? Math.round((l.on_hand - l.available) * 100) / 100 : 0
-    return <>{fmtQty(stock)}{held > 0 && <span className="block text-[11px] font-normal text-muted-foreground">on order {fmtQty(held)}</span>}</>
+    return <>{fmtQty(stock)} <Unit u={l.satuan} />{held > 0 && <span className="block text-[11px] font-normal text-muted-foreground">on order {fmtQty(held)}</span>}</>
   }
   const stockTone = (l: ItemRequestLine) => {
-    const need = l.remaining > 0 ? l.remaining : Number(l.approved_qty ?? l.qty)
+    const need = pending(l) ? Number(l.qty) * (l.asked_ratio ?? 1) : l.remaining > 0 ? l.remaining : Number(l.approved_qty ?? l.qty)
     return l.available == null ? 'text-muted-foreground' : l.decision !== 'TOLAK' && l.available < need ? 'font-semibold text-red-600' : 'text-emerald-700'
   }
 
@@ -366,7 +413,7 @@ function ItemsTable({ req, selectedLineId, onSelectLine }: { req: ItemRequestDet
             onClick={() => l.decision === null && onSelectLine(l.id)}>
             <div className="flex items-start justify-between gap-3"><LineName line={l} requestId={req.id} /><DecisionCell line={l} /></div>
             <dl className="grid gap-1 text-center text-xs" style={{ gridTemplateColumns: `repeat(${1 + (decided ? 1 : 0) + (handing ? 2 : 0) + 1}, minmax(0, 1fr))` }}>
-              {([['Requested', fmtQty(l.qty)], ...(decided ? [['Approved', approvedCell(l)]] : []),
+              {([['Requested', requestedCell(l)], ...(decided ? [['Approved', approvedCell(l)]] : []),
                 ...(handing ? [['Requested/Handed Over', l.approved_qty != null && l.decision !== 'TOLAK' ? <QtyProgress total={Number(l.approved_qty)} done={l.fulfilled_qty} className="mx-auto w-fit" /> : ''], ['Balance', l.approved_qty != null ? <span>{fmtQty(left(l))}</span> : '']] : []),
                 ['Stock', <span className={stockTone(l)}>{stockOf(l)}</span>]] as [string, React.ReactNode][]).map(([k, v]) => (
                 <div key={k} className="rounded bg-muted/40 px-1 py-1.5">
@@ -410,13 +457,13 @@ function ItemsTable({ req, selectedLineId, onSelectLine }: { req: ItemRequestDet
                 onClick={() => l.decision === null && onSelectLine(l.id)}>
                 <td className="px-4 py-3 tabular-nums text-muted-foreground">{i + 1}</td>
                 <td className="px-3 py-3"><LineName line={l} requestId={req.id} /></td>
-                <td className="whitespace-nowrap px-3 py-3 text-right tabular-nums">{fmtQty(l.qty)}</td>
+                <td className="whitespace-nowrap px-3 py-3 text-right tabular-nums">{requestedCell(l)}</td>
                 {decided && <>
                   <td className="whitespace-nowrap px-3 py-3 text-right tabular-nums">{approvedCell(l)}</td>
                   {handing && <>
                     {/* per item: approved (asked) / handed over so far, e.g. 10/5 */}
                     <td className="px-3 py-3">{l.approved_qty != null && l.decision !== 'TOLAK' ? <QtyProgress total={Number(l.approved_qty)} done={l.fulfilled_qty} unit={l.satuan} /> : ''}</td>
-                    <td className={cn('whitespace-nowrap px-3 py-3 text-right tabular-nums', left(l) > 0 && 'font-semibold')}>{l.approved_qty != null ? fmtQty(left(l)) : ''}</td>
+                    <td className={cn('whitespace-nowrap px-3 py-3 text-right tabular-nums', left(l) > 0 && 'font-semibold')}>{l.approved_qty != null ? <>{fmtQty(left(l))} <Unit u={l.satuan} /></> : ''}</td>
                   </>}
                 </>}
                 <td className={cn('whitespace-nowrap px-3 py-3 text-right tabular-nums', stockTone(l))}>{stockOf(l)}</td>
@@ -668,7 +715,7 @@ const LOG_TEXT: Record<string, string> = {
   'MANAGER.APPROVE': 'Approved by Manager', 'MANAGER.REJECT': 'Rejected by Manager', 'MANAGER.RETURN': 'Returned by Manager for correction',
   'DIREKTUR.APPROVE': 'Approved by Director', 'DIREKTUR.REJECT': 'Rejected by Director', 'DIREKTUR.RETURN': 'Returned by Director for correction',
   'GUDANG.APPROVE': 'Prepared by warehouse', 'GUDANG.REJECT': 'Rejected by warehouse',
-  'GUDANG.FULFILL': 'Delivery Order created from stock', 'GUDANG.CONFIRM': 'Quantity handed over is set by the warehouse', 'GUDANG.SHORTAGE': 'Shortage to Draft PPB', 'GUDANG.CLOSE': 'Remaining need closed',
+  'GUDANG.FULFILL': 'Delivery Order created from stock', 'GUDANG.CONFIRM': 'Quantity handed over is set by the warehouse', 'GUDANG.SHORTAGE': 'Shortage to Draft Purchase Request', 'GUDANG.CLOSE': 'Remaining need closed',
   'SERAH_TERIMA.HANDOVER': 'Items handed over',
 }
 
@@ -731,7 +778,7 @@ export function ItemRequestDetailPage() {
     setChoices((prev) => Object.fromEntries(open.map((l) => {
       if (prev[l.id]) return [l.id, prev[l.id]]
       const items = savedItem(l) ? [savedItem(l)!] : []
-      return [l.id, { items, qtys: distribute(items, Number(l.qty)) }]
+      return [l.id, { items, qtys: distribute(items, Number(l.qty)), serials: l.item_id && l.serials?.length ? { [l.item_id]: l.serials } : {} }]
     })))
   }, [open])
   useEffect(() => { if (req) setPelanggan((p) => p || req.divisi || req.requester_name || '') }, [req])
@@ -764,9 +811,18 @@ export function ItemRequestDetailPage() {
     const noReason = open.find((l) => split(choices[l.id]).total < Number(l.qty) && !(choices[l.id].reason ?? '').trim())
     if (noReason) { setSelectedLineId(noReason.id); return invalidTo(setErr, `"${noReason.deskripsi_peminta ?? noReason.deskripsi_barang}" is given less than requested: fill in the reason.`) }
 
+    // items with serial numbers: one serial per unit given from stock, picked here
+    const snShort = open.find((l) => choices[l.id].items.some((it) => { const n = choices[l.id].snNeed?.[it.id]; return n != null && (choices[l.id].serials?.[it.id] ?? []).length !== n }))
+    if (snShort) {
+      setSelectedLineId(snShort.id)
+      const it = choices[snShort.id].items.find((i) => { const n = choices[snShort.id].snNeed?.[i.id]; return n != null && (choices[snShort.id].serials?.[i.id] ?? []).length !== n })!
+      return invalidTo(setErr, `Select ${choices[snShort.id].snNeed?.[it.id]} serial number(s) for ${it.description}.`)
+    }
+
     proc.mutate({
       lines: Object.fromEntries(open.map((l) => [l.id, {
-        items: choices[l.id].items.map((it) => ({ item_id: it.id, qty: qtyOf(choices[l.id].qtys[it.id]) })),
+        items: choices[l.id].items.map((it) => ({ item_id: it.id, qty: qtyOf(choices[l.id].qtys[it.id]),
+          ...(choices[l.id].serials?.[it.id]?.length ? { serials: choices[l.id].serials![it.id] } : {}) })),
         reason: split(choices[l.id]).total < Number(l.qty) ? (choices[l.id].reason ?? '').trim() : null,
         ...(choices[l.id].unit ? { unit: choices[l.id].unit } : {}),
       }])),
@@ -797,6 +853,7 @@ export function ItemRequestDetailPage() {
   return (
     <div className="pb-8">
       <BackLink to="/item-requests" label="Item Request" />
+      <SmartButtons type="item_request" id={Number(id)} className="mt-3" />
 
       {/*
         Classroom's assignment page: the left column is the request (title, what is asked, its progress,
@@ -827,9 +884,9 @@ export function ItemRequestDetailPage() {
           </div>
         </header>
 
-        {/* ---- your part (right, sticky) */}
-        <aside className="space-y-4 lg:col-start-2 lg:row-span-2 lg:row-start-1">
-          <div className="space-y-4 lg:sticky lg:top-20">
+        {/* ---- your part, then the Chatter (right); on a phone the Chatter drops under the request */}
+        <aside className="contents lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:block lg:space-y-4">
+          <div className="space-y-4">
             <Card className="overflow-hidden rounded-lg shadow-md">
               <div className="space-y-3 p-4">
                 <div className="flex items-center justify-between gap-2">
@@ -905,6 +962,7 @@ export function ItemRequestDetailPage() {
               <InfoList req={req} />
             </Card>
           </div>
+          <Chatter type="item_request" id={Number(id)} className="order-last lg:sticky lg:top-20 lg:order-none" />
         </aside>
 
         {/* ---- the request (left) */}
@@ -954,6 +1012,7 @@ export function ItemRequestDetailPage() {
               {selected && choices[selected.id] ? (
                 <OpenLine key={selected.id} line={selected} requestId={req.id} choice={choices[selected.id]}
                   onChange={(c) => setChoices((x) => ({ ...x, [selected.id]: c }))}
+                  onPatch={(f) => setChoices((x) => (x[selected.id] ? { ...x, [selected.id]: f(x[selected.id]) } : x))}
                   saving={match.isPending && match.variables?.lineId === selected.id}
                   onPick={(itemId) => match.mutate({ lineId: selected.id, itemId }, { onError: (e) => setErr(apiErrorMessage(e)) })} />
               ) : (

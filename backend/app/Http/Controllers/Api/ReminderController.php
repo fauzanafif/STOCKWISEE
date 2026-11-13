@@ -166,6 +166,15 @@ class ReminderController extends Controller
                 'barang sudah dibeli, menunggu diterima (buat RI)', '/ri', 'teal', 7);
         }
 
+        // activities scheduled on a document and given to this user (Chatter › Activities); every module shows them
+        if (\Illuminate\Support\Facades\Schema::hasTable('doc_activities')) {
+            $add('doc_activity', self::MODULES, fn () => \App\Models\DocActivity::where('assignee_id', $user->id)->whereNull('done_at')->whereNull('cancelled_at')
+                ->orderBy('due_date')->get()
+                ->map(fn ($a) => ['label' => "{$a->res_number} · {$a->summary}", 'sub' => \App\Support\Documents\DocumentRegistry::label($a->res_type),
+                    'to' => \App\Support\Documents\DocumentActivities::path($a->res_type, (int) $a->res_id), 'since' => $a->created_at, 'due' => $a->due_date]),
+                'aktivitas dokumen ditugaskan ke Anda', '/', 'violet', 3);
+        }
+
         // the most pressing first: late, urgent, due soon — then as listed
         $rank = ['overdue' => 0, 'urgent' => 1, 'soon' => 2, 'normal' => 3];
         $out = collect($out)->values()->sortBy(fn ($r, $i) => [$rank[$r['priority']], $i])->values()->all();

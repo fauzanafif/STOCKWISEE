@@ -94,7 +94,14 @@ class TyreFromAccurate
                 $keep[] = $t->id;
             }
         }
-        TyreChange::where('source', self::SOURCE)->whereNotIn('id', $keep)->delete();
+        $gone = TyreChange::where('source', self::SOURCE)->whereNotIn('id', $keep);
+        $goneCount = (clone $gone)->count();
+        // an empty/partial NPBG-RI set (e.g. tables just emptied) must not wipe the imported rows
+        if (\App\Support\MassDeleteGuard::allows($goneCount, $goneCount + count($keep))) {
+            $gone->delete();
+        } else {
+            \Illuminate\Support\Facades\Log::warning('[tracking] TyreChange: '.$goneCount.' baris dari Accurate tidak dihapus — terlalu banyak, kemungkinan data NPBG/RI belum lengkap.');
+        }
 
         // ---- old tyres back
         $tyres = TyreChange::where('source', self::SOURCE)->with('outNpbg:id,no_npbg')->orderBy('change_date')->orderBy('id')->get();

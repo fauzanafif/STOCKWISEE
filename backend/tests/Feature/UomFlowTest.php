@@ -36,6 +36,7 @@ class UomFlowTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        config(['stockwise.manual_npbg' => true]); // the closed manual Delivery Order, for documents already pending
         $this->artisan('stockwise:seed-uom')->assertSuccessful();
         $mtr = Unit::where('code', 'MTR')->first();
         $this->roll = Unit::where('code', 'ROL')->first();

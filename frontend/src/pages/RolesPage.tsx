@@ -25,7 +25,7 @@ import { confirmDialog } from '@/components/ui/confirm'
 const GROUP_LABEL: Record<string, string> = {
   profile: 'Profile & notifications',
   item_request: 'Item Request & Approval',
-  npbg: 'NPBG',
+  npbg: 'Delivery Order',
   npbg_verification: 'Delivery Order item clarification',
   ppb: 'Purchase Request & Draft Purchase Request',
   purchasing: 'Purchase Order & RFQ',
@@ -35,6 +35,8 @@ const GROUP_LABEL: Record<string, string> = {
   item_inventory: 'Product Master, stock & Stock Card',
   important_request: 'Important Request (instructions & tasks)',
   tracking: 'Tracking & Analytics',
+  mrp: 'Manufacturing',
+  disassembly: 'Disassembly',
   dashboard_report: 'Dashboard, reports & export',
   master_data: 'Master data',
   accurate_sync: 'Sync Accurate',

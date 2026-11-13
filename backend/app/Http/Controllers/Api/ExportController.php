@@ -32,6 +32,8 @@ class ExportController extends Controller
 {
     private const DATASETS = [
         'items' => 'report.items',
+        // Smart Search popup of the Master Barang: brands for a specification (same permission as the Master Barang)
+        'item-brands' => 'item.view',
         'item-history' => 'item.view',
         'inventory' => 'report.inventory',
         'inventory_analysis' => 'inventory.view_analysis',
@@ -223,6 +225,27 @@ class ExportController extends Controller
             // Histori satu barang (MASUK dari RI/vendor, KELUAR dari NPBG/pelanggan
             // atau nopol, ADJUST dari stock opname) — logika gabung+urutnya sama
             // seperti ItemController::history(), lihat komentar di sana.
+            // Smart Search by brand (the popup of the Master Barang): one row per item, with its brand's totals beside it
+            'item-brands' => (function () use ($request) {
+                $q = trim((string) $request->query('q', ''));
+                abort_if(mb_strlen($q) < 2, 422, 'Isi kata pencarian (minimal 2 karakter).');
+                $sum = app(\App\Services\Search\ItemSmartSearch::class)->brandSummary($q, true, $request->boolean('exclude_used'), $request->boolean('exclude_damaged'));
+                $without = array_filter([$sum['exclude_used'] ? 'bekas' : null, $sum['exclude_damaged'] ? 'rusak' : null]);
+                $cond = ['BEKAS' => 'Bekas', 'RUSAK' => 'Rusak', 'VULKANISIR' => 'Vulkanisir'];
+                $rows = [];
+                foreach ($sum['groups'] as $g) {
+                    foreach ($g['items'] as $it) {
+                        $rows[] = [$g['brand'] ?? '(merek tidak jelas dari nama)', $g['items_count'], \App\Services\Search\ItemSmartSearch::totalsText($g['totals']),
+                            $it['code'], $it['description'], $cond[$it['condition']] ?? '', $it['qty'], $it['unit'], $it['relevance']];
+                    }
+                }
+
+                return [
+                    "Smart Search: {$q}".($without ? ' (tanpa '.implode(' & ', $without).')' : '').' — '.$sum['brands_count'].' merek, '.$sum['items_count'].' item, total '.\App\Services\Search\ItemSmartSearch::totalsText($sum['totals']),
+                    ['Merek', 'Jumlah Item Merek', 'Total Stok Merek', 'Kode Barang', 'Nama Barang', 'Kondisi', 'QTY', 'UOM', 'Kecocokan'],
+                    $rows,
+                ];
+            })(),
             'item-history' => (function () use ($request) {
                 $item = Item::findOrFail($request->integer('item_id'));
                 $code = $item->code;

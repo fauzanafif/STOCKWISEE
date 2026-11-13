@@ -13,6 +13,7 @@ import { ReminderButton, useReminderAlerts } from '@/components/reminders/Remind
 import { UpdateAlertHost } from '@/components/updateAlerts/UpdateAlertPopup'
 import { useLiveSync } from '@/lib/live'
 import { crumbsFor, visibleNav, type NavChild, type NavItem } from '@/lib/navigation'
+import { usePageViewLog } from '@/lib/pageViewLog'
 import { useReminders, type ReminderModule } from '@/features/reminders/api'
 import { cn } from '@/lib/utils'
 
@@ -86,6 +87,7 @@ const SIDEBAR = { open: '17rem', rail: '3.5rem', header: '3.25rem' }
 export function AppLayout() {
   const { hasPermission, hasRole } = useAuth()
   const location = useLocation()
+  usePageViewLog()
   const [mobileOpen, setMobileOpen] = useState(false)
   // desktop: the sidebar folds to a rail (remembered; a small laptop starts folded)
   const [collapsed, setCollapsed] = useState(() => {

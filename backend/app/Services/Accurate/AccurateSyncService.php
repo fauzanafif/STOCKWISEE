@@ -510,7 +510,9 @@ class AccurateSyncService
         $rows = DB::table('accurate_item')
             ->select(array_merge(['ITEMNO', 'ITEMDESCRIPTION', 'UNIT1', 'SUSPENDED', 'QUANTITY', 'ONORDER', 'PARENTITEM', 'WAREHOUSEID'],
                 // Accurate ITEMTYPE 2 = Servis → Master Produk JASA (older staging without the column: all BARANG)
-                DB::getSchemaBuilder()->hasColumn('accurate_item', 'ITEMTYPE') ? ['ITEMTYPE'] : []))
+                DB::getSchemaBuilder()->hasColumn('accurate_item', 'ITEMTYPE') ? ['ITEMTYPE'] : [],
+                // Accurate's "manage serial number" (older staging without the column: left as it is)
+                DB::getSchemaBuilder()->hasColumn('accurate_item', 'MANAGESN') ? ['MANAGESN'] : []))
             ->orderBy('ITEMNO')
             ->get();
 
@@ -617,6 +619,10 @@ class AccurateSyncService
         $newWarehouseId = $row->WAREHOUSEID !== null ? $warehouseIdsByAccurateId->get((string) $row->WAREHOUSEID) : null;
         // a service in Accurate is a JASA here; otherwise the kind is left as it is (a JASA set by hand stays)
         $newKind = (int) ($row->ITEMTYPE ?? 0) === 2 ? 'JASA' : null;
+        // only once the Master Barang has the column (migration 2026_11_10_140000), so a sync never fails on it
+        static $itemsHaveManageSn = null;
+        $itemsHaveManageSn ??= DB::getSchemaBuilder()->hasColumn('items', 'manage_sn');
+        $newManageSn = $itemsHaveManageSn && property_exists($row, 'MANAGESN') ? (bool) $row->MANAGESN : null;
 
         if ($existing) {
             // description is included here (not just qty/category) so that a
@@ -633,7 +639,8 @@ class AccurateSyncService
                 && ($newUnitId === null || (int) $existing->unit_id === (int) $newUnitId)
                 && (bool) $existing->is_active === $newIsActive
                 && ($newWarehouseId === null || (int) $existing->default_warehouse_id === (int) $newWarehouseId)
-                && ($newKind === null || $existing->product_kind === $newKind);
+                && ($newKind === null || $existing->product_kind === $newKind)
+                && ($newManageSn === null || (bool) $existing->manage_sn === $newManageSn);
 
             if ($unchanged && $existing->accurate_synced_at !== null) {
                 $this->seedOpeningBalanceIfMissing($existing->id, $newQty, $itemIdsWithInventory, $defaultWarehouseId);
@@ -668,6 +675,9 @@ class AccurateSyncService
             }
             if ($newKind !== null) {
                 $existing->forceFill(['product_kind' => $newKind]);
+            }
+            if ($newManageSn !== null) {
+                $existing->forceFill(['manage_sn' => $newManageSn]);
             }
             if ($newUnitId !== null) {
                 $existing->forceFill(['unit_id' => $newUnitId]);
@@ -708,6 +718,7 @@ class AccurateSyncService
             'item_type' => 'CONSUMABLE',
             'product_kind' => $newKind ?? 'BARANG',
             'needs_blueprint' => false,
+            ...($newManageSn !== null ? ['manage_sn' => $newManageSn] : []),
             'source' => 'accurate',
             'is_active' => $newIsActive,
             'accurate_synced_at' => now(),
@@ -825,6 +836,21 @@ class AccurateSyncService
         // and treat every row as an orphan. Re-wrapping as a plain Collection
         // restores the normal by-array-key semantics we actually want.
         $orphans = collect($existingByKey->all())->except($seenKeys);
+
+        // Same idea for a partial fetch: Accurate rarely deletes many documents at once, so a
+        // big share disappearing means the staging copy is incomplete — keep the data.
+        if (! \App\Support\MassDeleteGuard::allows($orphans->count(), $existingByKey->count())) {
+            $this->writeLog([
+                'sync_batch_id' => $batch->id,
+                'entity' => $entity,
+                'source_id' => '-',
+                'action' => 'ERROR',
+                'status' => 'FAILED',
+                'message' => "{$orphans->count()} dari {$existingByKey->count()} baris {$entity} tidak ditemukan di data Accurate — terlalu banyak untuk penghapusan wajar, kemungkinan staging tidak lengkap. Deteksi hapus dilewati demi keamanan data; periksa sync-service.",
+            ]);
+
+            return ['deleted' => 0, 'errors' => 1];
+        }
 
         foreach ($orphans as $key => $model) {
             $this->writeLog([

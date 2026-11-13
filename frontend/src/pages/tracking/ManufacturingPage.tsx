@@ -8,7 +8,7 @@ import { useAuth } from '@/auth/AuthContext'
 import { DocNumberInput } from '@/components/tracking/AccurateInputs'
 import { photoToDataUrl } from '@/components/tracking/EvidencePhoto'
 import { InlineSaveBadge } from '@/components/tracking/InlineSaveBadge'
-import { CellList, InlineSheet, RowActions, SheetTabs, Td, rowClass, today, useSheetRow } from '@/components/tracking/InlineSheet'
+import { CellList, InlineSheet, RowActions, SheetTabs, Td, rowClass, today, TodayNow, useSheetRow } from '@/components/tracking/InlineSheet'
 import { NoteCell, type RowNote } from '@/components/RowNotes'
 import { PageHeader } from '@/components/PageHeader'
 import { Badge } from '@/components/ui/badge'
@@ -62,7 +62,6 @@ function StatusBadge({ status }: { status: string }) {
   return <Badge variant={s.variant} title={s.hint}>{s.label}</Badge>
 }
 
-const fmtDate = (v: string | null | undefined) => (v ? new Date(v).toLocaleDateString('en-GB') : '—')
 
 /** NPBG to the workshop itself (MAINTENANCE (SDA) / GUDANG) = work done at SIG; otherwise the vendor. */
 const lokasiFrom = (party: string | null) => (!party || /MAINTENANCE|GUDANG/i.test(party) ? 'SIG' : party)
@@ -361,7 +360,7 @@ export function ManufacturingPage() {
         exportPermission="manufacturing.view"
         toolbarExtra={
           <div className="flex flex-wrap gap-x-4 text-xs text-muted-foreground">
-            <span>Today: <b className="text-foreground">{fmtDate(head.today)}</b></span>
+            <span>Today: <b className="text-foreground"><TodayNow date={head.today} /></b></span>
             {head.next && <span>No. {sheet.code} next: <b className=" text-foreground">{head.next}</b></span>}
           </div>
         }

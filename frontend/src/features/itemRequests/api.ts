@@ -49,6 +49,8 @@ export interface ItemRequest {
   form_detail_label: string | null
   requester_id: number | null
   requester_name: string | null
+  /** where the request came from: STOCKWISE app, Form link · …, Made by … for the requester, Manufacturing Order MO/… */
+  source_label?: string | null
   requester_contact: string | null
   /** "Jaringan Kantor" / "Outside Office" / "Tidak Diketahui" */
   requester_location: string | null
@@ -77,6 +79,10 @@ export interface StockRecommendation {
   stock_known: boolean
   /** match, 0–100 */
   score: number
+  /** how many of this item's own unit one unit asked makes (1 DUS = 5 RIM); null: no ratio yet */
+  unit_ratio?: number | null
+  /** why that unit cannot be used for this item yet */
+  unit_problem?: string | null
 }
 
 export interface ItemRequestLine {
@@ -98,6 +104,10 @@ export interface ItemRequestLine {
   unit_ratio?: number | null
   /** a word that is no unit of the master: counted as written, waiting for mapping */
   uom_unmapped?: boolean
+  /** still to verify: the unit its qty is in (as asked), and how many of the matched item's own unit one makes */
+  asked_unit?: string | null
+  asked_ratio?: number | null
+  asked_unit_problem?: string | null
   note: string | null
   /** given less than asked at the verification: why (admin gudang) */
   short_reason?: string | null
@@ -114,6 +124,8 @@ export interface ItemRequestLine {
   decided_at: string | null
   /** the official need (admin's proposal, maybe lowered by Manager / Direktur); null = not decided */
   approved_qty: number | string | null
+  /** an item with serial numbers: the serials picked while verifying (held for this request) */
+  serials?: string[]
   /** handed over so far (all serah terima together) */
   fulfilled_qty: number
   /** still owed: approved − handed over (0 once closed) */
@@ -194,7 +206,11 @@ export interface Fulfillment {
   note: string | null
   photo: boolean
   signature: boolean
-  lines: { id: number; line_id: number; deskripsi: string | null; satuan: string | null; qty: number; handed_qty: number | null; npbg_id: number | null }[]
+  lines: {
+    id: number; line_id: number; deskripsi: string | null; satuan: string | null; qty: number; handed_qty: number | null; npbg_id: number | null
+    /** the item, whether it goes out by serial number, and the serials on its NPBG so far */
+    kode_barang?: string | null; manage_sn?: boolean; serials?: string[]
+  }[]
 }
 
 export interface ItemRequestDetail extends ItemRequest {
@@ -243,6 +259,19 @@ export interface ItemRequestCreatePayload {
   needed_date?: string | null
   note?: string | null
   lines: NewRequestLine[]
+  /** admin gudang makes the request for someone else (a Data Pekerja person, or a name) */
+  on_behalf?: { employee_id?: number | null; name?: string | null } | null
+}
+
+export interface RequesterOption { id: number; name: string; divisi: string | null; position: string | null; contact: string | null; has_account: boolean }
+
+/** Data Pekerja to make a request for (admin gudang). */
+export function useRequesters(q: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ['item-requests', 'requesters', q],
+    enabled: enabled && q.trim().length >= 2,
+    queryFn: async () => (await api.get<{ data: RequesterOption[] }>('/api/item-requests/requesters', { params: { q } })).data.data,
+  })
 }
 
 /** The signed-in requester's own data (Data Pekerja), to fill the Buat Request form. */
@@ -259,7 +288,7 @@ export function useMyRequestProfile(enabled: boolean) {
 /** Admin gudang verifies: per line the master item (null = new item) and the quantity proposed. */
 export interface ProcessPayload {
   /** per requested line: one Master Produk item, or several (items: the line is split, one per item) */
-  lines: Record<number, { item_id?: number | null; qty?: number; items?: { item_id: number; qty: number }[]; reason?: string | null; unit?: string | null }>
+  lines: Record<number, { item_id?: number | null; qty?: number; items?: { item_id: number; qty: number; serials?: string[] }[]; reason?: string | null; unit?: string | null }>
   /** admin gudang's note, seen by the approvers and the requester (optional) */
   note?: string | null
   npbg?: { pelanggan?: string | null; tipe_npbg?: 'Penjualan' | 'Non Penjualan' }
@@ -421,7 +450,7 @@ export function useSetUrgency(id: number) {
 // ---------------------------------------------------------------- approval (Manager → Direktur → Gudang → serah terima)
 
 export interface ApprovalRow extends ItemRequest {
-  lines: Pick<ItemRequestLine, 'id' | 'item_id' | 'kode_barang' | 'deskripsi_barang' | 'qty' | 'satuan' | 'note' | 'decision' | 'npbg_id' | 'no_npbg' | 'approved_qty' | 'fulfilled_qty' | 'remaining' | 'available' | 'on_hand' | 'images' | 'deskripsi_peminta' | 'item_description' | 'short_reason'>[]
+  lines: Pick<ItemRequestLine, 'id' | 'item_id' | 'kode_barang' | 'deskripsi_barang' | 'qty' | 'satuan' | 'note' | 'decision' | 'npbg_id' | 'no_npbg' | 'approved_qty' | 'fulfilled_qty' | 'remaining' | 'available' | 'on_hand' | 'images' | 'deskripsi_peminta' | 'item_description' | 'short_reason' | 'requested_qty' | 'requested_unit'>[]
   can_approve: boolean
   can_handover: boolean
   can_fulfill?: boolean
@@ -488,6 +517,8 @@ export interface HandoverPayload {
   drop?: number[]
   /** picked up by a representative: the scanned QR text or the typed 6-digit code */
   proxy_code?: string
+  /** items with serial numbers: fulfillment line id → the serials of the units handed over */
+  serials?: Record<number, string[]>
   /** fulfillment line id → why less than the approved NPBG is handed over */
   reasons?: Record<number, string>
 }

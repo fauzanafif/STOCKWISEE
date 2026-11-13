@@ -8,6 +8,8 @@ class DatabaseSeeder extends Seeder
 {
     public function run(): void
     {
+        ProductionGuard::refuse(static::class);
+
         $this->call([
             SiteSeeder::class,
             RbacSeeder::class,

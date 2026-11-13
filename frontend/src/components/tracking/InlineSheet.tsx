@@ -24,6 +24,14 @@ export const cellInput = 'h-9 w-full rounded-md border border-transparent bg-tra
 
 export const today = () => new Date().toISOString().slice(0, 10)
 
+/** Today's date with the live clock, e.g. 09/11/2026 14:05. */
+export function TodayNow({ date }: { date?: string }) {
+  const [now, setNow] = useState(() => new Date())
+  useEffect(() => { const t = setInterval(() => setNow(new Date()), 30000); return () => clearInterval(t) }, [])
+  const d = date ? new Date(date + 'T00:00:00') : now
+  return <>{d.toLocaleDateString('en-GB')} {now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</>
+}
+
 /** Enter = save the row and go to the next cell of the table (like Excel). */
 function enterToNext(e: React.KeyboardEvent<HTMLElement>, flush: () => void) {
   if (e.key !== 'Enter' || e.shiftKey) return

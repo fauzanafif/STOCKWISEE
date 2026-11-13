@@ -230,8 +230,11 @@ Route::middleware('auth:sanctum')->group(function (): void {
         Route::get('/items/accurate-categories', [ItemController::class, 'accurateCategoryOptions'])->name('api.items.accurate-categories');
         Route::get('/items/options', [ItemController::class, 'options'])->name('api.items.options');
         Route::get('/items/ids', [ItemController::class, 'ids'])->name('api.items.ids');
+        // Smart Search popup: for a specification, which brands are in the warehouse, how many items each, total stock
+        Route::get('/items/smart-search', [ItemController::class, 'smartSearch'])->middleware('throttle:120,1')->name('api.items.smart-search');
         Route::get('/items/{item}', [ItemController::class, 'show'])->name('api.items.show');
         Route::get('/items/{item}/history', [ItemController::class, 'history'])->name('api.items.history');
+        Route::get('/items/{item}/serials', [ItemController::class, 'serials'])->name('api.items.serials');
     });
     Route::post('/items', [ItemController::class, 'store'])
         ->middleware('permission:item.create')->name('api.items.store');
@@ -276,6 +279,8 @@ Route::middleware('auth:sanctum')->group(function (): void {
     | Request Barang — karyawan request, admin gudang turns lines into NPBG / PPB.
     | Own requests with item_request.create; all of them with item_request.view.
     */
+    Route::get('/item-requests/requesters', [ItemRequestController::class, 'requesters'])
+        ->middleware('permission:item_request.process')->name('api.item-requests.requesters');
     Route::get('/item-requests', [ItemRequestController::class, 'index'])
         ->middleware('permission:item_request.create|item_request.view')->name('api.item-requests.index');
     Route::post('/item-requests', [ItemRequestController::class, 'store'])
@@ -300,6 +305,14 @@ Route::middleware('auth:sanctum')->group(function (): void {
     Route::get('/module-stats/{module}', [\App\Http\Controllers\Api\ModuleStatsController::class, 'show'])->name('api.module-stats');
     Route::get('/preferences/{key}', [\App\Http\Controllers\Api\PreferenceController::class, 'show'])->name('api.preferences.show');
     Route::put('/preferences/{key}', [\App\Http\Controllers\Api\PreferenceController::class, 'update'])->middleware('throttle:60,1')->name('api.preferences.update');
+    // User Log: pages opened are written by the app; reading the log needs audit_log.view
+    Route::post('/activity/page-view', [\App\Http\Controllers\Api\ActivityLogController::class, 'pageView'])->middleware('throttle:240,1')->name('api.activity.page-view');
+    Route::get('/activity-logs', [\App\Http\Controllers\Api\ActivityLogController::class, 'index'])->middleware('permission:audit_log.view')->name('api.activity-logs.index');
+    // main dashboard sticky notes: the user's own only (scoped in the controller)
+    Route::get('/dashboard-notes', [\App\Http\Controllers\Api\DashboardNoteController::class, 'index'])->name('api.dashboard-notes.index');
+    Route::post('/dashboard-notes', [\App\Http\Controllers\Api\DashboardNoteController::class, 'store'])->middleware('throttle:60,1')->name('api.dashboard-notes.store');
+    Route::put('/dashboard-notes/{note}', [\App\Http\Controllers\Api\DashboardNoteController::class, 'update'])->whereNumber('note')->middleware('throttle:120,1')->name('api.dashboard-notes.update');
+    Route::delete('/dashboard-notes/{note}', [\App\Http\Controllers\Api\DashboardNoteController::class, 'destroy'])->whereNumber('note')->middleware('throttle:60,1')->name('api.dashboard-notes.destroy');
     // the work waiting for this user across STOCKWISE (Important Request home: "Perlu dikerjakan")
     Route::get('/reminders', [\App\Http\Controllers\Api\ReminderController::class, 'index'])->name('api.reminders');
     // Update Alert: the popup for every user (due / seen); managing them is Super Admin only (checked in the controller)
@@ -373,6 +386,8 @@ Route::middleware('auth:sanctum')->group(function (): void {
         ->middleware('permission:npbg.view')->name('api.npbg.index');
     Route::post('/npbg', [NpbgController::class, 'store'])
         ->middleware('permission:npbg.create')->name('api.npbg.store');
+    Route::get('/npbg/serials', [NpbgController::class, 'serials'])
+        ->middleware('permission:npbg.create|npbg.view|item_request.handover')->name('api.npbg.serials');
     Route::get('/npbg/klasifikasi', [NpbgController::class, 'klasifikasiOptions'])
         ->middleware('permission:npbg.view')->name('api.npbg.klasifikasi');
     // old name, for pages still open on the previous version
@@ -602,6 +617,8 @@ Route::middleware('auth:sanctum')->group(function (): void {
         Route::post('/po-draft-lines/{item}/return', [\App\Http\Controllers\Api\PoDraftController::class, 'returnQuotation'])->whereNumber('item')->name('api.po-draft-lines.return');
     });
     Route::middleware('permission:po.create')->group(function () {
+        Route::put('/po-draft-lines/{item}', [\App\Http\Controllers\Api\PoDraftController::class, 'updateItem'])->whereNumber('item')->name('api.po-draft-lines.update');
+        Route::delete('/po-draft-lines/{item}', [\App\Http\Controllers\Api\PoDraftController::class, 'removeItem'])->whereNumber('item')->name('api.po-draft-lines.destroy');
         Route::post('/po-draft-lines/vendors', [\App\Http\Controllers\Api\PoDraftController::class, 'addVendors'])->name('api.po-draft-lines.vendors');
         Route::delete('/po-draft-lines/vendors/{vendor}', [\App\Http\Controllers\Api\PoDraftController::class, 'dropVendor'])->whereNumber('vendor')->name('api.po-draft-lines.vendors.destroy');
         Route::post('/po-draft-lines/to-quotation', [\App\Http\Controllers\Api\PoDraftController::class, 'toQuotation'])->name('api.po-draft-lines.to-quotation');
@@ -767,6 +784,104 @@ Route::middleware('auth:sanctum')->group(function (): void {
     Route::match(['put', 'patch'], '/used-returns/{usedReturn}', [Tracking\UsedReturnController::class, 'update'])->middleware('permission:used_return.update')->name('api.used-returns.update');
     Route::delete('/used-returns/{usedReturn}', [Tracking\UsedReturnController::class, 'destroy'])->middleware('permission:used_return.update')->name('api.used-returns.destroy');
     Route::post('/used-returns/{usedReturn}/close', [Tracking\UsedReturnController::class, 'close'])->middleware('permission:used_return.close')->name('api.used-returns.close');
+
+    // Manufacturing (BoM + Manufacturing Order) — App\Services\Mrp. Separate from the Tracking sheet above.
+    Route::prefix('mrp')->group(function (): void {
+        $bom = \App\Http\Controllers\Api\Mrp\BomController::class;
+        $mo = \App\Http\Controllers\Api\Mrp\ProductionController::class;
+        $rep = \App\Http\Controllers\Api\Mrp\MrpReportController::class;
+        Route::middleware('permission:mrp.view')->group(function () use ($bom, $mo, $rep): void {
+            Route::get('/dashboard', [$rep, 'dashboard'])->name('api.mrp.dashboard');
+            Route::get('/reports', [$rep, 'report'])->name('api.mrp.reports');
+            Route::get('/items', [$rep, 'items'])->name('api.mrp.items');
+            Route::get('/items/{item}/units', [$rep, 'units'])->whereNumber('item')->name('api.mrp.items.units');
+            Route::get('/users', [$rep, 'users'])->name('api.mrp.users');
+            Route::get('/boms', [$bom, 'index'])->name('api.mrp.boms.index');
+            Route::get('/boms/{bom}', [$bom, 'show'])->whereNumber('bom')->name('api.mrp.boms.show');
+            Route::get('/productions', [$mo, 'index'])->name('api.mrp.productions.index');
+            Route::get('/productions/{production}', [$mo, 'show'])->whereNumber('production')->name('api.mrp.productions.show');
+        });
+        Route::middleware('permission:mrp.bom.manage')->group(function () use ($bom): void {
+            Route::post('/boms', [$bom, 'store'])->name('api.mrp.boms.store');
+            Route::put('/boms/{bom}', [$bom, 'update'])->whereNumber('bom')->name('api.mrp.boms.update');
+            Route::delete('/boms/{bom}', [$bom, 'destroy'])->whereNumber('bom')->name('api.mrp.boms.destroy');
+            Route::post('/boms/{bom}/activate', [$bom, 'activate'])->whereNumber('bom')->name('api.mrp.boms.activate');
+            Route::post('/boms/{bom}/archive', [$bom, 'archive'])->whereNumber('bom')->name('api.mrp.boms.archive');
+            Route::post('/boms/{bom}/revise', [$bom, 'revise'])->whereNumber('bom')->name('api.mrp.boms.revise');
+        });
+        $p = '/productions/{production}';
+        Route::post('/productions', [$mo, 'store'])->middleware(['permission:mrp.create', 'throttle:60,1'])->name('api.mrp.productions.store');
+        Route::put($p, [$mo, 'update'])->whereNumber('production')->middleware('permission:mrp.create')->name('api.mrp.productions.update');
+        Route::post("{$p}/confirm", [$mo, 'confirm'])->whereNumber('production')->middleware('permission:mrp.confirm')->name('api.mrp.productions.confirm');
+        Route::post("{$p}/start", [$mo, 'start'])->whereNumber('production')->middleware('permission:mrp.record')->name('api.mrp.productions.start');
+        Route::post("{$p}/entries", [$mo, 'storeEntry'])->whereNumber('production')->middleware('permission:mrp.record')->name('api.mrp.productions.entries.store');
+        Route::delete("{$p}/entries/{entry}", [$mo, 'voidEntry'])->whereNumber(['production', 'entry'])->middleware('permission:mrp.record')->name('api.mrp.productions.entries.void');
+        Route::post("{$p}/finish", [$mo, 'finish'])->whereNumber('production')->middleware('permission:mrp.record')->name('api.mrp.productions.finish');
+        Route::post("{$p}/reopen", [$mo, 'reopen'])->whereNumber('production')->middleware('permission:mrp.record')->name('api.mrp.productions.reopen');
+        Route::post("{$p}/validate", [$mo, 'validateOrder'])->whereNumber('production')->middleware('permission:mrp.validate')->name('api.mrp.productions.validate');
+        Route::post("{$p}/accurate", [$mo, 'markAccurate'])->whereNumber('production')->middleware('permission:mrp.validate')->name('api.mrp.productions.accurate');
+        Route::post("{$p}/cancel", [$mo, 'cancel'])->whereNumber('production')->middleware('permission:mrp.cancel')->name('api.mrp.productions.cancel');
+        Route::post("{$p}/reverse", [$mo, 'reverse'])->whereNumber('production')->middleware('permission:mrp.cancel')->name('api.mrp.productions.reverse');
+        Route::post("{$p}/request-components", [$mo, 'requestComponents'])->whereNumber('production')->middleware(['permission:mrp.confirm', 'throttle:30,1'])->name('api.mrp.productions.request-components');
+        Route::post("{$p}/receipts", [$mo, 'linkReceipt'])->whereNumber('production')->middleware('permission:mrp.record')->name('api.mrp.productions.receipts.link');
+        Route::delete("{$p}/receipts", [$mo, 'unlinkReceipt'])->whereNumber('production')->middleware('permission:mrp.record')->name('api.mrp.productions.receipts.unlink');
+        Route::post("{$p}/shortage-request", [$mo, 'requestShortage'])->whereNumber('production')->middleware(['permission:mrp.view', 'permission:ppb.create'])->name('api.mrp.productions.shortage');
+    });
+
+    // Odoo-style document collaboration: Smart Buttons, Chatter, Activities, Audit — App\Support\Documents.
+    // The document's own view rule is checked in the controller (DocumentRegistry::canView), so no extra permission key.
+    Route::prefix('documents')->group(function (): void {
+        $c = \App\Http\Controllers\Api\DocumentController::class;
+        $types = 'item_request|delivery_order|ppb_draft|purchase_request|purchase_order|receipt|purchase_return';
+        Route::get('/activities/mine', [$c, 'myActivities'])->name('api.documents.activities.mine');
+        Route::prefix('{type}/{id}')->where(['type' => $types, 'id' => '[0-9]+'])->group(function () use ($c): void {
+            Route::get('/related', [$c, 'related'])->name('api.documents.related');
+            Route::get('/feed', [$c, 'feed'])->name('api.documents.feed');
+            Route::post('/messages', [$c, 'postMessage'])->middleware('throttle:60,1')->name('api.documents.messages.store');
+            Route::put('/messages/{message}', [$c, 'updateMessage'])->whereNumber('message')->middleware('throttle:60,1')->name('api.documents.messages.update');
+            Route::delete('/messages/{message}', [$c, 'deleteMessage'])->whereNumber('message')->middleware('throttle:60,1')->name('api.documents.messages.destroy');
+            Route::get('/attachments/{attachment}', [$c, 'attachment'])->whereNumber('attachment')->name('api.documents.attachments.show');
+            Route::get('/activities', [$c, 'activities'])->name('api.documents.activities');
+            Route::post('/activities', [$c, 'scheduleActivity'])->middleware('throttle:60,1')->name('api.documents.activities.store');
+            Route::post('/activities/{activity}/done', [$c, 'completeActivity'])->whereNumber('activity')->name('api.documents.activities.done');
+            Route::post('/activities/{activity}/cancel', [$c, 'cancelActivity'])->whereNumber('activity')->name('api.documents.activities.cancel');
+            Route::get('/assignees', [$c, 'assignees'])->name('api.documents.assignees');
+            Route::get('/audit', [$c, 'audit'])->name('api.documents.audit');
+        });
+    });
+
+    // Disassembly (unbuild): one product taken apart into its BoM components — App\Services\Disassembly.
+    Route::prefix('disassembly')->group(function (): void {
+        $c = \App\Http\Controllers\Api\Disassembly\DisassemblyController::class;
+        Route::middleware('permission:disassembly.view')->group(function () use ($c): void {
+            Route::get('/dashboard', [$c, 'dashboard'])->name('api.disassembly.dashboard');
+            Route::get('/history', [$c, 'history'])->name('api.disassembly.history');
+            Route::get('/items', [$c, 'items'])->name('api.disassembly.items');
+            Route::get('/items/{item}/bom', [$c, 'bom'])->whereNumber('item')->name('api.disassembly.items.bom');
+            Route::get('/items/{item}/stock', [$c, 'stock'])->whereNumber('item')->name('api.disassembly.items.stock');
+            Route::get('/items/{item}/units', [$c, 'units'])->whereNumber('item')->name('api.disassembly.items.units');
+            Route::get('/warehouses', [$c, 'warehouses'])->name('api.disassembly.warehouses');
+            Route::get('/users', [$c, 'users'])->name('api.disassembly.users');
+            Route::get('/orders', [$c, 'index'])->name('api.disassembly.orders.index');
+            Route::get('/orders/{order}', [$c, 'show'])->whereNumber('order')->name('api.disassembly.orders.show');
+        });
+        $o = '/orders/{order}';
+        Route::post('/orders', [$c, 'store'])->middleware(['permission:disassembly.create', 'throttle:60,1'])->name('api.disassembly.orders.store');
+        Route::put($o, [$c, 'update'])->whereNumber('order')->middleware('permission:disassembly.create')->name('api.disassembly.orders.update');
+        Route::post("{$o}/confirm", [$c, 'confirm'])->whereNumber('order')->middleware('permission:disassembly.confirm')->name('api.disassembly.orders.confirm');
+        Route::post("{$o}/start", [$c, 'start'])->whereNumber('order')->middleware('permission:disassembly.record')->name('api.disassembly.orders.start');
+        Route::post("{$o}/entries", [$c, 'storeEntry'])->whereNumber('order')->middleware('permission:disassembly.record')->name('api.disassembly.orders.entries.store');
+        Route::delete("{$o}/entries/{entry}", [$c, 'voidEntry'])->whereNumber(['order', 'entry'])->middleware('permission:disassembly.record')->name('api.disassembly.orders.entries.void');
+        Route::post("{$o}/finish", [$c, 'finish'])->whereNumber('order')->middleware('permission:disassembly.record')->name('api.disassembly.orders.finish');
+        Route::post("{$o}/reopen", [$c, 'reopen'])->whereNumber('order')->middleware('permission:disassembly.record')->name('api.disassembly.orders.reopen');
+        Route::post("{$o}/validate", [$c, 'validateOrder'])->whereNumber('order')->middleware('permission:disassembly.validate')->name('api.disassembly.orders.validate');
+        Route::post("{$o}/accurate", [$c, 'markAccurate'])->whereNumber('order')->middleware('permission:disassembly.validate')->name('api.disassembly.orders.accurate');
+        Route::post("{$o}/request-product", [$c, 'requestProduct'])->whereNumber('order')->middleware(['permission:disassembly.confirm', 'throttle:30,1'])->name('api.disassembly.orders.request-product');
+        Route::post("{$o}/receipts", [$c, 'linkReceipt'])->whereNumber('order')->middleware('permission:disassembly.record')->name('api.disassembly.orders.receipts.link');
+        Route::delete("{$o}/receipts", [$c, 'unlinkReceipt'])->whereNumber('order')->middleware('permission:disassembly.record')->name('api.disassembly.orders.receipts.unlink');
+        Route::post("{$o}/cancel", [$c, 'cancel'])->whereNumber('order')->middleware('permission:disassembly.cancel')->name('api.disassembly.orders.cancel');
+        Route::post("{$o}/reverse", [$c, 'reverse'])->whereNumber('order')->middleware('permission:disassembly.cancel')->name('api.disassembly.orders.reverse');
+    });
 
     // PHASE 9 — Dashboard (ringkasan per-peran).
     Route::get('/dashboard', DashboardController::class)->name('api.dashboard');

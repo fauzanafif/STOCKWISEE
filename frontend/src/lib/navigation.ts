@@ -1,4 +1,4 @@
-import { BookOpen, ClipboardCheck, ClipboardList, ClipboardPen, CloudCog, FileOutput, FolderTree, Handshake, LayoutDashboard, type LucideIcon, Package, PackageCheck, PackageOpen, Settings, ShoppingCart, Store, Undo2, Users, Wrench, BookOpenCheck, ShieldCheck, ClipboardType, Ruler } from 'lucide-react'
+import { Factory, Layers, PackageMinus, BookOpen, ClipboardCheck, ClipboardList, ClipboardPen, FileOutput, History, FolderTree, Handshake, LayoutDashboard, type LucideIcon, Package, PackageCheck, PackageOpen, Settings, ShoppingCart, Store, Undo2, Users, Wrench, BookOpenCheck, ShieldCheck, ClipboardType, Ruler } from 'lucide-react'
 
 /** One menu entry: the sidebar, the breadcrumb and the menu search all read this. */
 export interface NavItem {
@@ -39,7 +39,13 @@ const APPROVAL_PERMISSIONS = ['item_request.approve_manager', 'item_request.appr
 export const NAV: NavGroup[] = [
   {
     label: null, tone: 'bg-blue-100 text-blue-700',
-    items: [{ to: '/', label: 'Dashboard', icon: LayoutDashboard, keywords: 'beranda ringkasan' }],
+    items: [{
+      to: '/', label: 'Dashboard', icon: LayoutDashboard, keywords: 'beranda ringkasan',
+      children: [
+        { to: '/', label: 'To-Do', keywords: 'beranda tugas catatan pengingat todo' },
+        { to: '/analytics', label: 'Analytics', keywords: 'analitik grafik visualisasi stok pengadaan tracking kartu stock' },
+      ],
+    }],
   },
   {
     label: 'Tasks', tone: 'bg-violet-100 text-violet-700',
@@ -81,8 +87,7 @@ export const NAV: NavGroup[] = [
         children: [
           { to: '/purchase-orders/dashboard', label: 'Dashboard', keywords: 'dashboard pengingat perlu dikerjakan siap po', permissions: ['po.view'] },
           { to: '/purchase-orders/siap-po', label: 'Approved Purchase Request Items', keywords: 'ppb siap po disetujui', permissions: ['po.create'] },
-          { to: '/purchase-orders/penawaran', label: 'RFQ', keywords: 'price quotation penawaran harga vendor perbandingan ketersediaan eta pilihan direktur', permissions: ['po.create', 'po.approve_director'] },
-          { to: '/purchase-orders/draft', label: 'Draft PO', keywords: 'draft po pilihan direktur vendor matriks', permissions: ['po.create'] },
+          { to: '/purchase-orders/draft', label: 'RFQ', keywords: 'rfq price quotation penawaran harga vendor perbandingan ketersediaan eta pilihan direktur draft po matriks', permissions: ['po.create', 'po.approve_director'] },
           { to: '/purchase-orders', label: 'List PO', keywords: 'po purchasing pembelian', permissions: ['po.view'] },
         ],
       },
@@ -94,6 +99,28 @@ export const NAV: NavGroup[] = [
         ],
       },
       { to: '/purchase-returns', label: 'Return', icon: Undo2, keywords: 'purchase return retur vendor', permissions: ['purchase_return.view'] },
+    ],
+  },
+  {
+    label: 'Manufacturing', tone: 'bg-indigo-100 text-indigo-700',
+    items: [
+      {
+        to: '/mrp/orders', label: 'Manufacturing Orders', icon: Factory, keywords: 'mo produksi production assembly perakitan manufaktur', permissions: ['mrp.view'],
+        children: [
+          { to: '/mrp/dashboard', label: 'Dashboard', keywords: 'ringkasan produksi', permissions: ['mrp.view'] },
+          { to: '/mrp/orders', label: 'List MO', keywords: 'manufacturing order produksi', permissions: ['mrp.view'] },
+          { to: '/mrp/history', label: 'Production History', keywords: 'riwayat laporan produksi pemakaian scrap traceability', permissions: ['mrp.view'] },
+        ],
+      },
+      { to: '/mrp/boms', label: 'Bills of Materials', icon: Layers, keywords: 'bom komponen resep bahan rakitan', permissions: ['mrp.view'] },
+      {
+        to: '/disassembly/orders', label: 'Disassembly', icon: PackageMinus, keywords: 'disassembly unbuild bongkar pembongkaran urai', permissions: ['disassembly.view'],
+        children: [
+          { to: '/disassembly/dashboard', label: 'Dashboard', keywords: 'ringkasan pembongkaran', permissions: ['disassembly.view'] },
+          { to: '/disassembly/orders', label: 'Disassembly Orders', keywords: 'bongkar unbuild', permissions: ['disassembly.view'] },
+          { to: '/disassembly/history', label: 'Disassembly History', keywords: 'riwayat pembongkaran scrap hilang', permissions: ['disassembly.view'] },
+        ],
+      },
     ],
   },
   {
@@ -133,9 +160,10 @@ export const NAV: NavGroup[] = [
     label: 'SISTEM', tone: 'bg-teal-100 text-teal-700',
     items: [
       {
-        to: '/sync/history', label: 'Sinkronisasi Accurate', icon: CloudCog, keywords: 'sync accurate integrasi', selfPermissions: ['sync.accurate.view'],
-        permissions: ['sync.accurate.view', 'accurate.session.view'],
+        to: '/activity/users', label: 'Log Aktivitas', icon: History, keywords: 'log aktivitas activity audit riwayat sync accurate integrasi', selfPermissions: ['audit_log.view'],
+        permissions: ['audit_log.view', 'sync.accurate.view', 'accurate.session.view'],
         children: [
+            { to: '/activity/users', label: 'User Log', keywords: 'log user aktivitas login logout halaman transaksi edit hapus audit jejak', permissions: ['audit_log.view'] },
             { to: '/sync/history', label: 'Accurate Sync', keywords: 'sync audit log', permissions: ['sync.accurate.view'] },
             { to: '/accurate/online', label: 'Accurate Online', keywords: 'sesi koneksi', permissions: ['accurate.session.view'] },
         ],
@@ -159,7 +187,7 @@ export const NAV: NavGroup[] = [
 const EXTRA: { prefix: string; parent: string; label: string }[] = [
   { prefix: '/purchase-returns/new', parent: '/purchase-returns', label: 'Create return' },
   { prefix: '/ppb/drafts/', parent: '/ppb', label: 'Draft Purchase Request' },
-  { prefix: '/purchase-orders/draft', parent: '/purchase-orders', label: 'Draft PO' },
+  { prefix: '/purchase-orders/draft', parent: '/purchase-orders', label: 'RFQ' },
   { prefix: '/stock-card/project', parent: '/stock-card', label: 'Project' },
   { prefix: '/safety-stocks', parent: '/inventory/analysis', label: 'Detail' },
   { prefix: '/sync/', parent: '/sync/history', label: 'Detail' },

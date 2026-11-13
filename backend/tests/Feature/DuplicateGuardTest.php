@@ -11,6 +11,12 @@ use Tests\TestCase;
 /** Admin A and admin B entering the same goods: a manual NPBG / PPB / PO / RI is not made twice. */
 class DuplicateGuardTest extends TestCase
 {
+    protected function setUp(): void
+    {
+        parent::setUp();
+        config(['stockwise.manual_npbg' => true]); // the closed manual Delivery Order, for documents already pending
+    }
+
     use RefreshDatabase;
 
     protected $seed = true;

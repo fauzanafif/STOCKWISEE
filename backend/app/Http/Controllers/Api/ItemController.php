@@ -20,6 +20,18 @@ class ItemController extends Controller
      * `undefined + 1 = NaN`, so it looked like paging (and therefore seeing
      * more than the first 25 of 9,177 items) simply didn't work.
      */
+    /**
+     * GET /api/items/smart-search?q=&exclude_used= — the Smart Search grouped by brand (ItemSmartSearch::brandSummary):
+     * which brands the warehouse has for a specification, how many items of each, and their total stock per unit.
+     */
+    public function smartSearch(Request $request, \App\Services\Search\ItemSmartSearch $search): JsonResponse
+    {
+        $data = $request->validate(['q' => ['required', 'string', 'min:2', 'max:120'], 'active_only' => ['sometimes', 'boolean'],
+            'exclude_used' => ['sometimes', 'boolean'], 'exclude_damaged' => ['sometimes', 'boolean']]);
+
+        return response()->json(['data' => $search->brandSummary($data['q'], $request->boolean('active_only', true), $request->boolean('exclude_used'), $request->boolean('exclude_damaged'))]);
+    }
+
     public function index(Request $request): JsonResponse
     {
         $perPage = min((int) $request->integer('per_page', 25), 100);
@@ -39,18 +51,38 @@ class ItemController extends Controller
             'priority_score' => 'snap.priority_score', 'selisih' => 'snap.selisih',
             'deficit' => 'snap.deficit', 'available' => 'snap.available',
         ];
+        // Smart Search: best match first, unless a column sort was asked
+        $matches = $request->attributes->get('smart_search');
+        if (is_array($matches) && $matches !== [] && ! $request->filled('sort')) {
+            $ranked = array_slice(array_keys($matches), 0, 1000);
+            $query->orderByRaw('CASE items.id '.implode(' ', array_map(fn ($id, $i) => 'WHEN '.(int) $id.' THEN '.$i, $ranked, array_keys($ranked))).' ELSE '.count($ranked).' END');
+        }
         $query->orderBy($sortable[$column] ?? 'items.code', $direction);
 
         $page = $query->paginate($perPage);
         ItemResource::prime($page->getCollection());
+        $smart = app(\App\Services\Search\ItemSmartSearch::class);
+
+        $rows = ItemResource::collection($page->getCollection())->resolve();
+        if (is_array($matches)) {
+            // additive: why the row matched and its brand (when clear) — the code and name stay the originals
+            $rows = array_map(fn ($r) => $r + ['search_relevance' => \App\Services\Search\ItemSmartSearch::LABELS[$matches[$r['id']]['label'] ?? 'WORDS'] ?? null,
+                'search_brand' => $matches[$r['id']]['brand'] ?? null], $rows);
+        }
 
         return response()->json([
-            'data' => ItemResource::collection($page->getCollection())->resolve(),
+            'data' => $rows,
             'meta' => [
                 'page' => $page->currentPage(),
                 'per_page' => $page->perPage(),
                 'total' => $page->total(),
                 'last_page' => $page->lastPage(),
+                // Smart Search: why each row matched, its brand (when clear), and the brands among all the matches
+                'search' => is_array($matches) ? [
+                    'relevance' => $page->getCollection()->mapWithKeys(fn ($it) => [$it->id => \App\Services\Search\ItemSmartSearch::LABELS[$matches[$it->id]['label'] ?? 'WORDS'] ?? null])->all(),
+                    'brand' => $page->getCollection()->mapWithKeys(fn ($it) => [$it->id => $matches[$it->id]['brand'] ?? null])->filter()->all(),
+                    'brands' => array_slice($smart->brands($matches), 0, 30),
+                ] : null,
             ],
         ]);
     }
@@ -140,6 +172,18 @@ class ItemController extends Controller
      * stock_movements, karena RI/NPBG adalah mirror Accurate read-only yang tidak
      * pernah menulis ke stock_movements (lihat StockLedgerService).
      */
+    /** GET /api/items/{item}/serials — every serial number of an item with serial numbers: in stock, held by a request, or out. */
+    public function serials(Item $item, \App\Services\SerialStock $stock): JsonResponse
+    {
+        $list = $item->manage_sn ? $stock->ledger($item->code) : [];
+        $count = array_count_values(array_column($list, 'status'));
+
+        return response()->json(['data' => $list, 'meta' => [
+            'manage_sn' => (bool) $item->manage_sn, 'code' => $item->code, 'description' => $item->description,
+            'in_stock' => $count['IN_STOCK'] ?? 0, 'held' => $count['HELD'] ?? 0, 'out' => $count['OUT'] ?? 0,
+        ]]);
+    }
+
     public function history(Request $request, Item $item): JsonResponse
     {
         $code = $item->code;
@@ -204,9 +248,51 @@ class ItemController extends Controller
                 'note' => $m->note,
             ]);
 
-        $summary = ['masuk' => $masuk->count(), 'keluar' => $keluar->count(), 'adjust' => $adjust->count()];
+        // Manufacturing Order postings (components out, finished goods in, reversals): stock_movements
+        // made by STOCKWISE itself, so they are read from there, with the MO number as the document.
+        $mrp = collect();
+        if (\Illuminate\Support\Facades\Schema::hasTable('mrp_productions')) {
+            $mrp = \Illuminate\Support\Facades\DB::table('stock_movements as m')
+                ->join('mrp_productions as p', fn ($j) => $j->on('p.id', '=', 'm.reference_id')->where('m.reference_type', (new \App\Models\MrpProduction)->getMorphClass()))
+                ->leftJoin('warehouses as w', 'w.id', '=', 'm.warehouse_id')
+                ->where('m.item_id', $item->id)->whereIn('m.movement_type', \App\Services\Inventory\StockLedgerService::MRP_TYPES)
+                ->get(['m.movement_type', 'm.direction', 'm.qty', 'm.created_at', 'm.note', 'p.number', 'w.code as warehouse'])
+                ->map(fn ($m) => [
+                    'type' => (int) $m->direction > 0 ? 'MASUK' : 'KELUAR',
+                    'date' => substr((string) $m->created_at, 0, 10),
+                    'doc_no' => $m->number,
+                    'counterparty_label' => 'Produksi',
+                    'counterparty' => $m->warehouse,
+                    'qty' => (float) $m->qty,
+                    'satuan' => $item->unit?->code,
+                    'no_seri' => null,
+                    'note' => $m->note,
+                ]);
+        }
 
-        $all = $masuk->concat($keluar)->concat($adjust)
+        // Disassembly Order postings (product out, good components in, reversals), the same way
+        if (\Illuminate\Support\Facades\Schema::hasTable('disassembly_orders')) {
+            $mrp = $mrp->concat(\Illuminate\Support\Facades\DB::table('stock_movements as m')
+                ->join('disassembly_orders as o', fn ($j) => $j->on('o.id', '=', 'm.reference_id')->where('m.reference_type', (new \App\Models\DisassemblyOrder)->getMorphClass()))
+                ->leftJoin('warehouses as w', 'w.id', '=', 'm.warehouse_id')
+                ->where('m.item_id', $item->id)->whereIn('m.movement_type', \App\Services\Inventory\StockLedgerService::DISASSEMBLY_TYPES)
+                ->get(['m.direction', 'm.qty', 'm.created_at', 'm.note', 'o.number', 'w.code as warehouse'])
+                ->map(fn ($m) => [
+                    'type' => (int) $m->direction > 0 ? 'MASUK' : 'KELUAR',
+                    'date' => substr((string) $m->created_at, 0, 10),
+                    'doc_no' => $m->number,
+                    'counterparty_label' => 'Pembongkaran',
+                    'counterparty' => $m->warehouse,
+                    'qty' => (float) $m->qty,
+                    'satuan' => $item->unit?->code,
+                    'no_seri' => null,
+                    'note' => $m->note,
+                ]));
+        }
+
+        $summary = ['masuk' => $masuk->count() + $mrp->where('type', 'MASUK')->count(), 'keluar' => $keluar->count() + $mrp->where('type', 'KELUAR')->count(), 'adjust' => $adjust->count()];
+
+        $all = $masuk->concat($keluar)->concat($adjust)->concat($mrp)
             ->filter(fn ($r) => $r['date'] !== null)
             ->sortByDesc('date')
             ->values();

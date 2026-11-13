@@ -125,6 +125,27 @@ class PoDraftController extends Controller
         return response()->json(['data' => $this->row($this->fresh($item))]);
     }
 
+    /** PUT /po-draft-lines/{item} — update description, qty, unit of a waiting item. */
+    public function updateItem(Request $request, PurchaseOrderItem $item): JsonResponse
+    {
+        $data = $request->validate([
+            'description' => ['sometimes', 'string', 'max:400'],
+            'qty' => ['sometimes', 'numeric', 'min:0.01'],
+            'unit_id' => ['sometimes', 'nullable', 'integer', 'exists:units,id'],
+        ]);
+        $this->service->updateItem($request->user(), $item, $data);
+
+        return response()->json(['data' => $this->row($this->fresh($item))]);
+    }
+
+    /** DELETE /po-draft-lines/{item} — remove an item from the draft. */
+    public function removeItem(PurchaseOrderItem $item): JsonResponse
+    {
+        $this->service->removeItem($item);
+
+        return response()->json(['data' => ['removed' => true]]);
+    }
+
     private function ids(Request $request): array
     {
         $data = $request->validate(['line_ids' => ['required', 'array', 'min:1', 'max:200'], 'line_ids.*' => ['integer']]);

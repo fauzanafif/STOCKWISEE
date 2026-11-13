@@ -11,6 +11,8 @@ class RbacSeeder extends Seeder
 {
     public function run(): void
     {
+        ProductionGuard::refuse(static::class);
+
         // Permissions
         $permissionIds = [];
         foreach (Rbac::PERMISSIONS as $group => $slugs) {

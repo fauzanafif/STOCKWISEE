@@ -25,6 +25,7 @@ class NpbgApprovalTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        config(['stockwise.manual_npbg' => true]); // the closed manual Delivery Order, for documents already pending
         Cache::flush();
         $this->item = Item::factory()->create(['code' => 'ATK.0001', 'description' => 'KERTAS', 'is_active' => true]);
         app(StockLedgerService::class)->openingBalance($this->item->id, Warehouse::factory()->create()->id, 5);

@@ -18,7 +18,7 @@ class Item extends Model
 
     protected $fillable = [
         'code', 'description', 'description_normalized', 'category_id', 'unit_id',
-        'item_type', 'product_kind', 'needs_blueprint', 'lead_time_days', 'default_warehouse_id',
+        'item_type', 'product_kind', 'needs_blueprint', 'manage_sn', 'lead_time_days', 'default_warehouse_id',
         'default_location_id', 'blueprint_img_path', 'blueprint_pdf_path',
         'blueprint_3d_ref', 'source', 'is_active',
         'accurate_synced_at', 'accurate_qty_onhand', 'accurate_qty_onorder',
@@ -29,6 +29,7 @@ class Item extends Model
     {
         return [
             'needs_blueprint' => 'boolean',
+            'manage_sn' => 'boolean',
             'is_active' => 'boolean',
             'lead_time_days' => 'integer',
             // Accurate NUMERIC(18,4) — 66 / 46.656, not "66.0000"
@@ -127,13 +128,28 @@ class Item extends Model
             })
             ->select('items.*');
 
-        // text
-        if ($search = $request->string('search')->trim()->value()) {
+        // text: Smart Search (App\Services\Search\ItemSmartSearch) — what the user means, whatever the writing;
+        // ?search_mode=exact keeps the old "this exact piece of text" search
+        $search = $request->string('search')->trim()->value();
+        $smart = app(\App\Services\Search\ItemSmartSearch::class);
+        if ($search !== '' && $request->string('search_mode')->value() !== 'exact') {
+            $matches = $smart->search($search);
+            // never fewer than before: what the old search found stays found
+            $old = static::query()->where(fn ($q) => $q->where('items.code', 'like', "%{$search}%")->orWhereLoose('items.description', $search))
+                ->limit(2000)->pluck('id');
+            foreach ($old as $id) {
+                $matches[(int) $id] ??= ['score' => 250, 'label' => 'WORDS', 'brand' => $smart->brandOf((int) $id)];
+            }
+            $request->attributes->set('smart_search', $matches);
+            $query->whereIn('items.id', array_keys($matches) ?: [0]);
+        } elseif ($search !== '') {
             $query->where(function ($q) use ($search) {
                 $q->where('items.code', 'like', "%{$search}%")
                     ->orWhereLoose('items.description', $search);
             });
         }
+        // brand (read from the name, only where it is clear — see ItemSmartSearch)
+        $request->whenFilled('brand', fn ($v) => $query->whereIn('items.id', $smart->idsOfBrand((string) $v) ?: [0]));
         $request->whenFilled('code', fn ($v) => $query->where('items.code', 'like', "%{$v}%"));
         $request->whenFilled('description', fn ($v) => $query->whereLoose('items.description', $v));
 
@@ -166,6 +182,7 @@ class Item extends Model
         $request->whenFilled('unit_id', fn ($v) => $query->where('items.unit_id', $v));
         $request->whenFilled('warehouse_id', fn ($v) => $query->where('items.default_warehouse_id', $v));
         $request->whenFilled('needs_blueprint', fn ($v) => $query->where('items.needs_blueprint', filter_var($v, FILTER_VALIDATE_BOOL)));
+        $request->whenFilled('manage_sn', fn ($v) => $query->where('items.manage_sn', filter_var($v, FILTER_VALIDATE_BOOL)));
         $request->whenFilled('is_active', fn ($v) => $query->where('items.is_active', filter_var($v, FILTER_VALIDATE_BOOL)));
 
         // analysis-derived
@@ -181,6 +198,15 @@ class Item extends Model
         $request->whenFilled('lead_time_max', fn ($v) => $query->where('snap.lead_time_days', '<=', (int) $v));
         $request->whenFilled('selisih_min', fn ($v) => $query->where('snap.selisih', '>=', (float) $v));
         $request->whenFilled('selisih_max', fn ($v) => $query->where('snap.selisih', '<=', (float) $v));
+        // QTY (the Master Barang column): stock over all warehouses, Accurate's qty while the item has no stock row,
+        // never below 0 — the same number ItemResource shows
+        $raw = 'COALESCE((SELECT SUM(inv.actual_qty) FROM inventory inv WHERE inv.item_id = items.id), items.accurate_qty_onhand, 0)';
+        $qty = "(CASE WHEN {$raw} < 0 THEN 0 ELSE {$raw} END)";
+        $request->whenFilled('qty_min', fn ($v) => is_numeric($v) ? $query->whereRaw("{$qty} >= (? + 0)", [(float) $v]) : null);
+        $request->whenFilled('qty_max', fn ($v) => is_numeric($v) ? $query->whereRaw("{$qty} <= (? + 0)", [(float) $v]) : null);
+        // Available (free stock of the analysis snapshot; unknown stock is never in a range)
+        $request->whenFilled('available_min', fn ($v) => is_numeric($v) ? $query->where('snap.available', '>=', (float) $v) : null);
+        $request->whenFilled('available_max', fn ($v) => is_numeric($v) ? $query->where('snap.available', '<=', (float) $v) : null);
 
         // has_npbg — npbg has no FK to items (Accurate mirror, matched by
         // kode_barang = items.code verbatim, confirmed 100% match in practice).

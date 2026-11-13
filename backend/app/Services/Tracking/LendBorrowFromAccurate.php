@@ -122,7 +122,14 @@ class LendBorrowFromAccurate
             $lend->save();
             $keep[] = $lend->id;
         }
-        LendTransaction::where('source', self::SOURCE)->whereNotIn('id', $keep)->delete();
+        $gone = LendTransaction::where('source', self::SOURCE)->whereNotIn('id', $keep);
+        $goneCount = (clone $gone)->count();
+        // an empty/partial NPBG-RI set (e.g. tables just emptied) must not wipe the imported rows
+        if (\App\Support\MassDeleteGuard::allows($goneCount, $goneCount + count($keep))) {
+            $gone->delete();
+        } else {
+            \Illuminate\Support\Facades\Log::warning('[tracking] LendTransaction: '.$goneCount.' baris dari Accurate tidak dihapus — terlalu banyak, kemungkinan data NPBG/RI belum lengkap.');
+        }
 
         $lends = LendTransaction::where('source', self::SOURCE)->with('outNpbg:id,no_npbg')->orderBy('out_date')->orderBy('id')->get();
         // RIs the Excel rows already returned a loan with are theirs
@@ -174,7 +181,14 @@ class LendBorrowFromAccurate
             $borrow->save();
             $keep[] = $borrow->id;
         }
-        BorrowTransaction::where('source', self::SOURCE)->whereNotIn('id', $keep)->delete();
+        $gone = BorrowTransaction::where('source', self::SOURCE)->whereNotIn('id', $keep);
+        $goneCount = (clone $gone)->count();
+        // an empty/partial NPBG-RI set (e.g. tables just emptied) must not wipe the imported rows
+        if (\App\Support\MassDeleteGuard::allows($goneCount, $goneCount + count($keep))) {
+            $gone->delete();
+        } else {
+            \Illuminate\Support\Facades\Log::warning('[tracking] BorrowTransaction: '.$goneCount.' baris dari Accurate tidak dihapus — terlalu banyak, kemungkinan data NPBG/RI belum lengkap.');
+        }
 
         $borrows = BorrowTransaction::where('source', self::SOURCE)->orderBy('borrowed_at')->orderBy('id')->get();
         $usedNpbg = self::usedDocs(BorrowTransaction::where('source', '<>', self::SOURCE)->pluck('out_doc_no'));

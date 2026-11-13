@@ -8,8 +8,10 @@ import { BackLink } from '@/components/BackLink'
  *   main     — what has to be done (workflow) and the document's content
  *   aside    — details, activity and sync: read, not worked in
  * On a phone the aside drops under the main column.
+ * With a `chatter`, the right column is the Chatter alone: the aside's details move into the left column
+ * (under the content) so the document stays the focus.
  */
-export function DocPage({ back, kind, number, status, subtitle, actions, children, aside }: {
+export function DocPage({ back, kind, number, status, subtitle, actions, children, aside, chatter }: {
   back: { to: string; label: string }
   /** e.g. "Purchase Order" */
   kind: string
@@ -19,6 +21,8 @@ export function DocPage({ back, kind, number, status, subtitle, actions, childre
   actions?: ReactNode
   children: ReactNode
   aside?: ReactNode
+  /** the document's Chatter: a panel on the right (desktop), under the document on a small screen */
+  chatter?: ReactNode
 }) {
   return (
     <div className="space-y-4">
@@ -34,10 +38,30 @@ export function DocPage({ back, kind, number, status, subtitle, actions, childre
         </div>
         {actions && <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>}
       </header>
-      <div className={cn('grid items-start gap-4', aside && 'lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_360px]')}>
-        <div className="min-w-0 space-y-4">{children}</div>
-        {aside && <aside className="min-w-0 space-y-4 lg:sticky lg:top-20">{aside}</aside>}
-      </div>
+      {chatter ? (
+        <ChatterLayout chatter={chatter}>
+          {children}
+          {aside && <div className="grid items-start gap-4 md:grid-cols-2 md:[&>p]:col-span-2">{aside}</div>}
+        </ChatterLayout>
+      ) : (
+        <div className={cn('grid items-start gap-4', aside && 'lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_360px]')}>
+          <div className="min-w-0 space-y-4">{children}</div>
+          {aside && <aside className="min-w-0 space-y-4 lg:sticky lg:top-20">{aside}</aside>}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/**
+ * The document on the left, its Chatter as a narrow panel on the right (300–340 px, follows the scroll).
+ * Under `lg` the Chatter drops below the document.
+ */
+export function ChatterLayout({ chatter, children, className }: { chatter: ReactNode; children: ReactNode; className?: string }) {
+  return (
+    <div className={cn('grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_300px] xl:grid-cols-[minmax(0,1fr)_340px]', className)}>
+      <div className="min-w-0 space-y-4">{children}</div>
+      <aside className="min-w-0 lg:sticky lg:top-20">{chatter}</aside>
     </div>
   )
 }

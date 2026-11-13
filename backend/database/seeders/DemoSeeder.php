@@ -51,6 +51,8 @@ class DemoSeeder extends Seeder
 
     public function run(): void
     {
+        ProductionGuard::refuse(static::class);
+
         if (Item::count() < 100) {
             $this->command->warn('DemoSeeder dilewati — master barang belum diimport (jalankan stockwise:import).');
 

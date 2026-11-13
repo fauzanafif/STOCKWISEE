@@ -21,6 +21,8 @@ import { Modal } from '@/components/ui/modal'
 import { Select } from '@/components/ui/select'
 import { invalidTo } from '@/lib/notify'
 import { QtyProgress } from '@/components/QtyProgress'
+import { SmartButtons } from '@/components/documents/SmartButtons'
+import { Chatter } from '@/components/documents/Chatter'
 
 const rupiah = (n: number) => 'Rp ' + Number(n).toLocaleString('id-ID')
 
@@ -97,6 +99,7 @@ export function PoDetailPage() {
 
   return (
     <DocPage
+      chatter={<Chatter type="purchase_order" id={poId} />}
       back={{ to: '/purchase-orders', label: 'Purchase Order List' }}
       kind="Purchase Order"
       number={po.number}
@@ -121,6 +124,7 @@ export function PoDetailPage() {
         )}
       </>}
     >
+      <SmartButtons type="purchase_order" id={poId} />
       {err && <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{err}</p>}
       {stockwise && <DirectorApproval po={po} onError={setErr} />}
       {!isFromAccurate && (po.can_upload_proof || po.proof) && <PurchaseProof po={po} onError={setErr} />}
@@ -225,7 +229,7 @@ function DirectorApproval({ po, onError }: { po: PurchaseOrder; onError: (m: str
           </div>
           <div className="flex flex-wrap gap-2">
             {po.can_complete && (waitingEntry
-              ? <Button size="sm" asChild><Link to="/purchase-orders/draft">Open Draft PO</Link></Button>
+              ? <Button size="sm" asChild><Link to="/purchase-orders/draft">Open RFQ</Link></Button>
               : <Button size="sm" variant="outline" onClick={() => setCompleting(true)}>Correct & resubmit</Button>)}
             {po.can_approve && !rejecting && <>
               <Button size="sm" variant="outline" className="border-orange-300 text-orange-700 hover:bg-orange-50" disabled={action.isPending} onClick={() => setRejecting(true)}>Revise</Button>

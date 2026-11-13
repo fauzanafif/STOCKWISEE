@@ -23,7 +23,9 @@ const LEVEL_DOT: Record<NotificationLevel, string> = {
 
 function timeAgo(iso: string): string {
   try {
-    return formatDistanceToNow(new Date(iso), { addSuffix: true, locale: id })
+    const d = new Date(iso)
+    const when = d.toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+    return `${formatDistanceToNow(d, { addSuffix: true, locale: id })} · ${when}`
   } catch {
     return iso
   }

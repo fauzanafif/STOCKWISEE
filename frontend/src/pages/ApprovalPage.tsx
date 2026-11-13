@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
+import { askedQty } from '@/lib/askedText'
 import { DirectorPickTag } from '@/components/DirectorPickTag'
 import { toast } from '@/lib/notify'
 import { LineImagesCell, RequestImages } from '@/components/itemRequests/RequestImages'
@@ -49,13 +50,15 @@ interface Task {
   request?: ApprovalRow
 }
 
-const KIND: Record<Kind, { label: string; icon: typeof FileText; tone: string }> = {
-  REQUEST: { label: 'Item Request', icon: ClipboardCheck, tone: 'bg-blue-50 text-blue-700' },
-  GUDANG: { label: 'Warehouse', icon: PackageCheck, tone: 'bg-violet-50 text-violet-700' },
-  NPBG: { label: 'Delivery Order', icon: PackageCheck, tone: 'bg-teal-50 text-teal-700' },
-  PPB: { label: 'Purchase Request', icon: FileText, tone: 'bg-amber-50 text-amber-700' },
-  PO: { label: 'Purchase Order', icon: ShoppingCart, tone: 'bg-emerald-50 text-emerald-700' },
+/** Each module: what the user decides there, in a few words (the cards and the group headings). */
+const KIND: Record<Kind, { label: string; what: string; icon: typeof FileText; tone: string; edge: string }> = {
+  REQUEST: { label: 'Item Request', what: 'Approve the items and quantities asked', icon: ClipboardCheck, tone: 'bg-blue-50 text-blue-700', edge: 'border-blue-300' },
+  GUDANG: { label: 'Warehouse Handover', what: 'Prepare the goods and hand them over', icon: PackageCheck, tone: 'bg-violet-50 text-violet-700', edge: 'border-violet-300' },
+  NPBG: { label: 'Delivery Order', what: 'Approve a Delivery Order already submitted', icon: PackageCheck, tone: 'bg-teal-50 text-teal-700', edge: 'border-teal-300' },
+  PPB: { label: 'Purchase Request', what: 'Approve what is going to be bought', icon: FileText, tone: 'bg-amber-50 text-amber-700', edge: 'border-amber-300' },
+  PO: { label: 'Purchase Order', what: 'Approve the vendor, prices and total', icon: ShoppingCart, tone: 'bg-emerald-50 text-emerald-700', edge: 'border-emerald-300' },
 }
+const ORDER: Kind[] = ['REQUEST', 'GUDANG', 'NPBG', 'PPB', 'PO']
 
 /**
  * Approval — ONE inbox for everything waiting for this user: Request Barang (Manajer / Direktur),
@@ -89,7 +92,7 @@ export function ApprovalPage() {
       })
     }
     for (const n of buying.data?.npbg ?? []) {
-      out.push({ key: `NPBG-${n.id}`, kind: 'NPBG', id: n.id, number: n.no_npbg, title: n.peminta ?? n.pelanggan ?? 'NPBG', subtitle: [n.pelanggan, n.divisi].filter(Boolean).join(' · '),
+      out.push({ key: `NPBG-${n.id}`, kind: 'NPBG', id: n.id, number: n.no_npbg, title: n.peminta ?? n.pelanggan ?? 'Delivery Order', subtitle: [n.pelanggan, n.divisi].filter(Boolean).join(' · '),
         stage: n.step === 'DIREKTUR' ? 'Director Approval' : bypassNpbg ? 'Director Approval (skips Manager)' : 'Manager Approval', date: n.tgl_npbg, urgent: false, preview: n.items.join(', ') })
     }
     for (const d of buying.data?.ppb ?? []) {
@@ -97,7 +100,7 @@ export function ApprovalPage() {
         stage: d.step === 'DIREKTUR' ? 'Director Approval' : bypassPpb ? 'Director Approval (skips Manager)' : 'Manager Approval', date: d.tgl_ppb, urgent: false, preview: d.items.join(', ') })
     }
     for (const p of buying.data?.po ?? []) {
-      out.push({ key: `PO-${p.id}`, kind: 'PO', id: p.id, number: p.number, title: p.vendor ?? 'PO', subtitle: `${p.items_count} items${p.off_pick ? ` · ${p.off_pick} not Director pick` : ''}${p.from_ppb ? ` · from PPB ${p.from_ppb}` : ''}`,
+      out.push({ key: `PO-${p.id}`, kind: 'PO', id: p.id, number: p.number, title: p.vendor ?? 'PO', subtitle: `${p.items_count} items${p.off_pick ? ` · ${p.off_pick} not Director pick` : ''}${p.from_ppb ? ` · from Purchase Request ${p.from_ppb}` : ''}`,
         stage: 'Director Approval', date: p.date, urgent: false, amount: p.total, preview: `${rupiah(p.total)}${p.off_pick ? ` · ${p.off_pick} not Director pick` : ''}` })
     }
     // urgent first, then the oldest
@@ -114,41 +117,56 @@ export function ApprovalPage() {
   const selected = tasks.find((t) => t.key === selKey) ?? null
   const select = (key: string | null) => setParams((p) => { const n = new URLSearchParams(p); n.delete('focus'); if (key) n.set('sel', key); else n.delete('sel'); return n }, { replace: true })
   // desktop: keep something open
+  // the first task as the list shows it (grouped per module)
+  const firstShown = ORDER.flatMap((k) => shown.filter((t) => t.kind === k))[0]
   useEffect(() => {
-    if (!selected && shown.length && window.matchMedia('(min-width: 1024px)').matches) select(shown[0].key)
-  }, [selected, shown.length]) // eslint-disable-line react-hooks/exhaustive-deps
+    if (!selected && firstShown && window.matchMedia('(min-width: 1024px)').matches) select(firstShown.key)
+  }, [selected, firstShown?.key]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const loading = (requests.isLoading && !requests.data) || (buying.isLoading && !buying.data && buying.fetchStatus !== 'idle')
 
   return (
     <div className="space-y-4">
-      <PageHeader title="Approval" icon={<ClipboardCheck className="size-5" />}
-        subtitle="Everything waiting for your action (Item Requests, handovers, Purchase Request, and PO) in one place." />
+      <PageHeader title="Approval" icon={<ClipboardCheck className="size-5" />} />
 
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="inline-flex rounded-lg border bg-muted/50 p-0.5" role="tablist">
-            {([['todo', 'Action needed'], ['done', 'History']] as const).map(([k, label]) => (
-              <button key={k} type="button" role="tab" aria-selected={tab === k}
-                onClick={() => { setParams(k === 'todo' ? {} : { tab: k }, { replace: true }); setKind('') }}
-                className={cn('rounded-md px-3 py-1.5 text-sm font-medium transition-colors', tab === k ? 'bg-card text-foreground ring-1 ring-border' : 'text-muted-foreground hover:text-foreground')}>
-                {label}{k === 'todo' && tab === 'todo' && tasks.length > 0 ? ` (${tasks.length})` : ''}
-              </button>
-            ))}
-          </div>
-          {/* Odoo-style filter chips with counts */}
-          {tab === 'todo' && (['', 'REQUEST', 'GUDANG', 'NPBG', 'PPB', 'PO'] as const).filter((k) => !k || counts[k]).map((k) => (
-            <button key={k || 'all'} type="button" onClick={() => setKind(k)}
-              className={cn('rounded-full border px-3 py-1 text-xs font-medium transition-colors', kind === k ? 'border-primary bg-primary/10 text-primary' : 'bg-card text-muted-foreground hover:bg-muted')}>
-              {k ? KIND[k].label : 'All'} <span className="tabular-nums">{k ? counts[k] : tasks.length}</span>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="inline-flex w-fit rounded-lg border bg-muted/50 p-0.5" role="tablist">
+          {([['todo', 'Action needed'], ['done', 'History']] as const).map(([k, label]) => (
+            <button key={k} type="button" role="tab" aria-selected={tab === k}
+              onClick={() => { setParams(k === 'todo' ? {} : { tab: k }, { replace: true }); setKind('') }}
+              className={cn('rounded-md px-3 py-1.5 text-sm font-medium transition-colors', tab === k ? 'bg-card text-foreground ring-1 ring-border' : 'text-muted-foreground hover:text-foreground')}>
+              {label}{k === 'todo' && tab === 'todo' && tasks.length > 0 ? ` (${tasks.length})` : ''}
             </button>
           ))}
         </div>
-        <div className="relative lg:w-72">
+        <div className="relative sm:w-72">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search number, name, item…" aria-label="Search" />
         </div>
       </div>
+
+      {/* one card per module: what is decided there and how many wait — click to show only that module */}
+      {tasks.length > 0 && (
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-5" role="group" aria-label="Modules">
+          {ORDER.filter((k) => counts[k]).map((k) => {
+            const K = KIND[k]
+            const on = kind === k
+            return (
+              <button key={k} type="button" onClick={() => setKind(on ? '' : k)} aria-pressed={on}
+                className={cn('flex items-start gap-2.5 rounded-lg border bg-card p-3 text-left transition-colors hover:bg-muted/40', on && cn('ring-2 ring-primary/30', K.edge))}>
+                <span className={cn('flex size-8 shrink-0 items-center justify-center rounded-md', K.tone)}><K.icon className="size-4" /></span>
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-baseline justify-between gap-2">
+                    <span className="truncate text-sm font-semibold">{K.label}</span>
+                    <span className="text-lg font-semibold tabular-nums">{counts[k]}</span>
+                  </span>
+                  <span className="block text-xs leading-snug text-muted-foreground">{K.what}</span>
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      )}
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,340px)_minmax(0,1fr)] lg:items-start">
         {/* the inbox */}
@@ -169,32 +187,41 @@ export function ApprovalPage() {
               <p className="font-medium">{tab === 'todo' ? 'All clear, nothing is waiting for you' : 'No history yet'}</p>
             </div>
           )}
-          <ul className="max-h-[calc(100vh-260px)] divide-y overflow-y-auto">
-            {shown.map((t) => {
-              const K = KIND[t.kind]
-              const a = age(t.date)
+          <div className="max-h-[calc(100vh-300px)] overflow-y-auto">
+            {ORDER.filter((k) => shown.some((t) => t.kind === k)).map((k) => {
+              const K = KIND[k]
+              const rows = shown.filter((t) => t.kind === k)
               return (
-                <li key={t.key}>
-                  <button type="button" onClick={() => select(t.key)}
-                    className={cn('flex w-full gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/50', selected?.key === t.key && 'bg-primary/5 shadow-[inset_3px_0_0_hsl(var(--primary))]')}>
-                    <span className={cn('mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md', K.tone)}><K.icon className="size-4" /></span>
-                    <span className="min-w-0 flex-1">
-                      <span className="flex items-baseline justify-between gap-2">
-                        <span className="truncate font-medium">{t.title}</span>
-                        {tab === 'todo' && a.text && <span className={cn('shrink-0 text-xs', a.late ? 'font-semibold text-red-600' : 'text-muted-foreground')}>{a.text}</span>}
-                      </span>
-                      <span className="block truncate text-[13px] text-muted-foreground">{t.number}</span>
-                      <span className="mt-1 block truncate text-xs text-muted-foreground">{t.preview}</span>
-                      <span className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                        <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] font-medium text-foreground/80">{t.stage}</span>
-                        {t.urgent && <span className="rounded bg-red-50 px-1.5 py-0.5 text-[11px] font-semibold text-red-700">Urgent</span>}
-                      </span>
-                    </span>
-                  </button>
-                </li>
+                <section key={k} aria-label={K.label}>
+                  {/* the module heading: sticky while its tasks scroll */}
+                  <div className="sticky top-0 z-[1] flex items-center gap-2 border-b bg-muted/60 px-4 py-1.5 text-xs font-semibold text-foreground/80 backdrop-blur">
+                    <K.icon className="size-3.5" /> {K.label} <span className="font-normal text-muted-foreground">· {rows.length}</span>
+                  </div>
+                  <ul className="divide-y">
+                    {rows.map((t) => {
+                      const a = age(t.date)
+                      return (
+                        <li key={t.key}>
+                          <button type="button" onClick={() => select(t.key)}
+                            className={cn('w-full px-4 py-2.5 text-left transition-colors hover:bg-muted/50', selected?.key === t.key && 'bg-primary/5 shadow-[inset_3px_0_0_hsl(var(--primary))]')}>
+                            <span className="flex items-baseline justify-between gap-2">
+                              <span className="truncate text-sm font-medium">{t.number}</span>
+                              {tab === 'todo' && a.text && <span className={cn('shrink-0 text-xs', a.late ? 'font-semibold text-red-600' : 'text-muted-foreground')}>{a.text}</span>}
+                            </span>
+                            <span className="block truncate text-[13px] text-muted-foreground">{t.title}{t.subtitle ? ` · ${t.subtitle}` : ''}</span>
+                            <span className="mt-1 flex flex-wrap items-center gap-1.5">
+                              <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] font-medium text-foreground/80">{t.stage}</span>
+                              {t.urgent && <span className="rounded bg-red-50 px-1.5 py-0.5 text-[11px] font-semibold text-red-700">Urgent</span>}
+                            </span>
+                          </button>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                </section>
               )
             })}
-          </ul>
+          </div>
         </Card>
 
         {/* the open document */}
@@ -221,13 +248,14 @@ function DetailHeader({ task, onBack, link, actions }: { task: Task; onBack: () 
       <button type="button" onClick={onBack} className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground lg:hidden"><ArrowLeft className="size-4" /> Back</button>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className={cn('rounded px-1.5 py-0.5 text-xs font-medium', K.tone)}>{K.label}</span>
-            <h2 className=" text-xl font-semibold tracking-tight">{task.number}</h2>
+          {/* one line: module · number · who · what · stage */}
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span className={cn('rounded px-1.5 py-0.5 text-xs font-medium', K.tone)} title={K.what}>{K.label}</span>
+            <h2 className="text-lg font-semibold tracking-tight">{task.number}</h2>
+            <span className="text-sm text-muted-foreground">· {task.title}{task.subtitle ? ` · ${task.subtitle}` : ''}</span>
+            <span className="rounded bg-amber-50 px-1.5 py-0.5 text-xs font-medium text-amber-800">{task.stage}</span>
             {task.urgent && <span className="rounded bg-red-50 px-1.5 py-0.5 text-xs font-semibold text-red-700">Urgent</span>}
           </div>
-          <p className="mt-0.5 text-sm text-muted-foreground">{task.title}{task.subtitle ? ` · ${task.subtitle}` : ''}</p>
-          <p className="mt-1 text-xs font-medium text-amber-700">{task.stage}</p>
         </div>
         <Link to={link} className="inline-flex shrink-0 items-center gap-1 text-sm text-primary hover:underline">Open document <ExternalLink className="size-3.5" /></Link>
       </div>
@@ -286,13 +314,15 @@ function RequestDetail({ task, r, gudang, lines, history, onBack, onDone }: {
   // what the requester asked, in their own words: picking one lights up its verified items on the right
   const askedOf = (l: ApprovalRow['lines'][number]) => (l.deskripsi_peminta ?? l.deskripsi_barang ?? '').trim()
   const keyOf = (l: ApprovalRow['lines'][number]) => askedOf(l).toLowerCase()
-  const asked = Object.values(r.lines.reduce<Record<string, { key: string; name: string; qty: number; unit: string | null; n: number }>>((m, l) => {
+  const asked = Object.values(r.lines.reduce<Record<string, { key: string; name: string; qty: number; unit: string | null; n: number; askedQty: number; askedUnit: string }>>((m, l) => {
     const k = keyOf(l)
-    m[k] ??= { key: k, name: askedOf(l), qty: 0, unit: l.satuan, n: 0 }
+    const a = askedQty(l)
+    m[k] ??= { key: k, name: askedOf(l), qty: 0, unit: l.satuan, n: 0, askedQty: 0, askedUnit: a.unit }
     m[k].qty += Number(l.qty)
+    m[k].askedQty += a.qty
     m[k].n += 1
     return m
-  }, {}))
+  }, {})).map((g) => ({ ...g, name: `${g.name} ${fmtQty(g.askedQty)}${g.askedUnit ? ` ${g.askedUnit}` : ''}` }))
   return (
     <Card className="overflow-hidden">
       <DetailHeader task={task} onBack={onBack} link={`/item-requests/${r.id}`}
@@ -301,9 +331,13 @@ function RequestDetail({ task, r, gudang, lines, history, onBack, onDone }: {
             <ApprovalActions req={r} onDone={onDone} handover={openF ? draft : undefined} />
           </div>
         )} />
-      <Facts items={[['Requester', r.requester_name], ['Division', r.divisi], ['Verifying admin', r.verified_step?.user_name ?? '-'], ['Needed', fmtDate(r.needed_date)], ['Status', <RequestStatusBadge status={r.status} label={r.status_label} />]]} />
-      {r.note && <p className="border-t px-4 py-3 text-sm"><span className="text-muted-foreground">Purpose: </span>{r.note}</p>}
-      {r.verify_note && <p className="whitespace-pre-wrap border-t bg-blue-50/60 px-4 py-3 text-sm"><span className="text-blue-700">Warehouse admin notes: </span>{r.verify_note}</p>}
+      <Facts items={[['Requester', r.requester_name], ['Division', r.divisi], ['Source', r.source_label ?? '-'], ['Verifying admin', r.verified_step?.user_name ?? '-'], ['Needed', fmtDate(r.needed_date)], ['Status', <RequestStatusBadge status={r.status} label={r.status_label} />]]} />
+      {(r.note || r.verify_note) && (
+        <dl className="grid grid-cols-[6.5rem_minmax(0,1fr)] gap-x-3 gap-y-1.5 border-t px-4 py-3 text-sm">
+          {r.note && <><dt className="text-muted-foreground">Purpose</dt><dd className="whitespace-pre-wrap">{r.note}</dd></>}
+          {r.verify_note && <><dt className="text-muted-foreground">Admin note</dt><dd className="whitespace-pre-wrap">{r.verify_note}</dd></>}
+        </dl>
+      )}
       {r.proxy && (
         <p className="border-t bg-emerald-50/60 px-4 py-3 text-sm">
           <span className="text-emerald-700">Picked up by representative: </span><b>{r.proxy.name}</b>
@@ -367,20 +401,18 @@ function GudangPicks({ r, lines, asked, keyOf, approvedOf, forGudang }: {
   const fromStock = round(all.reduce((n, x) => n + x.npbg, 0))
   const bought = round(all.reduce((n, x) => n + x.ppb, 0))
   const handed = round(all.reduce((n, x) => n + x.need, 0))
-  const v = r.verified_step
 
   return (
     <div className="space-y-4 border-t px-4 py-4">
-      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <h3 className="text-[15px] font-semibold">{forGudang ? 'Items handed over' : 'Warehouse picks'} <span className="font-normal text-muted-foreground">· {lines.length} Product Master items</span></h3>
-        {v && <span className="text-xs text-muted-foreground">selected {v.user_name ?? 'warehouse admin'}{v.at ? ` · ${new Date(v.at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}` : ''}</span>}
-      </div>
-      <div className="flex flex-wrap items-center gap-2 text-xs">
-        {forGudang ? <span className="rounded-full bg-emerald-50 px-2.5 py-1 font-medium text-emerald-800">Handed Over {fmtQty(handed)}</span> : <>
-          <span className="rounded-full bg-emerald-50 px-2.5 py-1 font-medium text-emerald-800">Handed Over (Delivery Order) {fmtQty(fromStock)}</span>
-          <span className="rounded-full bg-indigo-50 px-2.5 py-1 font-medium text-indigo-800">Purchased (Purchase Request) {fmtQty(bought)}</span>
-        </>}
-        <button type="button" className="ml-auto font-medium text-primary hover:underline" onClick={() => setOpen(allOpen ? {} : Object.fromEntries(groups.map((g) => [g.key, true])))}>
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <h3 className="text-[15px] font-semibold">{forGudang ? 'Items handed over' : 'Items'} <span className="font-normal text-muted-foreground">· {lines.length}</span></h3>
+        <span className="text-xs text-muted-foreground">
+          {forGudang ? <>Handed over <b className="text-emerald-700">{fmtQty(handed)}</b></> : <>
+            From stock <b className="text-emerald-700">{fmtQty(fromStock)}</b>
+            {bought > 0 && <> · To buy <b className="text-indigo-700">{fmtQty(bought)}</b></>}
+          </>}
+        </span>
+        <button type="button" className="ml-auto text-xs font-medium text-primary hover:underline" onClick={() => setOpen(allOpen ? {} : Object.fromEntries(groups.map((g) => [g.key, true])))}>
           {allOpen ? 'Close all' : 'Open all'}
         </button>
       </div>

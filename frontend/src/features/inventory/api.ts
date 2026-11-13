@@ -21,6 +21,17 @@ export interface ItemFilters {
   accurate_category_anak_3?: string
   unit_id?: number
   status?: string
+  /** '1' uses serial numbers, '0' not */
+  manage_sn?: string
+  /** Smart Search: a brand read from the item names */
+  brand?: string
+  /** from–to ranges of the number columns */
+  qty_min?: string
+  qty_max?: string
+  available_min?: string
+  available_max?: string
+  lead_time_min?: string
+  lead_time_max?: string
   priority_level?: string
   page?: number
   per_page?: number

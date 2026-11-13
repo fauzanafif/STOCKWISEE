@@ -1,5 +1,5 @@
-import { Fragment, useEffect, useRef, useState } from 'react'
-import { Camera, CheckCircle2, ChevronDown, FileText, Loader2, Printer, Upload, X } from 'lucide-react'
+import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
+import { Camera, CheckCircle2, ChevronDown, FileText, Loader2, Printer, Search, Upload, X } from 'lucide-react'
 import { filledSerials, RiSerialEntry, RiSerialExcelButtons, serialProblem } from '@/components/RiSerialEntry'
 import { photoToDataUrl } from '@/components/tracking/EvidencePhoto'
 import { downloadRiSerialTemplate, importRiSerials, RI_SOURCE, useCreateRi, useCreateRiFromPo, useRiPoOrders, useRiUsedReturnLines, riJenis, type Ri, type RiCreatePayload, type RiFromPoPayload, type RiPoOrder, type RiSource, type RiUsedReturnLine } from '@/features/ri/api'
@@ -348,344 +348,330 @@ export function RiFormModal({ open, onClose }: Props) {
     )
   }
 
+  const waitingLines = poOrder ? poOrder.lines.filter((l) => l.remaining > 0) : []
+  const doneCount = poOrder ? poOrder.lines.length - waitingLines.length : 0
+  const filledCount = waitingLines.filter((l) => typedQty(l.id) > 0).length
+  const detailsNo = 2
+  const proofNo = 3
+
+  /** the inputs of one PO line: how many came now, its serials, its proof photos (table row and phone card alike) */
+  const lineState = (l: RiPoOrder['lines'][number]) => {
+    const typed = poQty[l.id] ?? ''
+    const n = Number(typed.replace(',', '.'))
+    return {
+      typed, n,
+      partial: typed !== '' && n > 0 && n + 0.0001 < l.remaining,
+      over: typed !== '' && n > l.remaining + 0.0001,
+      serialCount: filledSerials(poSeri[l.id]).length,
+      serialIssue: typed !== '' && n > 0 ? serialProblem(poSeri[l.id], n) : null,
+      needsPhoto: typed !== '' && n > 0 && !(poPhotos[l.id]?.length),
+    }
+  }
+  const qtyInput = (l: RiPoOrder['lines'][number]) => {
+    const s = lineState(l)
+    return (
+      <div className="space-y-1">
+        <div className="flex items-center gap-2">
+          <Input className="h-9 w-24 bg-card text-right font-semibold tabular-nums" inputMode="decimal" aria-label={`Received ${l.deskripsi}`}
+            value={s.typed} placeholder="0" onChange={(e) => setPoQty((q) => ({ ...q, [l.id]: e.target.value }))} />
+          <span className="text-xs text-muted-foreground">{l.satuan ?? ''}</span>
+        </div>
+        {s.n > 0 && l.base_unit && l.unit_ratio !== 1 && <div className="text-[11px] font-medium tabular-nums text-primary">= {fmtQty(Math.round(s.n * l.unit_ratio * 100) / 100)} {l.base_unit} in stock</div>}
+        {l.unit_problem && <div className="max-w-[16rem] text-[11px] text-red-600">{l.unit_problem}</div>}
+        {s.partial && <div className="text-[11px] text-amber-700">Partial · {fmtQty(Math.round((l.remaining - s.n) * 100) / 100)} still to come</div>}
+        {s.over && <div className="text-[11px] text-amber-700">{fmtQty(Math.round((s.n - l.remaining) * 100) / 100)} more than ordered, still goes into stock</div>}
+      </div>
+    )
+  }
+  const serialButton = (l: RiPoOrder['lines'][number]) => {
+    const s = lineState(l)
+    return (
+      <button type="button" disabled={!(s.n > 0) && s.serialCount === 0} aria-expanded={serialsOpen === l.id} aria-label={`Serial numbers ${l.deskripsi}`}
+        onClick={() => setSerialsOpen(serialsOpen === l.id ? null : l.id)}
+        className={cn('inline-flex h-9 items-center gap-1.5 whitespace-nowrap rounded-md border bg-card px-2.5 text-xs font-medium tabular-nums disabled:cursor-not-allowed disabled:opacity-40',
+          s.serialIssue ? 'border-amber-400 text-amber-700' : s.serialCount > 0 ? 'border-emerald-300 text-emerald-700' : 'text-muted-foreground hover:text-foreground')}>
+        SN {s.serialCount}{s.n > 0 && Number.isInteger(s.n) ? `/${fmtQty(s.n)}` : ''}
+        <ChevronDown className={cn('size-3.5 transition-transform', serialsOpen === l.id && 'rotate-180')} />
+      </button>
+    )
+  }
+  const photoCell = (l: RiPoOrder['lines'][number]) => {
+    const s = lineState(l)
+    return (
+      <div className="flex items-center gap-1.5">
+        {(poPhotos[l.id] ?? []).map((p, k) => (
+          <div key={k} className="relative size-9 shrink-0 overflow-hidden rounded-md border bg-muted">
+            <img src={p} alt={`Photo ${l.deskripsi} ${k + 1}`} className="size-full object-cover" />
+            <button type="button" aria-label={`Delete photo ${k + 1}`} onClick={() => setPoPhotos((m) => ({ ...m, [l.id]: (m[l.id] ?? []).filter((_, j) => j !== k) }))}
+              className="absolute right-0 top-0 rounded-bl bg-black/60 p-0.5 text-white"><X className="size-3" /></button>
+          </div>
+        ))}
+        {(poPhotos[l.id]?.length ?? 0) < MAX_PHOTOS && (
+          <button type="button" disabled={reading} onClick={() => { setPhotoFor(l.id); linePhotoInput.current?.click() }}
+            title={`Proof photo ${l.deskripsi} (max ${MAX_PHOTOS})`} aria-label={`Proof photo ${l.deskripsi}`}
+            className={cn('flex size-9 shrink-0 items-center justify-center rounded-md border border-dashed text-muted-foreground hover:border-primary hover:text-primary',
+              s.needsPhoto && 'border-amber-400 bg-amber-50 text-amber-600')}>
+            <Camera className="size-4" />
+          </button>
+        )}
+      </div>
+    )
+  }
+  const serialPanel = (l: RiPoOrder['lines'][number]) => {
+    const s = lineState(l)
+    return (
+      <div className="rounded-md border bg-muted/30 p-3">
+        <RiSerialEntry qty={s.n} value={poSeri[l.id] ?? []} label={l.deskripsi} onChange={(v) => setPoSeri((m) => ({ ...m, [l.id]: v }))} />
+        {s.serialIssue && <p className="mt-2 text-xs text-amber-700">{s.serialIssue}</p>}
+      </div>
+    )
+  }
+
   return (
     <Modal page form
       open={open}
       onClose={onClose}
       title="Add Receipt"
-      description="Receipts recorded directly in Stockwise: from a PO, used-item return, or manual (any item)."
-      // "From PO" holds the PO's whole item table: a wide popup
-      className={source === 'PO' && poOrder ? 'max-w-6xl' : 'max-w-2xl'}
       footer={
         <>
+          {source === 'PO' && poOrder && (
+            <span className="mr-auto text-xs text-muted-foreground tabular-nums">{filledCount} of {waitingLines.length} items filled</span>
+          )}
           <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
           <Button size="sm" disabled={create.isPending || createFromPo.isPending || reading} onClick={submit}>
-            {create.isPending || createFromPo.isPending ? 'Saving…' : 'Save'}
+            {create.isPending || createFromPo.isPending ? 'Saving…' : 'Save Receipt'}
           </Button>
         </>
       }
     >
-      <div className="space-y-4">
-        <div className="space-y-1.5">
-          <Label>Receipt Source</Label>
-          <div className="grid grid-cols-3 gap-1 rounded-lg border bg-muted/40 p-1" role="tablist" aria-label="Receipt Source">
+      <div className="mx-auto w-full max-w-6xl space-y-5 pb-2">
+        {/* where the goods come from */}
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="inline-flex rounded-lg border bg-muted/40 p-1" role="tablist" aria-label="Receipt Source">
             {(['PO', 'BEKAS', 'MANUAL'] as RiSource[]).map((s) => (
               <button key={s} type="button" role="tab" aria-selected={source === s} onClick={() => pickSource(s)}
-                className={cn('rounded-md px-2 py-1.5 text-sm font-medium transition-colors', source === s ? 'bg-card text-primary ring-1 ring-border' : 'text-muted-foreground hover:text-foreground')}>
+                className={cn('rounded-md px-3.5 py-1.5 text-sm font-medium transition-colors', source === s ? 'bg-card text-primary shadow-sm ring-1 ring-border' : 'text-muted-foreground hover:text-foreground')}>
                 {RI_SOURCE[s]}
               </button>
             ))}
           </div>
+          <p className="text-xs text-muted-foreground">
+            {source === 'PO' ? 'Goods of a STOCKWISE PO arriving, in part or in full.' : source === 'BEKAS' ? 'A used item coming back from a Delivery Order.' : 'Any item, not tied to a PO.'}
+          </p>
         </div>
 
-        {source === 'BEKAS' && (
-          <div className="space-y-1.5 rounded-lg border bg-muted/20 p-3">
-            <Label>Used item returned *</Label>
-            {usedLine ? (
-              <div className="flex items-center justify-between gap-2 text-sm">
-                <span className="min-w-0"><span className="">{usedLine.npbg_no}</span> · {usedLine.deskripsi} · {usedLine.qty ?? ''} {usedLine.satuan ?? ''}{usedLine.pelanggan ? ` · ${usedLine.pelanggan}` : ''}</span>
-                <Button size="sm" variant="ghost" onClick={() => setUsedLine(null)}>Release</Button>
-              </div>
-            ) : (
-              <>
-                <Input value={usedSearch} onChange={(e) => setUsedSearch(e.target.value)} placeholder="Search Delivery Order no., item, customer / plate no." />
-                {usedLines.data && usedLines.data.length === 0 && <p className="text-xs text-muted-foreground">No used items waiting to be returned.</p>}
-                {(usedLines.data?.length ?? 0) > 0 && (
-                  <ul className="max-h-40 divide-y overflow-auto rounded-md border bg-card text-sm">
-                    {usedLines.data!.map((l) => (
-                      <li key={l.id}>
-                        <button type="button" className="block w-full px-3 py-2 text-left hover:bg-muted" onClick={() => pickUsedLine(l)}>
-                          <span className="text-[13px]">{l.npbg_no}</span> {l.deskripsi}
-                          <span className="text-muted-foreground"> · {l.qty ?? ''} {l.satuan ?? ''}{l.pelanggan ? ` · ${l.pelanggan}` : ''}</span>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </>
-            )}
-          </div>
-        )}
-
-        {/* from a STOCKWISE PO: search the PO, its whole item list, how much of each arrived (part is fine) */}
+        {/* 1 — the PO and its items */}
         {source === 'PO' && (
-          <div className="space-y-2 rounded-lg border bg-muted/20 p-3">
-            <Label>PO STOCKWISE *</Label>
+          <Section n={1} title={poOrder ? 'Items arriving' : 'Select the PO'}
+            aside={poOrder && (
+              <div className="flex flex-wrap items-center gap-2">
+                <Button size="sm" variant="outline" className="h-8" onClick={() => setPoQty(Object.fromEntries(waitingLines.map((l) => [l.id, String(l.remaining)])))}>Fill all remaining</Button>
+                <RiSerialExcelButtons onExport={exportPoSerials} onImport={importPoSerials} />
+              </div>
+            )}>
             {poOrder ? (
-              <>
-                <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-                  <span className="min-w-0"><span className=" font-semibold">{poOrder.number}</span>{poOrder.vendor ? ` · ${poOrder.vendor}` : ''}{poOrder.date ? ` · ${new Date(poOrder.date).toLocaleDateString('en-GB')}` : ''}</span>
-                  <Button size="sm" variant="ghost" onClick={() => { setPoOrder(null); setPoQty({}); setPoSeri({}) }}>Change PO</Button>
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-lg border bg-muted/30 px-4 py-3 text-sm">
+                  <div><div className="text-xs text-muted-foreground">PO</div><div className="font-semibold">{poOrder.number}</div></div>
+                  <div className="min-w-0"><div className="text-xs text-muted-foreground">Vendor</div><div className="truncate">{poOrder.vendor ?? '—'}</div></div>
+                  <div><div className="text-xs text-muted-foreground">PO date</div><div>{poOrder.date ? new Date(poOrder.date).toLocaleDateString('en-GB') : '—'}</div></div>
+                  <div><div className="text-xs text-muted-foreground">Waiting</div><div className="tabular-nums">{waitingLines.length} item{waitingLines.length === 1 ? '' : 's'}</div></div>
+                  <Button size="sm" variant="ghost" className="ml-auto h-8" onClick={() => { setPoOrder(null); setPoQty({}); setPoSeri({}); setPoPhotos({}) }}>Change PO</Button>
                 </div>
-                <div className="max-h-[55vh] overflow-auto rounded-lg border bg-card">
-                  <table className="w-full min-w-[1200px] text-sm">
-                    <thead className="sticky top-0 z-10 whitespace-nowrap border-b bg-muted text-left text-xs text-muted-foreground">
+
+                {/* wide screen: one table, nothing to scroll sideways */}
+                <div className="hidden overflow-hidden rounded-lg border md:block">
+                  <table className="w-full text-sm">
+                    <thead className="border-b bg-muted/60 text-left text-xs text-muted-foreground">
                       <tr>
-                        <th className="w-10 px-3 py-2.5 text-center font-medium">No</th>
-                        <th className="px-3 py-2.5 font-medium">Code</th>
-                        <th className="min-w-[16rem] px-3 py-2.5 font-medium">Item Description</th>
-                        <th className="px-3 py-2.5 font-medium">Vendor</th>
-                        <th className="px-3 py-2.5 font-medium">Unit</th>
-                        <th className="px-3 py-2.5 font-medium">Purchase Request No.</th>
-                        <th className="px-3 py-2.5 text-right font-medium">Qty PO</th>
-                        <th className="px-3 py-2.5 text-right font-medium">Received</th>
-                        <th className="px-3 py-2.5 text-right font-medium">Balance</th>
-                        <th className="px-3 py-2.5 text-right font-medium">Price</th>
-                        <th className="bg-primary/10 px-3 py-2.5 text-right font-semibold text-primary">Received Now</th>
-                        <th className="px-3 py-2.5 font-medium">Serial No.</th>
-                        <th className="px-3 py-2.5 font-medium">Proof Photo</th>
+                        <th className="w-10 px-3 py-2.5 text-center font-medium">#</th>
+                        <th className="px-3 py-2.5 font-medium">Item</th>
+                        <th className="w-40 px-3 py-2.5 text-right font-medium">Ordered · Received</th>
+                        <th className="w-24 px-3 py-2.5 text-right font-medium">Balance</th>
+                        <th className="w-52 bg-primary/5 px-3 py-2.5 font-semibold text-primary">Received now</th>
+                        <th className="w-28 px-3 py-2.5 font-medium">Serial No.</th>
+                        <th className="w-40 px-3 py-2.5 font-medium">Proof photo *</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y">
-                      {poOrder.lines.map((l, i) => {
-                        const done = l.remaining <= 0
-                        const typed = poQty[l.id] ?? ''
-                        const n = Number(typed.replace(',', '.'))
-                        const partial = typed !== '' && n > 0 && n + 0.0001 < l.remaining
-                        const serialCount = filledSerials(poSeri[l.id]).length
-                        const serialIssue = typed !== '' && n > 0 ? serialProblem(poSeri[l.id], n) : null
-                        return (
-                          <Fragment key={l.id}>
-                          <tr className={cn('align-top', done ? 'bg-muted/40 text-muted-foreground' : 'even:bg-muted/20 hover:bg-primary/5')}>
-                            <td className="px-3 py-2.5 text-center tabular-nums text-muted-foreground">{i + 1}</td>
-                            <td className="whitespace-nowrap px-3 py-2.5 text-[13px]">{l.kode_barang ?? ''}</td>
-                            <td className="px-3 py-2.5 font-medium">{l.deskripsi}</td>
-                            <td className="px-3 py-2.5">{l.vendor ?? ''}</td>
-                            <td className="whitespace-nowrap px-3 py-2.5">{l.satuan ?? ''}</td>
-                            <td className="whitespace-nowrap px-3 py-2.5 text-[13px]">{l.no_ppb ?? ''}</td>
-                            <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums">{fmtQty(l.qty)}</td>
-                            <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums">{fmtQty(l.received)}</td>
-                            <td className="whitespace-nowrap px-3 py-2.5 text-right font-semibold tabular-nums">
-                              {done ? <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-xs font-medium text-emerald-700">Done</span> : fmtQty(l.remaining)}
+                      {waitingLines.map((l, i) => (
+                        <Fragment key={l.id}>
+                          <tr className="align-top hover:bg-muted/20">
+                            <td className="px-3 py-3 text-center tabular-nums text-muted-foreground">{i + 1}</td>
+                            <td className="px-3 py-3">
+                              <div className="font-medium leading-snug">{l.deskripsi}</div>
+                              <div className="mt-0.5 text-xs text-muted-foreground">{[l.kode_barang, l.no_ppb].filter(Boolean).join(' · ')}</div>
                             </td>
-                            <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums">{l.unit_price ? l.unit_price.toLocaleString('id-ID') : ''}</td>
-                            <td className="bg-primary/5 px-3 py-2 text-right">
-                              {!done && (
-                                <>
-                                  <Input className="ml-auto h-9 w-24 bg-card text-right font-semibold tabular-nums" inputMode="decimal" aria-label={`Received ${l.deskripsi}`}
-                                    value={typed} placeholder="0" onChange={(e) => setPoQty((q) => ({ ...q, [l.id]: e.target.value }))} />
-                                  {n > 0 && l.base_unit && <div className="mt-1 whitespace-nowrap text-[11px] font-medium tabular-nums text-primary">= {fmtQty(Math.round(n * l.unit_ratio * 100) / 100)} {l.base_unit} in stock</div>}
-                                  {l.unit_problem && <div className="mt-1 max-w-[14rem] whitespace-normal text-left text-[11px] text-red-600">{l.unit_problem}</div>}
-                                  {partial && <div className="mt-1 whitespace-nowrap text-[11px] text-amber-700">partial, balance {fmtQty(Math.round((l.remaining - n) * 100) / 100)}</div>}
-                                  {typed !== '' && n > l.remaining + 0.0001 && <div className="mt-1 whitespace-nowrap text-[11px] text-amber-700">more {fmtQty(Math.round((n - l.remaining) * 100) / 100)}, still goes into stock</div>}
-                                </>
-                              )}
-                            </td>
-                            <td className="px-3 py-2">
-                              {!done && (
-                                <button type="button" disabled={!(n > 0) && serialCount === 0} aria-expanded={serialsOpen === l.id} aria-label={`Serial numbers ${l.deskripsi}`}
-                                  onClick={() => setSerialsOpen(serialsOpen === l.id ? null : l.id)}
-                                  className={cn('inline-flex h-9 items-center gap-1 whitespace-nowrap rounded-md border bg-card px-2.5 text-xs font-medium tabular-nums disabled:cursor-not-allowed disabled:opacity-50',
-                                    serialIssue ? 'border-amber-400 text-amber-700' : serialCount > 0 ? 'border-emerald-300 text-emerald-700' : 'text-muted-foreground hover:text-foreground')}>
-                                  {serialCount}{n > 0 && Number.isInteger(n) ? `/${fmtQty(n)}` : ''}
-                                  <ChevronDown className={cn('size-3.5 transition-transform', serialsOpen === l.id && 'rotate-180')} />
-                                </button>
-                              )}
-                            </td>
-                            <td className="px-3 py-2">
-                              {!done && (
-                                <div className="flex items-center gap-1.5">
-                                  {(poPhotos[l.id] ?? []).map((p, k) => (
-                                    <div key={k} className="relative size-10 shrink-0 overflow-hidden rounded border bg-muted">
-                                      <img src={p} alt={`Photo ${l.deskripsi} ${k + 1}`} className="size-full object-cover" />
-                                      <button type="button" aria-label={`Delete photo ${k + 1}`} onClick={() => setPoPhotos((m) => ({ ...m, [l.id]: (m[l.id] ?? []).filter((_, j) => j !== k) }))}
-                                        className="absolute right-0 top-0 rounded-bl bg-black/60 p-0.5 text-white"><X className="size-3" /></button>
-                                    </div>
-                                  ))}
-                                  {(poPhotos[l.id]?.length ?? 0) < MAX_PHOTOS && (
-                                    <button type="button" disabled={reading} onClick={() => { setPhotoFor(l.id); linePhotoInput.current?.click() }}
-                                      title={`Proof photo ${l.deskripsi} (maks ${MAX_PHOTOS})`}
-                                      className={cn('flex size-10 shrink-0 items-center justify-center rounded border-2 border-dashed text-muted-foreground hover:border-primary hover:text-primary',
-                                        typed !== '' && n > 0 && !(poPhotos[l.id]?.length) && 'border-amber-400 text-amber-600')}>
-                                      <Camera className="size-4" />
-                                    </button>
-                                  )}
-                                </div>
-                              )}
-                            </td>
+                            <td className="whitespace-nowrap px-3 py-3 text-right tabular-nums text-muted-foreground">{fmtQty(l.qty)} · {fmtQty(l.received)}</td>
+                            <td className="whitespace-nowrap px-3 py-3 text-right font-semibold tabular-nums">{fmtQty(l.remaining)} <span className="text-xs font-normal text-muted-foreground">{l.satuan ?? ''}</span></td>
+                            <td className="bg-primary/5 px-3 py-2">{qtyInput(l)}</td>
+                            <td className="px-3 py-2">{serialButton(l)}</td>
+                            <td className="px-3 py-2">{photoCell(l)}</td>
                           </tr>
-                          {serialsOpen === l.id && !done && (
-                            <tr className="bg-muted/30">
-                              <td colSpan={13} className="px-3 py-3">
-                                <RiSerialEntry qty={n} value={poSeri[l.id] ?? []} label={l.deskripsi} onChange={(v) => setPoSeri((m) => ({ ...m, [l.id]: v }))} />
-                                {serialIssue && <p className="mt-2 text-xs text-amber-700">{serialIssue}</p>}
-                              </td>
-                            </tr>
+                          {serialsOpen === l.id && (
+                            <tr><td colSpan={7} className="px-3 pb-3">{serialPanel(l)}</td></tr>
                           )}
-                          </Fragment>
-                        )
-                      })}
+                        </Fragment>
+                      ))}
                     </tbody>
                   </table>
                 </div>
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <input ref={linePhotoInput} type="file" accept="image/*" capture="environment" multiple className="hidden"
-                    onChange={(e) => { if (photoFor != null) void addLinePhotos(photoFor, e.target.files); e.target.value = '' }} />
-                  <Button size="sm" variant="outline" className="h-7" onClick={() => setPoQty(Object.fromEntries(poOrder.lines.filter((l) => l.remaining > 0).map((l) => [l.id, String(l.remaining)])))}>Fill all remaining</Button>
-                  <RiSerialExcelButtons onExport={exportPoSerials} onImport={importPoSerials} />
+
+                {/* phone: one card per item */}
+                <div className="space-y-2 md:hidden">
+                  {waitingLines.map((l, i) => (
+                    <div key={l.id} className="space-y-3 rounded-lg border bg-card p-3">
+                      <div className="flex items-start gap-2">
+                        <span className="mt-0.5 w-5 shrink-0 text-xs tabular-nums text-muted-foreground">{i + 1}</span>
+                        <div className="min-w-0 flex-1">
+                          <div className="font-medium leading-snug">{l.deskripsi}</div>
+                          <div className="mt-0.5 text-xs text-muted-foreground">{[l.kode_barang, l.no_ppb].filter(Boolean).join(' · ')}</div>
+                          <div className="mt-1 text-xs tabular-nums text-muted-foreground">Ordered {fmtQty(l.qty)} · received {fmtQty(l.received)} · <span className="font-semibold text-foreground">balance {fmtQty(l.remaining)} {l.satuan ?? ''}</span></div>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap items-start gap-3 pl-7">
+                        {qtyInput(l)}
+                        {serialButton(l)}
+                        {photoCell(l)}
+                      </div>
+                      {serialsOpen === l.id && serialPanel(l)}
+                    </div>
+                  ))}
                 </div>
-              </>
+
+                {doneCount > 0 && <p className="text-xs text-muted-foreground">{doneCount} other item{doneCount > 1 ? 's' : ''} of this PO already fully received.</p>}
+                <input ref={linePhotoInput} type="file" accept="image/*" capture="environment" multiple className="hidden"
+                  onChange={(e) => { if (photoFor != null) void addLinePhotos(photoFor, e.target.files); e.target.value = '' }} />
+              </div>
             ) : (
-              <>
-                <Input value={poSearch} onChange={(e) => setPoSearch(e.target.value)} placeholder="Search PO no., vendor, or items not yet received" />
-                {poOrders.data && poOrders.data.length === 0 && <p className="text-xs text-muted-foreground">No POs are waiting for items.</p>}
+              <div className="space-y-2">
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input className="pl-9" value={poSearch} onChange={(e) => setPoSearch(e.target.value)} placeholder="Search PO no., vendor, or an item still to come" aria-label="Search PO" />
+                </div>
+                {poOrders.isLoading && <p className="flex items-center gap-2 px-1 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" /> Loading POs…</p>}
+                {poOrders.data && poOrders.data.length === 0 && <p className="rounded-lg border border-dashed px-4 py-6 text-center text-sm text-muted-foreground">No PO is waiting for goods.</p>}
                 {(poOrders.data?.length ?? 0) > 0 && (
-                  <ul className="max-h-56 divide-y overflow-auto rounded-md border bg-card text-sm">
-                    {poOrders.data!.map((o) => (
-                      <li key={o.id}>
-                        <button type="button" className="block w-full px-3 py-2 text-left hover:bg-muted" onClick={() => pickPoOrder(o)}>
-                          <span className="text-[13px] font-semibold">{o.number}</span>{o.vendor ? ` · ${o.vendor}` : ''}
-                          <span className="block truncate text-xs text-muted-foreground">
-                            {o.lines.filter((l) => l.remaining > 0).length} items waiting: {o.lines.filter((l) => l.remaining > 0).map((l) => `${l.deskripsi} (${fmtQty(l.remaining)})`).join(', ')}
-                          </span>
+                  <ul className="max-h-[50vh] divide-y overflow-auto rounded-lg border bg-card">
+                    {poOrders.data!.map((o) => {
+                      const waiting = o.lines.filter((l) => l.remaining > 0)
+                      return (
+                        <li key={o.id}>
+                          <button type="button" className="flex w-full items-start gap-4 px-4 py-3 text-left hover:bg-primary/5" onClick={() => pickPoOrder(o)}>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap items-baseline gap-x-2">
+                                <span className="font-semibold">{o.number}</span>
+                                {o.vendor && <span className="text-sm text-muted-foreground">{o.vendor}</span>}
+                              </div>
+                              <div className="mt-0.5 truncate text-xs text-muted-foreground">{waiting.map((l) => `${l.deskripsi} (${fmtQty(l.remaining)})`).join(', ')}</div>
+                            </div>
+                            <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium tabular-nums text-primary">{waiting.length} item{waiting.length === 1 ? '' : 's'}</span>
+                          </button>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                )}
+              </div>
+            )}
+          </Section>
+        )}
+
+        {/* 1 — the used item coming back */}
+        {source === 'BEKAS' && (
+          <Section n={1} title="Used item returned">
+            {usedLine ? (
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/30 px-4 py-3 text-sm">
+                <div className="min-w-0">
+                  <div className="font-medium">{usedLine.deskripsi}</div>
+                  <div className="text-xs text-muted-foreground">{[usedLine.npbg_no, `${usedLine.qty ?? ''} ${usedLine.satuan ?? ''}`.trim(), usedLine.pelanggan].filter(Boolean).join(' · ')}</div>
+                </div>
+                <Button size="sm" variant="ghost" className="h-8" onClick={() => setUsedLine(null)}>Change</Button>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input className="pl-9" value={usedSearch} onChange={(e) => setUsedSearch(e.target.value)} placeholder="Search Delivery Order no., item, customer / plate no." aria-label="Search used item" />
+                </div>
+                {usedLines.data && usedLines.data.length === 0 && <p className="rounded-lg border border-dashed px-4 py-6 text-center text-sm text-muted-foreground">No used item is waiting to come back.</p>}
+                {(usedLines.data?.length ?? 0) > 0 && (
+                  <ul className="max-h-[40vh] divide-y overflow-auto rounded-lg border bg-card text-sm">
+                    {usedLines.data!.map((l) => (
+                      <li key={l.id}>
+                        <button type="button" className="block w-full px-4 py-2.5 text-left hover:bg-primary/5" onClick={() => pickUsedLine(l)}>
+                          <div className="font-medium">{l.deskripsi}</div>
+                          <div className="text-xs text-muted-foreground">{[l.npbg_no, `${l.qty ?? ''} ${l.satuan ?? ''}`.trim(), l.pelanggan].filter(Boolean).join(' · ')}</div>
                         </button>
                       </li>
                     ))}
                   </ul>
                 )}
-              </>
-            )}
-          </div>
-        )}
-        <div className="grid grid-cols-3 gap-3">
-          <div className="space-y-1.5">
-            <Label>Receipt type</Label>
-            <Select value={divisi} onChange={(e) => setDivisi(e.target.value as 'NA' | 'ATK' | 'NV')}>
-              {JENIS_RI.map((d) => <option key={d} value={d}>{riJenis(d)}</option>)}
-            </Select>
-          </div>
-          {source !== 'PO' && (
-          <div className="space-y-1.5">
-            <Label>Vendor</Label>
-            <Input value={vendor} onChange={(e) => setVendor(e.target.value)} />
-          </div>
-          )}
-          <div className="space-y-1.5">
-            <Label>Receipt Date</Label>
-            <Input type="date" value={tglRi} onChange={(e) => setTglRi(e.target.value)} />
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-3">
-          {source !== 'PO' && (
-          <div className="space-y-1.5">
-            <Label>PO No. (reference)</Label>
-            <Input className="" value={noPo} onChange={(e) => setNoPo(e.target.value)} />
-          </div>
-          )}
-          <div className="space-y-1.5">
-            <Label>Delivery Note No.</Label>
-            <Input value={noSuratJalan} onChange={(e) => setNoSuratJalan(e.target.value)} />
-          </div>
-          {source === 'PO' && (
-            <div className="space-y-1.5">
-              <Label>Inspector</Label>
-              <Input value={pemeriksa} onChange={(e) => setPemeriksa(e.target.value)} />
-            </div>
-          )}
-        </div>
-
-        {source !== 'PO' && <>
-
-        <div className="grid grid-cols-2 gap-3">
-          <div className="relative space-y-1.5">
-            <Label>Item Code</Label>
-            <Input
-              className=""
-              value={kodeBarang}
-              onChange={(e) => setKodeBarang(e.target.value)}
-              onFocus={() => setActiveField('kode')}
-              onBlur={() => setTimeout(() => setActiveField((f) => (f === 'kode' ? null : f)), 150)}
-              placeholder="e.g. PUI.0019"
-            />
-            {activeField === 'kode' && kodeBarang.trim().length >= 2 && (
-              <ItemSuggestions items={suggestions} loading={searchingItems} onPick={pickItem} />
-            )}
-          </div>
-          <div className="relative space-y-1.5">
-            <Label>Item Description</Label>
-            <Input
-              value={deskripsiBarang}
-              onChange={(e) => setDeskripsiBarang(e.target.value)}
-              onFocus={() => setActiveField('deskripsi')}
-              onBlur={() => setTimeout(() => setActiveField((f) => (f === 'deskripsi' ? null : f)), 150)}
-            />
-            {activeField === 'deskripsi' && deskripsiBarang.trim().length >= 2 && (
-              <ItemSuggestions items={suggestions} loading={searchingItems} onPick={pickItem} />
-            )}
-          </div>
-        </div>
-
-        <div className="grid grid-cols-3 gap-3">
-          <div className="space-y-1.5">
-            <Label>Quantity</Label>
-            <Input type="number" min={0} step="0.01" value={kuantitas} onChange={(e) => setKuantitas(e.target.value ? Number(e.target.value) : '')} />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Unit</Label>
-            <Input value={satuan} onChange={(e) => setSatuan(e.target.value)} placeholder="PCS, SET, …" />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Unit Price</Label>
-            <Input type="number" min={0} value={hargaSatuan} onChange={(e) => setHargaSatuan(e.target.value ? Number(e.target.value) : '')} />
-          </div>
-        </div>
-
-        <div className="space-y-1.5">
-          <Label>Inspector</Label>
-          <Input value={pemeriksa} onChange={(e) => setPemeriksa(e.target.value)} />
-        </div>
-
-        <div className="space-y-2 rounded-lg border bg-muted/20 p-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <Label>Serial No. <span className="font-normal tabular-nums text-muted-foreground">{filledSerials(noSeri).length}{Number.isInteger(Number(kuantitas)) && Number(kuantitas) > 0 ? `/${Number(kuantitas)}` : ''}</span></Label>
-            <RiSerialExcelButtons onExport={exportManualSerials} onImport={importManualSerials} />
-          </div>
-          <RiSerialEntry qty={Number(kuantitas)} value={noSeri} onChange={setNoSeri} label="Item" />
-        </div>
-
-        </>}
-
-        <div className="space-y-1.5">
-          <Label>Remarks</Label>
-          <Input value={keterangan} onChange={(e) => setKeterangan(e.target.value)} />
-        </div>
-
-        {source !== 'PO' && (
-        <div className="space-y-1.5">
-          <Label>Receipt proof photo * <span className="font-normal text-muted-foreground">(minimum 1, maximum {MAX_PHOTOS})</span></Label>
-          <input ref={photoInput} type="file" accept="image/*" capture="environment" multiple className="hidden"
-            onChange={(e) => { void addPhotos(e.target.files); e.target.value = '' }} />
-          <div className="grid grid-cols-3 gap-2">
-            {photos.map((p, i) => (
-              <div key={i} className="relative overflow-hidden rounded-lg border bg-muted">
-                <img src={p} alt={`Proof photo ${i + 1}`} className="aspect-square w-full object-cover" />
-                <button type="button" aria-label={`Delete photo ${i + 1}`} onClick={() => setPhotos((x) => x.filter((_, j) => j !== i))}
-                  className="absolute right-1 top-1 rounded-full bg-black/60 p-1 text-white hover:bg-black/80"><X className="size-3.5" /></button>
               </div>
-            ))}
-            {photos.length < MAX_PHOTOS && (
-              <button type="button" onClick={() => photoInput.current?.click()} disabled={reading}
-                className={'flex aspect-square flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed text-xs text-muted-foreground transition-colors hover:border-primary hover:bg-primary/5 hover:text-primary'
-                  + (photos.length === 0 ? ' border-amber-400' : '')}>
-                {reading ? <Loader2 className="size-6 animate-spin" /> : <Camera className="size-6" />}
-                <span className="font-medium">{reading ? 'Processing…' : photos.length === 0 ? 'Take / select photo' : 'Add photo'}</span>
-                <span>{photos.length}/{MAX_PHOTOS}</span>
-              </button>
             )}
-          </div>
-        </div>
+          </Section>
         )}
 
-        {source === 'PO' && (
-          <div className="space-y-1.5">
-            <Label>Document <span className="font-normal text-muted-foreground">(delivery note / invoice, photo or PDF, maximum {MAX_DOCS})</span></Label>
+        {/* 1 — any item (manual) / the used item's quantity */}
+        {source !== 'PO' && (source === 'MANUAL' || usedLine) && (
+          <Section n={source === 'MANUAL' ? 1 : undefined} title={source === 'MANUAL' ? 'Item received' : 'Item details'}
+            aside={<RiSerialExcelButtons onExport={exportManualSerials} onImport={importManualSerials} />}>
+            <div className="grid gap-3 sm:grid-cols-6">
+              <Field label="Item Code" className="relative sm:col-span-2">
+                <Input value={kodeBarang} onChange={(e) => setKodeBarang(e.target.value)} placeholder="e.g. PUI.0019"
+                  onFocus={() => setActiveField('kode')} onBlur={() => setTimeout(() => setActiveField((f) => (f === 'kode' ? null : f)), 150)} />
+                {activeField === 'kode' && kodeBarang.trim().length >= 2 && <ItemSuggestions items={suggestions} loading={searchingItems} onPick={pickItem} />}
+              </Field>
+              <Field label="Item Description *" className="relative sm:col-span-4">
+                <Input value={deskripsiBarang} onChange={(e) => setDeskripsiBarang(e.target.value)} placeholder="Type to search the Product Master"
+                  onFocus={() => setActiveField('deskripsi')} onBlur={() => setTimeout(() => setActiveField((f) => (f === 'deskripsi' ? null : f)), 150)} />
+                {activeField === 'deskripsi' && deskripsiBarang.trim().length >= 2 && <ItemSuggestions items={suggestions} loading={searchingItems} onPick={pickItem} />}
+              </Field>
+              <Field label="Quantity *" className="sm:col-span-2">
+                <Input type="number" min={0} step="0.01" className="tabular-nums" value={kuantitas} onChange={(e) => setKuantitas(e.target.value ? Number(e.target.value) : '')} />
+              </Field>
+              <Field label="Unit" className="sm:col-span-2">
+                <Input value={satuan} onChange={(e) => setSatuan(e.target.value)} placeholder="PCS, SET, …" />
+              </Field>
+              <Field label="Unit Price" className="sm:col-span-2">
+                <Input type="number" min={0} className="tabular-nums" value={hargaSatuan} onChange={(e) => setHargaSatuan(e.target.value ? Number(e.target.value) : '')} />
+              </Field>
+            </div>
+            <div className="mt-4 space-y-2">
+              <div className="text-sm font-medium">Serial No. <span className="font-normal tabular-nums text-muted-foreground">{filledSerials(noSeri).length}{Number.isInteger(Number(kuantitas)) && Number(kuantitas) > 0 ? ` of ${Number(kuantitas)}` : ''} · only for items with serial numbers</span></div>
+              <RiSerialEntry qty={Number(kuantitas)} value={noSeri} onChange={setNoSeri} label="Item" />
+            </div>
+          </Section>
+        )}
+
+        {/* 2 — the receipt itself */}
+        <Section n={detailsNo} title="Receipt details">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <Field label="Receipt type">
+              <Select value={divisi} onChange={(e) => setDivisi(e.target.value as 'NA' | 'ATK' | 'NV')}>
+                {JENIS_RI.map((d) => <option key={d} value={d}>{riJenis(d)}</option>)}
+              </Select>
+            </Field>
+            <Field label="Receipt date"><Input type="date" value={tglRi} onChange={(e) => setTglRi(e.target.value)} /></Field>
+            <Field label="Delivery note no."><Input value={noSuratJalan} onChange={(e) => setNoSuratJalan(e.target.value)} /></Field>
+            <Field label="Inspector"><Input value={pemeriksa} onChange={(e) => setPemeriksa(e.target.value)} /></Field>
+            {source !== 'PO' && <>
+              <Field label="Vendor" className="lg:col-span-2"><Input value={vendor} onChange={(e) => setVendor(e.target.value)} /></Field>
+              <Field label="PO no. (reference)" className="lg:col-span-2"><Input value={noPo} onChange={(e) => setNoPo(e.target.value)} /></Field>
+            </>}
+            <Field label="Remarks" className="sm:col-span-2 lg:col-span-4"><Input value={keterangan} onChange={(e) => setKeterangan(e.target.value)} /></Field>
+          </div>
+        </Section>
+
+        {/* 3 — the proof */}
+        {source === 'PO' ? (
+          <Section n={proofNo} title="Documents" hint={`Delivery note / invoice, photo or PDF, up to ${MAX_DOCS}. The proof photo of each item is in its row above.`}>
             <input ref={docInput} type="file" accept="image/*,application/pdf" multiple className="hidden"
               onChange={(e) => { void addDocs(e.target.files); e.target.value = '' }} />
             <div className="flex flex-wrap gap-2">
               {docs.map((d, i) => (
-                <span key={i} className="inline-flex items-center gap-1.5 rounded-md border bg-card px-2 py-1 text-xs">
-                  <FileText className="size-3.5 text-muted-foreground" /> <span className="max-w-[12rem] truncate">{d.name}</span>
+                <span key={i} className="inline-flex items-center gap-1.5 rounded-md border bg-card px-2.5 py-1.5 text-xs">
+                  <FileText className="size-3.5 text-muted-foreground" /> <span className="max-w-[14rem] truncate">{d.name}</span>
                   <button type="button" aria-label={`Delete ${d.name}`} onClick={() => setDocs((x) => x.filter((_, j) => j !== i))} className="text-muted-foreground hover:text-destructive"><X className="size-3.5" /></button>
                 </span>
               ))}
@@ -695,11 +681,62 @@ export function RiFormModal({ open, onClose }: Props) {
                 </Button>
               )}
             </div>
-          </div>
+          </Section>
+        ) : (
+          <Section n={proofNo} title="Proof photo *" hint={`At least 1, up to ${MAX_PHOTOS}.`}>
+            <input ref={photoInput} type="file" accept="image/*" capture="environment" multiple className="hidden"
+              onChange={(e) => { void addPhotos(e.target.files); e.target.value = '' }} />
+            <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
+              {photos.map((p, i) => (
+                <div key={i} className="relative overflow-hidden rounded-lg border bg-muted">
+                  <img src={p} alt={`Proof photo ${i + 1}`} className="aspect-square w-full object-cover" />
+                  <button type="button" aria-label={`Delete photo ${i + 1}`} onClick={() => setPhotos((x) => x.filter((_, j) => j !== i))}
+                    className="absolute right-1 top-1 rounded-full bg-black/60 p-1 text-white hover:bg-black/80"><X className="size-3.5" /></button>
+                </div>
+              ))}
+              {photos.length < MAX_PHOTOS && (
+                <button type="button" onClick={() => photoInput.current?.click()} disabled={reading}
+                  className={cn('flex aspect-square flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed text-xs text-muted-foreground transition-colors hover:border-primary hover:bg-primary/5 hover:text-primary',
+                    photos.length === 0 && 'border-amber-400')}>
+                  {reading ? <Loader2 className="size-6 animate-spin" /> : <Camera className="size-6" />}
+                  <span className="font-medium">{reading ? 'Processing…' : photos.length === 0 ? 'Take / select' : 'Add photo'}</span>
+                  <span>{photos.length}/{MAX_PHOTOS}</span>
+                </button>
+              )}
+            </div>
+          </Section>
         )}
 
-        {err && <p className="text-sm text-destructive">{err}</p>}
+        {err && <p role="alert" className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{err}</p>}
       </div>
     </Modal>
+  )
+}
+
+/** One numbered part of the form: a plain heading, then its fields. */
+function Section({ n, title, hint, aside, children }: { n?: number; title: string; hint?: string; aside?: ReactNode; children: ReactNode }) {
+  return (
+    <section className="rounded-xl border bg-card p-4 sm:p-5">
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+        <div className="flex items-start gap-2.5">
+          {n != null && <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">{n}</span>}
+          <div>
+            <h3 className="text-[15px] font-semibold leading-6">{title}</h3>
+            {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+          </div>
+        </div>
+        {aside}
+      </div>
+      {children}
+    </section>
+  )
+}
+
+function Field({ label, className, children }: { label: string; className?: string; children: ReactNode }) {
+  return (
+    <div className={cn('space-y-1.5', className)}>
+      <Label>{label}</Label>
+      {children}
+    </div>
   )
 }

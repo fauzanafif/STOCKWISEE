@@ -113,7 +113,8 @@ class ItemRequestController extends Controller
         $stock = ItemRequestFulfillmentService::availableMany($itemRequest->lines->pluck('item_id'));
         $onHand = ItemRequestFulfillmentService::onHandMany($itemRequest->lines->pluck('item_id'));
         // the name the requester wrote stays the item's name; the Master Produk name goes beside it
-        $lineNames = $itemRequest->lines->mapWithKeys(fn ($l) => [$l->id => [$l->requestedText(), $l->satuan, $l->item?->description]]);
+        $lineNames = $itemRequest->lines->mapWithKeys(fn ($l) => [$l->id => [$l->requestedText(), $l->satuan, $l->item?->description, $l->kode_barang]]);
+        $sn = $this->serialInfo($itemRequest->lines->pluck('kode_barang'), $itemRequest->fulfillments->flatMap(fn ($f) => $f->lines->pluck('npbg_id')));
         // the NPBG / PPB columns: what leaves the stock (NPBG) and what has to be bought (PPB) per line
         $issued = [];
         foreach ($itemRequest->fulfillments as $f) {
@@ -182,7 +183,7 @@ class ItemRequestController extends Controller
                     'item_description' => $lineNames[$fl->item_request_line_id][2] ?? null,
                     'satuan' => $lineNames[$fl->item_request_line_id][1] ?? null, 'qty' => (float) $fl->qty,
                     'handed_qty' => $fl->handed_qty !== null ? (float) $fl->handed_qty : null, 'npbg_id' => $fl->npbg_id,
-                ])->values(),
+                ] + $this->serialFields($lineNames[$fl->item_request_line_id][3] ?? null, $fl->npbg_id, $sn, $fl->item_request_line_id, (float) $fl->qty))->values(),
             ])->values(),
             'handover' => $itemRequest->handed_over_at ? [
                 'at' => $itemRequest->handed_over_at->copy()->timezone(config('app.timezone'))->toIso8601String(),
@@ -204,6 +205,8 @@ class ItemRequestController extends Controller
                 'decision' => $l->decision, 'reject_reason' => $l->reject_reason,
                 // approved (official need) → handed over → what is left; closed with a reason
                 'approved_qty' => $l->approved_qty, 'fulfilled_qty' => (float) $l->fulfilled_qty, 'remaining' => $l->remaining(),
+                // serials picked while verifying (an item with serial numbers)
+                'serials' => \App\Support\RiSerials::split($l->serials ?? null),
                 'closed_at' => $l->closed_at, 'closed_reason' => $l->closed_reason,
                 'line_status' => $s = ItemRequestFulfillmentService::lineStatus($l, $itemRequest, $preparedLines, false),
                 'line_status_label' => ItemRequestFulfillmentService::lineLabel($l, $itemRequest, $s),
@@ -219,10 +222,53 @@ class ItemRequestController extends Controller
                 'available' => $l->item_id && array_key_exists($l->item_id, $stock) ? $stock[$l->item_id] : null,
                 // the stock itself (Master Produk): what prepared NPBG hold leaves it only with the serah terima
                 'on_hand' => $l->item_id && array_key_exists($l->item_id, $onHand) ? $onHand[$l->item_id] : null,
-                // every good match, best first (the page shows 5 and scrolls the rest)
-                'recommendations' => $recommend && $l->decision === null ? $this->recommender->recommend($l->requestedText(), 30) : [],
+                // still to verify: its quantity is in the unit asked (e.g. 1 DUS), not yet in the item's own unit;
+                // every good match, best first (the page shows 5 and scrolls the rest), with its ratio to that unit
+                ...$this->askedUnit($l, $recommend && $l->decision === null ? $this->recommender->recommend($l->requestedText(), 30) : []),
             ]),
         ]]);
+    }
+
+    /**
+     * A line still to verify holds its quantity in the unit the requester asked (DUS) until the verification
+     * converts it: that unit, how many of the matched item's own unit one of it makes (1 DUS = 5 RIM), and the
+     * same for every recommended item (its stock compared in the right unit). null ratio: the item has none
+     * for that unit yet (the verification would refuse it), with why.
+     */
+    private function askedUnit(ItemRequestLine $l, array $recs): array
+    {
+        if ($l->decision !== null) {
+            return ['recommendations' => $recs];
+        }
+        $asked = mb_strtoupper(trim((string) ($l->requested_unit ?? $l->satuan ?? '')));
+        $ids = collect($recs)->pluck('id')->push($l->item_id)->filter()->unique()->values();
+        $items = $asked === '' || $ids->isEmpty() ? collect() : \App\Models\Item::with('unit:id,code')->whereIn('id', $ids)->get()->keyBy('id');
+        $uom = app(\App\Services\UomConverter::class);
+        $ratio = function (?int $itemId) use ($items, $asked, $uom, $l): array {
+            $item = $itemId ? $items->get($itemId) : null;
+            if (! $item || $asked === '' || ! $item->unit?->code || $item->unit->code === $asked) {
+                return [1.0, null];
+            }
+            try {
+                $snap = $uom->snapshot($item, $asked, $l->requestedText(), 'unit');
+
+                return [$snap['known'] ? (float) $snap['unit_ratio'] : 1.0, $snap['known'] ? null : "{$asked} is not in the UOM master: counted as written"];
+            } catch (\Illuminate\Validation\ValidationException) {
+                return [null, "No ratio for {$asked} on {$item->code} yet: set it in UOM, Per item tab."];
+            }
+        };
+        [$own, $ownProblem] = $ratio($l->item_id);
+
+        return [
+            'asked_unit' => $asked !== '' ? $asked : null,
+            'asked_ratio' => $l->item_id ? $own : null,
+            'asked_unit_problem' => $l->item_id ? $ownProblem : null,
+            'recommendations' => array_map(function ($r) use ($ratio) {
+                [$x, $why] = $ratio((int) $r['id']);
+
+                return $r + ['unit_ratio' => $x, 'unit_problem' => $why];
+            }, $recs),
+        ];
     }
 
     /** GET /api/item-requests/my-profile — name, username, phone, divisi, position from Data Pekerja. */
@@ -253,13 +299,27 @@ class ItemRequestController extends Controller
             // up to 3 images of what is asked (photo of the broken part, an example...)
             'images' => ['nullable', 'array', 'max:3'],
             'images.*' => ['required', 'string', 'max:12000000'],
+            // admin gudang makes the request for someone else (the warehouse is the only door: no manual Delivery Order)
+            'on_behalf' => ['nullable', 'array'],
+            'on_behalf.employee_id' => ['nullable', 'integer', 'exists:employees,id'],
+            'on_behalf.name' => ['nullable', 'string', 'max:150'],
         ], ['images.max' => 'Gambar maksimal 3.', 'lines.*.images.max' => 'Gambar maksimal 3 per barang.']);
         $user = $request->user();
+        if (! empty($data['on_behalf']) && (array_key_exists('employee_id', $data['on_behalf']) || array_key_exists('name', $data['on_behalf']))) {
+            abort_unless($user->hasPermission('item_request.process'), 403, 'Hanya admin gudang yang bisa membuat request atas nama orang lain.');
+            $who = $this->onBehalf($data['on_behalf']);
+            $data['divisi'] = filled($data['divisi'] ?? null) ? $data['divisi'] : $who['divisi'];
+            $made = $this->service->create(['id' => $who['user_id'], 'name' => $who['name'], 'contact' => trim((string) ($data['contact'] ?? '')) ?: $who['contact'], 'ip' => $request->ip()],
+                collect($data)->except(['contact', 'on_behalf'])->all());
+            $made->update(['entered_by' => $user->id]);
+
+            return $this->show($request, $made->refresh())->setStatusCode(201);
+        }
         // like the form via link: the name / phone / divisi of Data Pekerja, the phone and divisi may be changed
         $me = PublicItemRequestController::profile($user);
         $data['divisi'] = filled($data['divisi'] ?? null) ? $data['divisi'] : $me['divisi'];
         $made = $this->service->create(['id' => $user->id, 'name' => $me['name'] ?: $user->name, 'contact' => trim((string) ($data['contact'] ?? '')) ?: $me['contact'], 'ip' => $request->ip()],
-            collect($data)->except('contact')->all());
+            collect($data)->except(['contact', 'on_behalf'])->all());
 
         return $this->show($request, $made)->setStatusCode(201);
     }
@@ -279,6 +339,11 @@ class ItemRequestController extends Controller
             'lines.*.items' => ['nullable', 'array', 'max:10'],
             'lines.*.items.*.item_id' => ['required', 'integer', 'exists:items,id'],
             'lines.*.items.*.qty' => ['required', 'numeric', 'min:0.01'],
+            // items with serial numbers: the serials of the units given from stock (held for this request)
+            'lines.*.items.*.serials' => ['nullable', 'array', 'max:5000'],
+            'lines.*.items.*.serials.*' => ['string', 'max:100'],
+            'lines.*.serials' => ['nullable', 'array', 'max:5000'],
+            'lines.*.serials.*' => ['string', 'max:100'],
             // less than asked (e.g. 9 of 10, 1 kept in stock): why — required then
             'lines.*.reason' => ['nullable', 'string', 'max:255'],
             'lines.*.unit' => ['nullable', 'string', 'max:30'],
@@ -348,12 +413,14 @@ class ItemRequestController extends Controller
         $rows = $query->get();
         // the NPBG of a request waiting for its serah terima, with its lines (for the handover dialog)
         $openOf = function (ItemRequest $r): array {
-            $names = $r->lines->mapWithKeys(fn ($l) => [$l->id => [$l->deskripsi_barang, $l->satuan]]);
+            $names = $r->lines->mapWithKeys(fn ($l) => [$l->id => [$l->deskripsi_barang, $l->satuan, $l->kode_barang]]);
+            $open = $r->fulfillments()->whereIn('status', ItemRequestFulfillmentService::OPEN)->with('lines')->get();
+            $sn = $this->serialInfo($r->lines->pluck('kode_barang'), $open->flatMap(fn ($f) => $f->lines->pluck('npbg_id')));
 
-            return $r->fulfillments()->whereIn('status', ItemRequestFulfillmentService::OPEN)->with('lines')->get()
-                ->map(fn (ItemRequestFulfillment $f) => ['id' => $f->id, 'seq' => $f->seq, 'status' => $f->status, 'no_npbg' => $f->no_npbg,
+            return $open->map(fn (ItemRequestFulfillment $f) => ['id' => $f->id, 'seq' => $f->seq, 'status' => $f->status, 'no_npbg' => $f->no_npbg,
                     'lines' => $f->lines->map(fn ($fl) => ['id' => $fl->id, 'line_id' => $fl->item_request_line_id, 'deskripsi' => $names[$fl->item_request_line_id][0] ?? null,
-                        'satuan' => $names[$fl->item_request_line_id][1] ?? null, 'qty' => (float) $fl->qty, 'handed_qty' => null, 'npbg_id' => $fl->npbg_id])->values()->all(),
+                        'satuan' => $names[$fl->item_request_line_id][1] ?? null, 'qty' => (float) $fl->qty, 'handed_qty' => null, 'npbg_id' => $fl->npbg_id]
+                        + $this->serialFields($names[$fl->item_request_line_id][2] ?? null, $fl->npbg_id, $sn, $fl->item_request_line_id, (float) $fl->qty))->values()->all(),
                 ])->all();
         };
         // live stock of their items: the approver sees what the stock can give (NPBG) and what must be bought (PPB)
@@ -370,7 +437,11 @@ class ItemRequestController extends Controller
                     // what the requester wrote, and the Master Produk item admin gudang matched it to
                     'deskripsi_peminta' => $l->requestedText(), 'item_description' => $l->item?->description,
                     'satuan' => $l->satuan, 'note' => $l->note, 'short_reason' => $l->short_reason, 'decision' => $l->decision, 'npbg_id' => $l->npbg_id, 'no_npbg' => $l->npbg?->no_npbg,
+                    // as asked (1 DUS), shown beside the name up to the approval
+                    'requested_qty' => $l->requested_qty === null ? null : (float) $l->requested_qty, 'requested_unit' => $l->requested_unit,
                     'approved_qty' => $l->approved_qty, 'fulfilled_qty' => (float) $l->fulfilled_qty, 'remaining' => $l->remaining(),
+                // serials picked while verifying (an item with serial numbers)
+                'serials' => \App\Support\RiSerials::split($l->serials ?? null),
                     'item_id' => $l->item_id, 'available' => $l->item_id && array_key_exists($l->item_id, $stock) ? $stock[$l->item_id] : null,
                     'on_hand' => $l->item_id && array_key_exists($l->item_id, $onHand) ? $onHand[$l->item_id] : null,
                 ]),
@@ -442,6 +513,30 @@ class ItemRequestController extends Controller
      * POST /api/item-requests/{id}/fulfillments/{fulfillment}/handover — serah terima of one prepared NPBG:
      * photo + the receiver's signature (data URLs) + the quantities really handed over {handed: {line: qty}}.
      */
+    /** which of these item codes go out by serial number, and the serials already on these NPBG lines */
+    private function serialInfo($codes, $npbgIds): array
+    {
+        $ids = collect($npbgIds)->filter()->unique()->values();
+
+        return [
+            'managed' => array_flip(\App\Services\SerialStock::managedCodes($codes)),
+            'serials' => $ids->isEmpty() ? collect() : \App\Models\Npbg::whereIn('id', $ids)->whereNotNull('no_seri')->pluck('no_seri', 'id'),
+        ];
+    }
+
+    /** a fulfillment line's item code, whether it goes out by serial number, and its serials so far */
+    private function serialFields(?string $code, ?int $npbgId, array $sn, ?int $lineId = null, float $qty = 0): array
+    {
+        $managed = $code !== null && isset($sn['managed'][$code]);
+        $serials = $npbgId ? \App\Support\RiSerials::split($sn['serials'][$npbgId] ?? null) : [];
+        // nothing on the NPBG yet: the serials admin gudang picked while verifying
+        if ($managed && $serials === [] && $lineId) {
+            $serials = array_slice(ItemRequestFulfillmentService::heldFor($lineId, $npbgId), 0, max(0, (int) $qty));
+        }
+
+        return ['kode_barang' => $code, 'manage_sn' => $managed, 'serials' => $serials];
+    }
+
     public function handoverFulfillment(Request $request, ItemRequest $itemRequest, ItemRequestFulfillment $fulfillment): JsonResponse
     {
         abort_unless($fulfillment->item_request_id === $itemRequest->id, 404);
@@ -460,12 +555,17 @@ class ItemRequestController extends Controller
             'reasons.*' => ['nullable', 'string', 'max:200'],
             // picked up by a representative: the code / QR text the requester gave them
             'proxy_code' => ['nullable', 'string', 'max:60'],
+            // items with serial numbers: fulfillment line id => the serials of the units handed over
+            'serials' => ['nullable', 'array'],
+            'serials.*' => ['array', 'max:5000'],
+            'serials.*.*' => ['string', 'max:100'],
         ]);
         $this->fulfillment->handover($itemRequest, $fulfillment, $request->user(), $data['photo'], $data['signature'], $data['received_by'], $data['note'] ?? null,
             collect($data['handed'] ?? [])->mapWithKeys(fn ($q, $id) => [(int) $id => (float) $q])->all(),
             array_map('intval', $data['drop'] ?? []),
             collect($data['reasons'] ?? [])->mapWithKeys(fn ($t, $id) => [(int) $id => (string) $t])->all(),
-            $data['proxy_code'] ?? null);
+            $data['proxy_code'] ?? null,
+            collect($data['serials'] ?? [])->mapWithKeys(fn ($list, $id) => [(int) $id => array_values($list)])->all());
 
         return $this->show($request, $itemRequest->refresh());
     }
@@ -584,6 +684,35 @@ class ItemRequestController extends Controller
         return $this->show($request, $itemRequest->refresh());
     }
 
+    /** GET /api/item-requests/requesters?q= — Data Pekerja to make a request for (admin gudang). */
+    public function requesters(Request $request): JsonResponse
+    {
+        $q = trim((string) $request->query('q', ''));
+        $rows = \App\Models\Employee::with('department:id,name')->where('is_active', true)
+            ->when($q !== '', fn ($w) => $w->where('name', 'like', "%{$q}%"))->orderBy('name')->limit(20)->get();
+
+        return response()->json(['data' => $rows->map(fn ($e) => [
+            'id' => $e->id, 'name' => $e->name, 'divisi' => $e->department?->name, 'position' => $e->position,
+            'contact' => $e->phone_wa ?: $e->phone_office, 'has_account' => (bool) $e->user_id,
+        ])]);
+    }
+
+    /** @return array{user_id:?int, name:string, contact:?string, divisi:?string} the person a request is made for */
+    private function onBehalf(array $who): array
+    {
+        if (empty($who['employee_id']) && trim((string) ($who['name'] ?? '')) === '') {
+            throw \Illuminate\Validation\ValidationException::withMessages(['on_behalf.name' => 'Pilih pekerja dari Data Pekerja atau tulis nama peminta.']);
+        }
+        if (! empty($who['employee_id'])) {
+            $e = \App\Models\Employee::with('department:id,name')->findOrFail((int) $who['employee_id']);
+            $userId = $e->user_id ?: \App\Models\User::where('employee_id', $e->id)->value('id');
+
+            return ['user_id' => $userId ? (int) $userId : null, 'name' => $e->name, 'contact' => $e->phone_wa ?: $e->phone_office, 'divisi' => $e->department?->name];
+        }
+
+        return ['user_id' => null, 'name' => trim((string) $who['name']), 'contact' => null, 'divisi' => null];
+    }
+
     private function authorizeView(Request $request, ItemRequest $r): void
     {
         $user = $request->user();
@@ -604,6 +733,33 @@ class ItemRequestController extends Controller
         ];
     }
 
+    /**
+     * Where the request came from, in words: a Manufacturing / Disassembly Order (its warehouse door), typed by the
+     * warehouse admin for someone else, sent through a form link, or made in the app by the requester.
+     */
+    public static function sourceLabel(ItemRequest $r): string
+    {
+        if (\Illuminate\Support\Facades\Schema::hasTable('warehouse_gate_links')) {
+            $gate = \Illuminate\Support\Facades\DB::table('warehouse_gate_links')->where('item_request_id', $r->id)->first(['owner_type', 'owner_id']);
+            if ($gate) {
+                [$table, $label] = $gate->owner_type === 'MO' ? ['mrp_productions', 'Manufacturing Order'] : ['disassembly_orders', 'Disassembly Order'];
+                $number = \Illuminate\Support\Facades\DB::table($table)->where('id', $gate->owner_id)->value('number');
+
+                return trim("{$label} ".($number ?? "#{$gate->owner_id}"));
+            }
+        }
+        if ($r->entered_by && (int) $r->entered_by !== (int) $r->requester_id) {
+            return 'Made by '.(\App\Models\User::whereKey($r->entered_by)->value('name') ?? 'warehouse admin').' for the requester';
+        }
+        if ($r->source === 'LINK') {
+            $link = $r->link_id ? \Illuminate\Support\Facades\DB::table('item_request_links')->where('id', $r->link_id)->value('label') : null;
+
+            return 'Form link'.($link ? " · {$link}" : '');
+        }
+
+        return 'STOCKWISE app';
+    }
+
     private function present(ItemRequest $r): array
     {
         return [
@@ -611,6 +767,8 @@ class ItemRequestController extends Controller
             'form_type' => $r->form_type, 'form_label' => ItemRequestForms::label($r->form_type), 'urgency' => $r->urgency,
             'form_detail' => $r->form_detail, 'form_detail_label' => ItemRequestForms::describe($r->form_type ?? 'UMUM')['detail_label'],
             'requester_id' => $r->requester_id, 'requester_name' => $r->requester_name, 'requester_contact' => $r->requester_contact,
+            'entered_by_name' => $r->entered_by ? \App\Models\User::whereKey($r->entered_by)->value('name') : null,
+            'source_label' => self::sourceLabel($r),
             // where the request came from (office network or not) — IpClassifier
             'requester_location' => $r->requester_location ? IpClassifier::label($r->requester_location) : null,
             'divisi' => $r->divisi,

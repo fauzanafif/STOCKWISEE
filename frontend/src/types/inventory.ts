@@ -1,6 +1,10 @@
 export interface Paginated<T> {
   data: T[]
-  meta: { page: number; per_page: number; total: number; last_page: number }
+  meta: {
+    page: number; per_page: number; total: number; last_page: number
+    /** Master Barang Smart Search: the brands found among all the matches */
+    search?: { brands: string[] } | null
+  }
   links?: { next: string | null; prev: string | null }
 }
 
@@ -23,6 +27,9 @@ export interface ItemAnalysis {
 }
 
 export interface Item {
+  /** Smart Search only: why this item matched (Exact code, Same size, All words, Similar …) and its brand when clear */
+  search_relevance?: string | null
+  search_brand?: string | null
   id: number
   code: string
   description: string
@@ -30,6 +37,8 @@ export interface Item {
   /** Master Produk: BARANG (goods, has stock) / JASA (service, no stock) */
   product_kind: 'BARANG' | 'JASA'
   needs_blueprint: boolean
+  /** Accurate MANAGESN: goes in / out one serial number per unit */
+  manage_sn?: boolean
   lead_time_days: number | null
   is_active: boolean
   source?: string | null

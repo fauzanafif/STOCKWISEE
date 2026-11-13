@@ -165,12 +165,27 @@ export interface NpbgCreatePayload {
   kuantitas: number
   satuan?: string | null
   no_seri?: string | null
+  /** an item with serial numbers: the units going out, one serial each */
+  serials?: string[]
   peminta?: string | null
   deskripsi?: string | null
   keterangan?: string | null
   tgl_npbg?: string | null
   /** ticked "Kembali bekas": the new line goes straight into Tracking Pengembalian Bekas */
   kembali_bekas?: boolean
+}
+
+export interface StockSerial { serial: string; source: 'ACCURATE' | 'RI'; expired: string | null }
+
+/** The serial numbers of an item still in stock (Accurate + STOCKWISE), and whether the item uses them. */
+/** the serials of an item in stock; with an Item Request, the ones it already holds are listed too */
+export function useNpbgSerials(kodeBarang: string, itemRequestId?: number) {
+  return useQuery({
+    enabled: kodeBarang.length > 0,
+    queryKey: ['npbg-serials', kodeBarang, itemRequestId ?? null],
+    queryFn: async () => (await api.get<{ data: StockSerial[]; meta: { manage_sn: boolean } }>('/api/npbg/serials', { params: { kode_barang: kodeBarang, item_request_id: itemRequestId } })).data,
+    staleTime: 15_000,
+  })
 }
 
 export function useCreateNpbg() {

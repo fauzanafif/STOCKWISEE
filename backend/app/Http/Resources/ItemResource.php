@@ -60,6 +60,8 @@ class ItemResource extends JsonResource
             // BARANG / JASA (Master Produk)
             'product_kind' => $this->product_kind ?? 'BARANG',
             'needs_blueprint' => $this->needs_blueprint,
+            // Accurate Item.MANAGESN: goes in / out one serial number per unit
+            'manage_sn' => (bool) $this->manage_sn,
             'lead_time_days' => $this->lead_time_days,
             'is_active' => $this->is_active,
             'source' => $this->source,

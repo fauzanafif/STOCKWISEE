@@ -15,6 +15,8 @@ class TrackingSeeder extends Seeder
 {
     public function run(): void
     {
+        ProductionGuard::refuse(static::class);
+
         // erd.md: seed 14 component types Pengembalian Bekas.
         $components = [
             'BONIT_BR' => 'Bonit BR', 'PEN_BR' => 'Pen BR', 'PEN_SS' => 'Pen SS',

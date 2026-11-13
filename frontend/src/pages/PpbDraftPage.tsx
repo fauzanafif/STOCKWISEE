@@ -18,6 +18,9 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Modal } from '@/components/ui/modal'
 import { invalidTo, toast } from '@/lib/notify'
+import { SmartButtons } from '@/components/documents/SmartButtons'
+import { Chatter } from '@/components/documents/Chatter'
+import { ChatterLayout } from '@/components/doc/DocLayout'
 
 const fmtDateTime = (v: string | null) => (v ? new Date(v).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-')
 const fmtQty = (n: number | null | undefined) => (n == null ? '—' : n.toLocaleString('id-ID', { maximumFractionDigits: 2 }))
@@ -435,86 +438,90 @@ export function PpbDraftPage() {
             </Button>
           )}
         </>} />
+      <SmartButtons type="ppb_draft" id={Number(id)} />
 
-      {d.status === 'DIAJUKAN' && (
-        <Card className="flex flex-wrap items-center justify-between gap-2 border-emerald-200 bg-emerald-50/60 p-4 text-sm">
-          <span>Already submitted as Purchase Request <b className="">{d.no_ppb}</b> · {fmtDateTime(d.submitted_at)}{d.submitted_by_name ? ` by ${d.submitted_by_name}` : ''}. Waiting for PPB approval.</span>
-          {d.ppb_id && <Link to={`/ppb/${d.ppb_id}`} className="font-medium text-primary hover:underline">Open Purchase Request</Link>}
+      <ChatterLayout chatter={<Chatter type="ppb_draft" id={Number(id)} />}>
+        {d.status === 'DIAJUKAN' && (
+          <Card className="flex flex-wrap items-center justify-between gap-2 border-emerald-200 bg-emerald-50/60 p-4 text-sm">
+            <span>Already submitted as Purchase Request <b className="">{d.no_ppb}</b> · {fmtDateTime(d.submitted_at)}{d.submitted_by_name ? ` by ${d.submitted_by_name}` : ''}. Waiting for PPB approval.</span>
+            {d.ppb_id && <Link to={`/ppb/${d.ppb_id}`} className="font-medium text-primary hover:underline">Open Purchase Request</Link>}
+          </Card>
+        )}
+
+        <Card className="grid gap-3 p-4 sm:grid-cols-2 2xl:grid-cols-4">
+          <div className="space-y-1"><Label htmlFor="dr-divisi">Division</Label><Input id="dr-divisi" value={divisi} maxLength={30} disabled={!editable} onChange={(e) => { setDivisi(e.target.value); setDirty(true) }} placeholder="e.g. WAREHOUSE" /></div>
+          <div className="space-y-1"><Label htmlFor="dr-tgl">Date needed</Label><Input id="dr-tgl" type="date" value={tglDiperlukan} disabled={!editable} onChange={(e) => { setTglDiperlukan(e.target.value); setDirty(true) }} /></div>
+          <div className="space-y-1"><Label htmlFor="dr-peminta">Requester</Label><Input id="dr-peminta" value={peminta} maxLength={150} disabled={!editable} onChange={(e) => { setPeminta(e.target.value); setDirty(true) }} /></div>
+          <div className="space-y-1"><Label htmlFor="dr-ket">Remarks</Label><Input id="dr-ket" value={keterangan} maxLength={2000} disabled={!editable} onChange={(e) => { setKeterangan(e.target.value); setDirty(true) }} placeholder={`Restock from ${d.number}`} /></div>
         </Card>
-      )}
 
-      <Card className="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="space-y-1"><Label htmlFor="dr-divisi">Division</Label><Input id="dr-divisi" value={divisi} maxLength={30} disabled={!editable} onChange={(e) => { setDivisi(e.target.value); setDirty(true) }} placeholder="e.g. WAREHOUSE" /></div>
-        <div className="space-y-1"><Label htmlFor="dr-tgl">Date needed</Label><Input id="dr-tgl" type="date" value={tglDiperlukan} disabled={!editable} onChange={(e) => { setTglDiperlukan(e.target.value); setDirty(true) }} /></div>
-        <div className="space-y-1"><Label htmlFor="dr-peminta">Requester</Label><Input id="dr-peminta" value={peminta} maxLength={150} disabled={!editable} onChange={(e) => { setPeminta(e.target.value); setDirty(true) }} /></div>
-        <div className="space-y-1"><Label htmlFor="dr-ket">Remarks</Label><Input id="dr-ket" value={keterangan} maxLength={2000} disabled={!editable} onChange={(e) => { setKeterangan(e.target.value); setDirty(true) }} placeholder={`Restock from ${d.number}`} /></div>
-      </Card>
-
-      <Card className="overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="border-b bg-muted text-left">
-              <tr>
-                <th className="w-10 px-3 py-2.5">#</th>
-                <th className="px-3 py-2.5">Item</th>
-                <th className="px-3 py-2.5 text-right">Available</th>
-                <th className="w-28 px-3 py-2.5 text-right">Qty</th>
-                <th className="w-24 px-3 py-2.5">Unit</th>
-                <th className="px-3 py-2.5">Notes</th>
-                {editable && <th className="w-10 px-3 py-2.5"><span className="sr-only">Delete</span></th>}
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {lines.map((l, i) => (
-                <tr key={l.key} className="align-top">
-                  <td className="px-3 py-2.5 tabular-nums text-muted-foreground">{i + 1}</td>
-                  <td className="px-3 py-2">
-                    {l.item_id ? (
-                      <><div className="font-medium">{l.deskripsi_barang}</div><div className="text-[13px] text-muted-foreground">{l.kode_barang}</div></>
-                    ) : (
-                      <Input value={l.deskripsi_barang} disabled={!editable} maxLength={400} placeholder="Item name (not in Product Master yet)" aria-label={`Row item name ${i + 1}`}
-                        onChange={(e) => change(l.key, 'deskripsi_barang', e.target.value)} />
-                    )}
-                    {l.basis && <div className="mt-0.5 text-xs text-muted-foreground">{l.basis}</div>}
-                  </td>
-                  <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums text-muted-foreground">{fmtQty(l.available)}</td>
-                  <td className="px-3 py-2">
-                    <Input type="number" inputMode="decimal" min={0} step="any" className="text-right" value={l.qty} disabled={!editable} aria-label={`Row qty ${i + 1}`}
-                      onChange={(e) => change(l.key, 'qty', e.target.value === '' ? 0 : Number(e.target.value))} />
-                  </td>
-                  <td className="px-3 py-2">
-                    <Input value={l.satuan ?? ''} disabled={!editable || !!l.item_id} maxLength={30} aria-label={`Row unit ${i + 1}`} onChange={(e) => change(l.key, 'satuan', e.target.value || null)} />
-                  </td>
-                  <td className="px-3 py-2">
-                    <Input value={l.catatan ?? ''} disabled={!editable} maxLength={255} placeholder="optional" aria-label={`Row notes ${i + 1}`} onChange={(e) => change(l.key, 'catatan', e.target.value || null)} />
-                  </td>
-                  {editable && (
-                    <td className="px-2 py-2">
-                      <button type="button" className="rounded p-2 text-muted-foreground hover:bg-muted hover:text-destructive" aria-label={`Delete row ${i + 1}`}
-                        onClick={() => { setLines((ls) => ls.filter((x) => x.key !== l.key)); setDirty(true) }}><Trash2 className="size-4" /></button>
-                    </td>
-                  )}
+        <Card className="overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="border-b bg-muted text-left">
+                <tr>
+                  <th className="w-10 px-3 py-2.5">#</th>
+                  <th className="px-3 py-2.5">Item</th>
+                  <th className="px-3 py-2.5 text-right">Available</th>
+                  <th className="w-28 px-3 py-2.5 text-right">Qty</th>
+                  <th className="w-24 px-3 py-2.5">Unit</th>
+                  <th className="px-3 py-2.5">Notes</th>
+                  {editable && <th className="w-10 px-3 py-2.5"><span className="sr-only">Delete</span></th>}
                 </tr>
-              ))}
-              {lines.length === 0 && <tr><td colSpan={7} className="px-3 py-10 text-center text-muted-foreground">No items yet.</td></tr>}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody className="divide-y">
+                {lines.map((l, i) => (
+                  <tr key={l.key} className="align-top">
+                    <td className="px-3 py-2.5 tabular-nums text-muted-foreground">{i + 1}</td>
+                    <td className="px-3 py-2">
+                      {l.item_id ? (
+                        <><div className="font-medium">{l.deskripsi_barang}</div><div className="text-[13px] text-muted-foreground">{l.kode_barang}</div></>
+                      ) : (
+                        <Input value={l.deskripsi_barang} disabled={!editable} maxLength={400} placeholder="Item name (not in Product Master yet)" aria-label={`Row item name ${i + 1}`}
+                          onChange={(e) => change(l.key, 'deskripsi_barang', e.target.value)} />
+                      )}
+                      {l.basis && <div className="mt-0.5 text-xs text-muted-foreground">{l.basis}</div>}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums text-muted-foreground">{fmtQty(l.available)}</td>
+                    <td className="px-3 py-2">
+                      <Input type="number" inputMode="decimal" min={0} step="any" className="text-right" value={l.qty} disabled={!editable} aria-label={`Row qty ${i + 1}`}
+                        onChange={(e) => change(l.key, 'qty', e.target.value === '' ? 0 : Number(e.target.value))} />
+                    </td>
+                    <td className="px-3 py-2">
+                      <Input value={l.satuan ?? ''} disabled={!editable || !!l.item_id} maxLength={30} aria-label={`Row unit ${i + 1}`} onChange={(e) => change(l.key, 'satuan', e.target.value || null)} />
+                    </td>
+                    <td className="px-3 py-2">
+                      <Input value={l.catatan ?? ''} disabled={!editable} maxLength={255} placeholder="optional" aria-label={`Row notes ${i + 1}`} onChange={(e) => change(l.key, 'catatan', e.target.value || null)} />
+                    </td>
+                    {editable && (
+                      <td className="px-2 py-2">
+                        <button type="button" className="rounded p-2 text-muted-foreground hover:bg-muted hover:text-destructive" aria-label={`Delete row ${i + 1}`}
+                          onClick={() => { setLines((ls) => ls.filter((x) => x.key !== l.key)); setDirty(true) }}><Trash2 className="size-4" /></button>
+                      </td>
+                    )}
+                  </tr>
+                ))}
+                {lines.length === 0 && <tr><td colSpan={7} className="px-3 py-10 text-center text-muted-foreground">No items yet.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+          {editable && (
+            <div className="flex flex-col gap-2 border-t bg-muted/30 p-3 sm:flex-row sm:items-center">
+              <div className="min-w-0 flex-1"><ItemPicker onPick={addItem} /></div>
+              <Button variant="outline" size="sm" onClick={addFree}><Plus className="size-4" /> Item outside the master</Button>
+            </div>
+          )}
+        </Card>
+
+        {err && <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{err}</p>}
         {editable && (
-          <div className="flex flex-col gap-2 border-t bg-muted/30 p-3 sm:flex-row sm:items-center">
-            <div className="min-w-0 flex-1"><ItemPicker onPick={addItem} /></div>
-            <Button variant="outline" size="sm" onClick={addFree}><Plus className="size-4" /> Item outside the master</Button>
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button variant="outline" disabled={act.save.isPending || !dirty} onClick={save}><Save className="size-4" /> {dirty ? 'Save draft' : 'Saved'}</Button>
+            <Button onClick={() => { setErr(null); setSubmitting(true) }}><Send className="size-4" /> Submit as Purchase Request</Button>
           </div>
         )}
-      </Card>
+      </ChatterLayout>
 
-      {err && <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{err}</p>}
-      {editable && (
-        <div className="flex flex-wrap justify-end gap-2">
-          <Button variant="outline" disabled={act.save.isPending || !dirty} onClick={save}><Save className="size-4" /> {dirty ? 'Save draft' : 'Saved'}</Button>
-          <Button onClick={() => { setErr(null); setSubmitting(true) }}><Send className="size-4" /> Submit as Purchase Request</Button>
-        </div>
-      )}
 
       <Modal open={submitting} onClose={() => setSubmitting(false)} title="Submit as Purchase Request" description={`${lines.length} items from ${d.number} into one Purchase Request document, then waits for Purchase Request approval.`}
         footer={<>

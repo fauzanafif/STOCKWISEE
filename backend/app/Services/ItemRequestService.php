@@ -79,6 +79,45 @@ class ItemRequestService
         return ['qty' => UomConverter::baseQty($asked, $uom['unit_ratio']), 'approved_qty' => $base, 'requested_qty' => $asked, 'requested_unit' => $unit, 'unit_ratio' => $uom['unit_ratio']];
     }
 
+    /**
+     * An item with serial numbers: admin gudang picks the serials of the units given from stock while verifying
+     * (one per unit, in the item's own unit, at most what is in stock: the rest is bought and picked when it arrives).
+     * They are held for this request (no other request / NPBG takes them) and go out at the serah terima.
+     *
+     * @param  array<string, true>  $taken  serials already picked on another line of this request
+     */
+    private function holdSerials(ItemRequestLine $line, Item $item, ItemRequest $request, array $picked, string $field, array &$taken): void
+    {
+        if (! \Illuminate\Support\Facades\Schema::hasColumn('item_request_lines', 'serials')) {
+            return;
+        }
+        if (! $item->manage_sn) {
+            $line->serials = null;
+
+            return;
+        }
+        $base = (float) $line->approved_qty;
+        if (floor($base) !== $base) {
+            throw ValidationException::withMessages([$field => "{$item->code} memakai nomor seri: jumlahnya harus bulat (sekarang {$base} {$item->unit?->code})."]);
+        }
+        $stock = app(SerialStock::class);
+        $free = array_filter($stock->available($item->code, null, $request->id), fn ($s) => ! isset($taken[SerialStock::key($s['serial'])]));
+        $need = (int) min($base, count($free));
+        if ($need === 0) {
+            $line->serials = null;
+
+            return;
+        }
+        $list = $stock->pick($item->code, $need, $picked, null, $field, $request->id);
+        foreach ($list as $sn) {
+            if (isset($taken[SerialStock::key($sn)])) {
+                throw ValidationException::withMessages([$field => "Nomor seri {$sn} sudah dipilih untuk barang lain di request ini."]);
+            }
+            $taken[SerialStock::key($sn)] = true;
+        }
+        $line->serials = \App\Support\RiSerials::join($list);
+    }
+
     /** The unit a line is verified in: the correction given, else what was asked. */
     private function askedUnit(ItemRequestLine $line, array $in): string
     {
@@ -93,7 +132,7 @@ class ItemRequestService
      *
      * @param  list<array{item_id:int, qty:float|int|string}>  $picks
      */
-    private function split(ItemRequestLine $line, User $admin, array $picks, string $unit): void
+    private function split(ItemRequestLine $line, User $admin, array $picks, string $unit, ItemRequest $request, array &$taken): void
     {
         $asked = $line->requestedText();
         $total = round(array_sum(array_map(fn ($p) => (float) $p['qty'], $picks)), 2);
@@ -117,7 +156,9 @@ class ItemRequestService
             });
             $target->matchTo($item);
             $target->fill($this->inItemUnit($item, $unit, $i === 0 ? $qty + $rest : $qty, $qty, $asked, "lines.{$line->id}.items")
-                + ['decision' => 'NPBG', 'decided_by' => $admin->id, 'decided_at' => now()])->save();
+                + ['decision' => 'NPBG', 'decided_by' => $admin->id, 'decided_at' => now()]);
+            $this->holdSerials($target, $item, $request, (array) ($p['serials'] ?? []), "lines.{$line->id}.items.{$i}.serials", $taken);
+            $target->save();
             // the requester's images go with every part (own copies: one replaced never breaks the other)
             if ($i > 0) {
                 foreach ($images as $img) {
@@ -241,17 +282,18 @@ class ItemRequestService
                 // admin gudang's note on the request, seen by the approvers and the requester
                 'verify_note' => trim((string) $note) !== '' ? mb_substr(trim((string) $note), 0, 1000) : null,
             ]);
+            $taken = [];
             foreach ($open as $id => $line) {
                 $in = $lines[$id] ?? [];
                 // several Master Produk items for one requested item: one line per item (split() below)
                 if (! empty($in['items']) && count($in['items']) > 1) {
                     $this->shortReason($line, $in);
-                    $this->split($line, $admin, $in['items'], $this->askedUnit($line, $in));
+                    $this->split($line, $admin, $in['items'], $this->askedUnit($line, $in), $request, $taken);
 
                     continue;
                 }
                 if (! empty($in['items'])) {
-                    $in = ['item_id' => $in['items'][0]['item_id'], 'qty' => $in['items'][0]['qty'], 'reason' => $in['reason'] ?? null, 'unit' => $in['unit'] ?? null];
+                    $in = ['item_id' => $in['items'][0]['item_id'], 'qty' => $in['items'][0]['qty'], 'reason' => $in['reason'] ?? null, 'unit' => $in['unit'] ?? null, 'serials' => $in['items'][0]['serials'] ?? ($in['serials'] ?? [])];
                 }
                 $unit = $this->askedUnit($line, $in);
                 $itemId = ! empty($in['item_id']) ? (int) $in['item_id'] : $line->item_id;
@@ -275,7 +317,9 @@ class ItemRequestService
                 }
                 // NPBG = "from the warehouse"; whether it is given from stock or bought is decided after approval
                 $line->fill($this->inItemUnit($item, $unit, (float) $line->qty, $qty, $line->requestedText(), "lines.{$id}.item_id")
-                    + ['decision' => 'NPBG', 'decided_by' => $admin->id, 'decided_at' => now()])->save();
+                    + ['decision' => 'NPBG', 'decided_by' => $admin->id, 'decided_at' => now()]);
+                $this->holdSerials($line, $item, $request, (array) ($in['serials'] ?? []), "lines.{$id}.serials", $taken);
+                $line->save();
             }
             $request->update(['status' => self::statusOf($request->lines()->get()), 'processed_by' => $admin->id, 'processed_at' => now()]);
         });

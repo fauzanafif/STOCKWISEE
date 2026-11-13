@@ -1,14 +1,19 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Columns3, Eye, Package, Pencil, Trash2, Plus } from 'lucide-react'
+import { Columns3, Eye, Package, Pencil, Trash2, Plus, Sparkles } from 'lucide-react'
 import { useAccurateCategoryOptions, useDeleteItem, useItemOptions, useItems, useUnits, useWarehouses } from '@/features/inventory/api'
 import { useAuth } from '@/auth/AuthContext'
 import { apiErrorMessage } from '@/lib/api'
 import { ItemFormModal } from '@/components/ItemFormModal'
+import { SmartSearchModal } from '@/components/items/SmartSearchModal'
 import { ItemHistoryModal } from '@/components/ItemHistoryModal'
+import { ItemSerialsModal } from '@/components/ItemSerialsModal'
 import { ExportBar } from '@/components/export/ExportBar'
 import { PageHeader } from '@/components/PageHeader'
 import { DataTable, type Column } from '@/components/DataTable'
+import { cn } from '@/lib/utils'
+import { RangeFilter } from '@/components/RangeFilter'
+import { rangeParams, type Range } from '@/lib/range'
 import { Badge, PriorityBadge, StatusBadge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -46,10 +51,18 @@ export function ItemsPage() {
   const [anak3, setAnak3] = useState('')
   const [unitId, setUnitId] = useState('')
   const [warehouseId, setWarehouseId] = useState('')
+  const [manageSn, setManageSn] = useState('')
+  const [brand, setBrand] = useState('')
+  const [smartOpen, setSmartOpen] = useState(false)
+  // number ranges (from–to) of the QTY / Available / Lead Time columns
+  const [qtyRange, setQtyRange] = useState<Range>({ min: '', max: '' })
+  const [availRange, setAvailRange] = useState<Range>({ min: '', max: '' })
+  const [ltRange, setLtRange] = useState<Range>({ min: '', max: '' })
   const [page, setPage] = useState(1)
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<Item | null>(null)
   const [historyItem, setHistoryItem] = useState<Item | null>(null)
+  const [serialItem, setSerialItem] = useState<Item | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const del = useDeleteItem()
   const { data: branches } = useAccurateCategoryOptions()
@@ -116,6 +129,11 @@ export function ItemsPage() {
     accurate_category_anak_3: anak3 || undefined,
     unit_id: unitId ? Number(unitId) : undefined,
     warehouse_id: warehouseId ? Number(warehouseId) : undefined,
+    manage_sn: manageSn || undefined,
+    brand: brand || undefined,
+    ...rangeParams('qty', qtyRange),
+    ...rangeParams('available', availRange),
+    ...rangeParams('lead_time', ltRange),
   }
 
   const { data, isLoading, isError } = useItems({ ...activeFilters, page, per_page: 25 })
@@ -154,6 +172,12 @@ export function ItemsPage() {
       cell: (r) => (
         <div className="flex items-center gap-2">
           <span className="text-[13px]">{r.code}</span>
+          {r.search_relevance && <span className={cn('rounded px-1 text-[10px] font-medium', ['Exact code', 'Exact name', 'Same size'].includes(r.search_relevance) ? 'bg-emerald-50 text-emerald-700' : r.search_relevance === 'Partly matching' ? 'bg-amber-50 text-amber-800' : 'bg-slate-100 text-slate-600')}
+            title="Why this item matched the search">{r.search_relevance}</span>}
+          {r.manage_sn && (
+            <button type="button" onClick={(e) => { e.stopPropagation(); setSerialItem(r) }}
+              className="rounded bg-violet-100 px-1 text-[10px] font-semibold text-violet-700 hover:bg-violet-200" title="View serial numbers" aria-label={`View serial numbers ${r.code}`}>SN</button>
+          )}
           <button
             className="text-muted-foreground hover:text-primary"
             onClick={(e) => { e.stopPropagation(); setHistoryItem(r) }}
@@ -349,9 +373,14 @@ export function ItemsPage() {
           value={search}
           onChange={(e) => {
             setSearch(e.target.value)
+            setBrand('')
             setPage(1)
           }}
         />
+        <Button size="sm" variant="outline" className="h-9" onClick={() => setSmartOpen(true)} title="Brands, item count and total stock of a specification">
+          <Sparkles className="size-4" />
+          Smart Search
+        </Button>
         <select
           className="h-9 max-w-full rounded-md border border-input bg-card px-3 text-sm"
           value={induk}
@@ -451,8 +480,35 @@ export function ItemsPage() {
           <option value="TIDAK_AMAN">Unsafe</option>
           <option value="BEP">Out of Stock (BEP)</option>
         </select>
+        <select
+          className="h-9 max-w-full rounded-md border border-input bg-card px-3 text-sm"
+          value={manageSn}
+          aria-label="Serial number"
+          onChange={(e) => {
+            setManageSn(e.target.value)
+            setPage(1)
+          }}
+        >
+          <option value="">With / without SN</option>
+          <option value="1">Uses serial number (SN)</option>
+          <option value="0">No serial number</option>
+        </select>
+        <RangeFilter label="QTY" value={qtyRange} onChange={(v) => { setQtyRange(v); setPage(1) }} />
+        <RangeFilter label="Available" value={availRange} onChange={(v) => { setAvailRange(v); setPage(1) }} />
+        <RangeFilter label="Lead Time" unit="days" step="1" value={ltRange} onChange={(v) => { setLtRange(v); setPage(1) }} />
       </FilterBar>
 
+      {search && ((data?.meta.search?.brands.length ?? 0) > 0 || brand) && (
+        <div className="flex flex-wrap items-center gap-1.5 text-xs" aria-label="Brands">
+          <span className="text-muted-foreground">Brand:</span>
+          <button type="button" onClick={() => { setBrand(''); setPage(1) }} className={cn('rounded-full border px-2.5 py-0.5', !brand ? 'border-primary bg-primary/10 text-primary' : 'bg-card hover:bg-muted')}>All</button>
+          {(brand ? [brand] : data?.meta.search?.brands ?? []).map((b) => (
+            <button key={b} type="button" onClick={() => { setBrand(brand === b ? '' : b); setPage(1) }}
+              className={cn('rounded-full border px-2.5 py-0.5', brand === b ? 'border-primary bg-primary/10 text-primary' : 'bg-card hover:bg-muted')}>{b}</button>
+          ))}
+          <span className="text-muted-foreground">· read from the item name</span>
+        </div>
+      )}
       {isError && <p className="text-sm text-destructive">Failed to load data.</p>}
       {err && <p className="text-sm text-destructive">{err}</p>}
 
@@ -462,11 +518,14 @@ export function ItemsPage() {
         notes={{ entity: 'item' }} rowKey={(r) => r.id}
         isLoading={isLoading}
         containerClassName="max-h-[65vh] overflow-y-auto"
+        emptyText={search ? `No item matches “${search}”. Try fewer words, another spelling (e.g. 7.50-16 or 750 R16), or the item code.` : undefined}
         stickyHeader
         footer={scrollFooter}
       />
 
       <ItemFormModal open={formOpen} onClose={() => setFormOpen(false)} item={editing} />
+      {smartOpen && <SmartSearchModal open onClose={() => setSmartOpen(false)} />}
+      <ItemSerialsModal item={serialItem} onClose={() => setSerialItem(null)} />
       {historyItem && (
         <ItemHistoryModal
           itemId={historyItem.id}

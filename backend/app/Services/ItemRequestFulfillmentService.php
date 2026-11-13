@@ -289,9 +289,9 @@ class ItemRequestFulfillmentService
      *                           quantity drops by it (else it stays owed and is given again when stock is there)
      * @param  array<int, string>  $reasons  why less than the approved NPBG is handed over (required then: the stock was there)
      */
-    public function handover(ItemRequest $request, ItemRequestFulfillment $f, User $user, string $photo, string $signature, string $receivedBy, ?string $note, array $handed = [], array $drop = [], array $reasons = [], ?string $proxyCode = null): ItemRequest
+    public function handover(ItemRequest $request, ItemRequestFulfillment $f, User $user, string $photo, string $signature, string $receivedBy, ?string $note, array $handed = [], array $drop = [], array $reasons = [], ?string $proxyCode = null, array $serials = []): ItemRequest
     {
-        DB::transaction(function () use (&$request, $f, $user, $photo, $signature, $receivedBy, $note, $handed, $drop, $reasons, $proxyCode) {
+        DB::transaction(function () use (&$request, $f, $user, $photo, $signature, $receivedBy, $note, $handed, $drop, $reasons, $proxyCode, $serials) {
             $request = ItemRequest::lockForUpdate()->findOrFail($request->id);
             $f = ItemRequestFulfillment::lockForUpdate()->with('lines')->findOrFail($f->id);
             if ($f->item_request_id !== $request->id || ! in_array($f->status, self::OPEN, true)) {
@@ -308,6 +308,19 @@ class ItemRequestFulfillmentService
                 if ($got + 0.0001 < (float) $fl->qty) {
                     $name = ItemRequestLine::whereKey($fl->item_request_line_id)->value('deskripsi_barang') ?? 'barang';
                     throw ValidationException::withMessages(["handed.{$fl->id}" => "{$name} diserahkan utuh sesuai NPBG yang disiapkan, tidak bisa sebagian."]);
+                }
+            }
+            // an item with serial numbers leaves with the serials of the units handed over, picked from those in stock
+            $codes = ItemRequestLine::whereIn('id', $f->lines->pluck('item_request_line_id'))->pluck('kode_barang', 'id');
+            $managed = array_flip(\App\Services\SerialStock::managedCodes($codes->values()));
+            foreach ($f->lines as $fl) {
+                $code = (string) ($codes[$fl->item_request_line_id] ?? '');
+                $got = array_key_exists($fl->id, $handed) ? (float) $handed[$fl->id] : (float) $fl->qty;
+                if ($code !== '' && isset($managed[$code]) && $got > 0 && $fl->npbg_id) {
+                    // not sent: the serials picked for this item while verifying (those not given out yet)
+                    $chosen = $serials[$fl->id] ?? array_slice(self::heldFor((int) $fl->item_request_line_id, (int) $fl->npbg_id), 0, (int) $got);
+                    $picked = app(\App\Services\SerialStock::class)->pick($code, $got, $chosen, (int) $fl->npbg_id, "serials.{$fl->id}", $request->id);
+                    Npbg::whereKey($fl->npbg_id)->update(['no_seri' => \App\Support\RiSerials::join($picked)]);
                 }
             }
             // picked up by a representative: the code the requester gave them, scanned here (one use)
@@ -551,6 +564,28 @@ class ItemRequestFulfillmentService
     }
 
     /** warehouse id => qty still held for this NPBG */
+    /**
+     * The serials picked for a request line while verifying that are not on another of its NPBGs yet.
+     *
+     * @return list<string>
+     */
+    public static function heldFor(int $lineId, ?int $exceptNpbgId = null): array
+    {
+        if (! \Illuminate\Support\Facades\Schema::hasColumn('item_request_lines', 'serials')) {
+            return [];
+        }
+        $all = \App\Support\RiSerials::split(ItemRequestLine::whereKey($lineId)->value('serials'));
+        if ($all === []) {
+            return [];
+        }
+        $used = \App\Models\ItemRequestFulfillmentLine::where('item_request_line_id', $lineId)->whereNotNull('npbg_id')
+            ->when($exceptNpbgId, fn ($q, $id) => $q->where('npbg_id', '!=', $id))->pluck('npbg_id');
+        $out = $used->isEmpty() ? [] : collect(Npbg::whereIn('id', $used)->pluck('no_seri'))->flatMap(fn ($t) => \App\Support\RiSerials::split($t))
+            ->map(fn ($x) => \App\Services\SerialStock::key($x))->flip()->all();
+
+        return array_values(array_filter($all, fn ($x) => ! isset($out[\App\Services\SerialStock::key($x)])));
+    }
+
     public static function held(?int $npbgId): array
     {
         if (! $npbgId) {
