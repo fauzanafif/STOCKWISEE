@@ -53,6 +53,27 @@ __pycache__/
 # Local backups
 Backup/
 *.sql
-.env
-.env.*
-!.env.example
+
+# Employee account lists, exports, data dumps (usernames/passwords, personal data) — never commit
+*.csv
+*.CSV
+AKUN*
+*.bak
+*.dump
+*.sqlite
+*.sqlite3
+*.zip
+*.7z
+*.rar
+
+# Keys / certificates
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+id_rsa*
+
+# Runtime: sync/agent logs & status, Firebird staging copies
+/Logs/
+/Staging/
