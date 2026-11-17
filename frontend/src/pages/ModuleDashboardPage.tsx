@@ -84,8 +84,18 @@ function Upcoming() {
  * no charts. Each row opens the document or list where it is done.
  */
 export function ModuleDashboardPage({ module }: { module: ReminderModule }) {
-  const { hasPermission } = useAuth()
   const m = MODULES[module]
+  return (
+    <div className="space-y-4">
+      <PageHeader title={m.title} subtitle={m.subtitle} />
+      <ModuleDashboardBody module={module} />
+    </div>
+  )
+}
+
+/** A module's key figures and to-do, without a page title: its page, or a section of an app dashboard. */
+export function ModuleDashboardBody({ module, counts = true }: { module: ReminderModule; counts?: boolean }) {
+  const { hasPermission } = useAuth()
   const stats = useModuleStats(module)
 
   // Purchase Request / Purchase Order: the items ready to process first, the other reminders under them
@@ -97,10 +107,9 @@ export function ModuleDashboardPage({ module }: { module: ReminderModule }) {
 
   return (
     <div className="space-y-4">
-      <PageHeader title={m.title} subtitle={m.subtitle} />
-      {stats.data
+      {counts && (stats.data
         ? <Counts s={stats.data} />
-        : !stats.isError && <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">{[0, 1, 2, 3].map((i) => <div key={i} className="h-[62px] animate-pulse rounded-lg border bg-muted/40" />)}</div>}
+        : !stats.isError && <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">{[0, 1, 2, 3].map((i) => <div key={i} className="h-[62px] animate-pulse rounded-lg border bg-muted/40" />)}</div>)}
       {module === 'important' ? (
         <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
           <TodoSection title="To do">{todo}</TodoSection>

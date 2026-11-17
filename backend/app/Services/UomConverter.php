@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Item;
 use App\Models\ItemUnitConversion;
 use App\Models\Unit;
+use App\Support\SchemaCache;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -54,11 +55,17 @@ class UomConverter
      *
      * @return Collection<string, array{id:?int, unit_id:?int, code:string, ratio:float, ratio_decimal:string, source:string}>
      */
-    public function itemConversions(Item $item): Collection
+    public function itemConversions(Item $item, bool $withStale = false): Collection
     {
         $units = Unit::pluck('id', 'code');
-        $out = ItemUnitConversion::with('unit:id,code')->where('item_id', $item->id)->get()
-            ->mapWithKeys(fn ($c) => [$c->unit->code => ['id' => $c->id, 'unit_id' => $c->unit_id, 'code' => $c->unit->code, 'ratio' => (float) $c->ratio, 'ratio_decimal' => self::dec($c->ratio), 'source' => 'MANUAL']]);
+        // a ratio set against another base unit than the item's of today is not used until it is reviewed
+        $tracked = SchemaCache::hasColumn('item_unit_conversions', 'base_unit_id');
+        // callers may have loaded only id and code: the item's unit is then read here
+        $itemUnit = ! $tracked ? null : (array_key_exists('unit_id', $item->getAttributes()) ? $item->unit_id : Item::whereKey($item->id)->value('unit_id'));
+        $out = ItemUnitConversion::with($tracked ? ['unit:id,code', 'baseUnit:id,code'] : ['unit:id,code'])->where('item_id', $item->id)->get()
+            ->filter(fn ($c) => $withStale || ! ($tracked && $c->isStale($itemUnit)))
+            ->mapWithKeys(fn ($c) => [$c->unit->code => ['id' => $c->id, 'unit_id' => $c->unit_id, 'code' => $c->unit->code, 'ratio' => (float) $c->ratio, 'ratio_decimal' => self::dec($c->ratio), 'source' => 'MANUAL']
+                + ($withStale ? ['needs_review' => $tracked && $c->isStale($itemUnit), 'set_against' => $tracked ? $c->baseUnit?->code : null] : [])]);
         if (filled($item->code) && Schema::hasTable('accurate_item')) {
             $row = DB::table('accurate_item')->where('ITEMNO', $item->code)->first();
             foreach ([['UNIT2', 'RATIO2'], ['UNIT3', 'RATIO3']] as [$u, $r]) {

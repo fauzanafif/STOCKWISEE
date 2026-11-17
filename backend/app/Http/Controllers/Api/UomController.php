@@ -8,6 +8,7 @@ use App\Models\ItemUnitConversion;
 use App\Models\Unit;
 use App\Models\UomCategory;
 use App\Services\UomConverter;
+use App\Support\SchemaCache;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -206,7 +207,8 @@ class UomController extends Controller
     public function itemConversions(Item $item): JsonResponse
     {
         $item->load('unit:id,code,name');
-        $conversions = $this->converter->itemConversions($item)->map(fn ($c) => collect($c)->except('ratio_decimal')->all())->values();
+        // with the ones set against an older base unit, marked needs_review (not used until reviewed)
+        $conversions = $this->converter->itemConversions($item, true)->map(fn ($c) => collect($c)->except('ratio_decimal')->all())->values();
 
         return response()->json(['data' => [
             'item' => ['id' => $item->id, 'code' => $item->code, 'description' => $item->description, 'unit_id' => $item->unit_id, 'unit' => $item->unit?->code],
@@ -228,9 +230,30 @@ class UomController extends Controller
         if (($this->converter->itemConversions($item)[$unit->code]['source'] ?? null) === 'ACCURATE') {
             throw ValidationException::withMessages(['unit_id' => "Rasio {$unit->code} barang ini berasal dari Accurate. Ubah di Accurate."]);
         }
-        $row = ItemUnitConversion::updateOrCreate(['item_id' => $item->id, 'unit_id' => $unit->id], ['ratio' => UomConverter::roundDec($data['ratio'], 6), 'created_by' => $request->user()->id]);
+        // saved (again) against the item's unit of today: a conversion that needed a review is reviewed
+        $row = ItemUnitConversion::updateOrCreate(['item_id' => $item->id, 'unit_id' => $unit->id], ['ratio' => UomConverter::roundDec($data['ratio'], 6), 'created_by' => $request->user()->id]
+            + (SchemaCache::hasColumn('item_unit_conversions', 'base_unit_id') ? ['base_unit_id' => $item->unit_id] : []));
 
         return response()->json(['data' => ['id' => $row->id]], 201);
+    }
+
+    /**
+     * POST /api/items/{item}/unit-conversions/{conversion}/confirm: the ratio set against the item's former
+     * base unit is still right for its new one (e.g. a base unit renamed, not resized). Used again from now.
+     */
+    public function confirmItemConversion(Request $request, Item $item, ItemUnitConversion $conversion): JsonResponse
+    {
+        abort_unless($conversion->item_id === $item->id, 404);
+        abort_unless(SchemaCache::hasColumn('item_unit_conversions', 'base_unit_id'), 409, 'Migration belum dijalankan.');
+        if (! $item->unit_id) {
+            throw ValidationException::withMessages(['unit_id' => 'Barang ini belum punya satuan utama.']);
+        }
+        if ((int) $conversion->unit_id === (int) $item->unit_id) {
+            throw ValidationException::withMessages(['unit_id' => 'Satuan konversi ini sekarang satuan utama barangnya. Hapus konversinya.']);
+        }
+        $conversion->update(['base_unit_id' => $item->unit_id]);
+
+        return response()->json(['data' => ['id' => $conversion->id]]);
     }
 
     public function destroyItemConversion(Item $item, ItemUnitConversion $conversion): JsonResponse

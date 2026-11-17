@@ -327,7 +327,8 @@ function RequestDetail({ task, r, gudang, lines, history, onBack, onDone }: {
     <Card className="overflow-hidden">
       <DetailHeader task={task} onBack={onBack} link={`/item-requests/${r.id}`}
         actions={!history && (
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-muted/40 p-3">
+          // empty:hidden: no action for this user at this stage → no empty grey box under the header
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-muted/40 p-3 empty:hidden">
             <ApprovalActions req={r} onDone={onDone} handover={openF ? draft : undefined} />
           </div>
         )} />

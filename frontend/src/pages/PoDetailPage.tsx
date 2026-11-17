@@ -229,7 +229,7 @@ function DirectorApproval({ po, onError }: { po: PurchaseOrder; onError: (m: str
           </div>
           <div className="flex flex-wrap gap-2">
             {po.can_complete && (waitingEntry
-              ? <Button size="sm" asChild><Link to="/purchase-orders/draft">Open RFQ</Link></Button>
+              ? <Button size="sm" asChild><Link to="/purchase-orders/draft">Open Price Quotation</Link></Button>
               : <Button size="sm" variant="outline" onClick={() => setCompleting(true)}>Correct & resubmit</Button>)}
             {po.can_approve && !rejecting && <>
               <Button size="sm" variant="outline" className="border-orange-300 text-orange-700 hover:bg-orange-50" disabled={action.isPending} onClick={() => setRejecting(true)}>Revise</Button>

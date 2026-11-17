@@ -1,0 +1,132 @@
+<?php
+
+namespace Tests\Feature\Purchasing;
+
+use App\Models\Item;
+use App\Models\Ppb;
+use App\Models\PurchaseOrderItem;
+use App\Models\PurchaseOrderQuote;
+use App\Models\Unit;
+use App\Models\Vendor;
+use App\Models\VendorPrice;
+use App\Models\VendorPriceHistory;
+use Database\Seeders\RbacSeeder;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\TestCase;
+
+/** Draft Price List: items × vendors priced in one draft, "Set Harga" into the Master; the Draft PO takes those prices. */
+class PriceListDraftTest extends TestCase
+{
+    use RefreshDatabase;
+
+    protected $seed = true;
+
+    protected $seeder = RbacSeeder::class;
+
+    private Unit $pcs;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->pcs = Unit::factory()->create(['code' => 'PCS']);
+    }
+
+    private function item(string $code): Item
+    {
+        return Item::factory()->create(['code' => $code, 'unit_id' => $this->pcs->id, 'is_active' => true]);
+    }
+
+    public function test_a_draft_is_a_matrix_of_the_items_and_vendors_picked_and_set_harga_fills_the_master(): void
+    {
+        $this->actingAsRole('purchasing');
+        [$bearing, $kabel] = [$this->item('BRG.1'), $this->item('KBL.1')];
+        [$a, $b] = Vendor::factory()->count(2)->create(['is_active' => true]);
+
+        $d = $this->postJson('/api/price-list/drafts', ['item_ids' => [$bearing->id, $kabel->id], 'vendor_ids' => [$a->id, $b->id], 'note' => 'Q4'])->assertCreated()->json('data');
+        $this->assertMatchesRegularExpression('#^PL/\d{2}/[IVX]+/001$#', $d['number']);
+        $this->assertSame(['BRG.1', 'KBL.1'], array_column($d['items'], 'code'));
+        $this->assertCount(2, $d['vendors']);
+
+        $this->putJson("/api/price-list/drafts/{$d['id']}/cells", ['item_id' => $bearing->id, 'vendor_id' => $a->id, 'price' => 25000])->assertOk();
+        $this->putJson("/api/price-list/drafts/{$d['id']}/cells", ['item_id' => $bearing->id, 'vendor_id' => $b->id, 'price' => 23500])->assertOk();
+        $this->putJson("/api/price-list/drafts/{$d['id']}/cells", ['item_id' => $kabel->id, 'vendor_id' => $a->id, 'price' => 0])->assertUnprocessable();
+        // nothing reaches the Master before "Set Harga"
+        $this->assertSame(0, VendorPrice::count());
+        $this->assertEquals(['BRG.1:A' => 25000, 'BRG.1:B' => 23500], collect($this->getJson("/api/price-list/drafts/{$d['id']}")->json('data.cells'))
+            ->mapWithKeys(fn ($p, $k) => [str_replace([$bearing->id.':', ":{$a->id}", ":{$b->id}"], ['BRG.1:', ':A', ':B'], $bearing->id.':'.explode(':', $k)[1]) => $p])->all());
+
+        $this->postJson("/api/price-list/drafts/{$d['id']}/finish")->assertOk()->assertJsonPath('data.status', 'DONE');
+        $this->assertSame(2, VendorPrice::where('status', 'ACTIVE')->count());
+        $this->assertSame(2, VendorPriceHistory::where('note', "Dari Draft Price List {$d['number']}")->count());
+        // a draft set is read only
+        $this->putJson("/api/price-list/drafts/{$d['id']}/cells", ['item_id' => $kabel->id, 'vendor_id' => $a->id, 'price' => 1000])->assertUnprocessable();
+    }
+
+    public function test_an_item_in_a_draft_is_not_offered_to_the_next_draft(): void
+    {
+        $this->actingAsRole('purchasing');
+        [$bearing, $kabel] = [$this->item('BRG.1'), $this->item('KBL.1')];
+        $v = Vendor::factory()->create(['is_active' => true]);
+        $first = $this->postJson('/api/price-list/drafts', ['item_ids' => [$bearing->id], 'vendor_ids' => [$v->id]])->assertCreated()->json('data');
+
+        $this->assertSame(['KBL.1'], array_column($this->getJson('/api/price-list/drafts/available-items')->assertOk()->json('data'), 'code'));
+        $this->postJson('/api/price-list/drafts', ['item_ids' => [$bearing->id], 'vendor_ids' => [$v->id]])->assertUnprocessable()
+            ->assertJsonPath('errors.item_ids.0', "BRG.1 sudah ada di {$first['number']}.");
+
+        // deleting a draft not yet set frees its items
+        $this->deleteJson("/api/price-list/drafts/{$first['id']}")->assertOk();
+        $this->assertSame(['BRG.1', 'KBL.1'], array_column($this->getJson('/api/price-list/drafts/available-items')->json('data'), 'code'));
+    }
+
+    public function test_set_harga_updates_a_master_price_already_there_and_keeps_its_history(): void
+    {
+        $this->actingAsRole('purchasing');
+        $bearing = $this->item('BRG.1');
+        $v = Vendor::factory()->create(['is_active' => true]);
+        $old = $this->postJson('/api/price-list', ['item_id' => $bearing->id, 'vendor_id' => $v->id, 'unit_id' => $this->pcs->id, 'price' => 20000, 'status' => 'ACTIVE', 'lead_time_days' => 3])->assertCreated()->json('data');
+
+        $d = $this->postJson('/api/price-list/drafts', ['item_ids' => [$bearing->id], 'vendor_ids' => [$v->id]])->json('data');
+        $this->putJson("/api/price-list/drafts/{$d['id']}/cells", ['item_id' => $bearing->id, 'vendor_id' => $v->id, 'price' => 21000])->assertOk();
+        $this->postJson("/api/price-list/drafts/{$d['id']}/finish")->assertOk();
+
+        $this->assertSame(1, VendorPrice::count());
+        $p = VendorPrice::sole();
+        $this->assertSame($old['id'], $p->id);
+        $this->assertEquals(21000, $p->price);
+        $this->assertSame(3, $p->lead_time_days);
+        $this->assertSame(['CREATE', 'UPDATE'], VendorPriceHistory::orderBy('id')->pluck('action')->all());
+    }
+
+    public function test_reading_needs_rfq_view_and_making_needs_rfq_create(): void
+    {
+        $this->actingAsRole('karyawan');
+        $this->getJson('/api/price-list/drafts')->assertForbidden();
+        $this->postJson('/api/price-list/drafts', [])->assertForbidden();
+        $this->actingAsRole('purchasing');
+        $this->getJson('/api/price-list/drafts')->assertOk();
+    }
+
+    public function test_the_draft_po_matrix_takes_the_master_price_of_a_vendor_and_leaves_the_others_empty(): void
+    {
+        $this->actingAsRole('super_admin');
+        $item = $this->item('BRG.5');
+        $this->postJson('/api/ppb', ['no_ppb' => 'PPB/PL/009', 'tgl_ppb' => now()->toDateString(), 'kode_barang' => $item->code, 'deskripsi_barang' => 'Bearing', 'kuantitas' => 5])->assertCreated();
+        $ppb = Ppb::where('no_ppb', 'PPB/PL/009')->sole();
+        $this->actingAsRole('manager');
+        $this->postJson("/api/ppb/{$ppb->id}/approval", ['action' => 'APPROVE'])->assertOk();
+        $this->actingAsRole('direktur');
+        $this->postJson("/api/ppb/{$ppb->id}/approval", ['action' => 'APPROVE'])->assertOk();
+        $line = PurchaseOrderItem::where('approved_ppb_id', $ppb->id)->sole();
+        [$a, $b] = Vendor::factory()->count(2)->create(['is_active' => true]);
+
+        $this->actingAsRole('purchasing');
+        $this->postJson('/api/price-list', ['item_id' => $item->id, 'vendor_id' => $a->id, 'unit_id' => $this->pcs->id, 'price' => 900, 'status' => 'ACTIVE'])->assertCreated();
+        $this->postJson('/api/po-draft-lines/to-quotation', ['line_ids' => [$line->id], 'vendor_ids' => [$a->id, $b->id]])->assertOk();
+
+        // vendor A has a price set in the Master: it shows in the matrix; vendor B has none: its cell stays empty
+        $q = PurchaseOrderQuote::where('purchase_order_item_id', $line->id)->get();
+        $this->assertSame([$a->id], $q->pluck('vendor_id')->all());
+        $this->assertEquals(900, $q->first()->unit_price);
+        $this->assertSame('Dari Price List', $q->first()->note);
+    }
+}

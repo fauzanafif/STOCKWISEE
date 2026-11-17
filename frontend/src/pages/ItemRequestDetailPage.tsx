@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ProxyPickup } from '@/components/itemRequests/ProxyPickup'
 import { Link, useLocation, useParams } from 'react-router-dom'
-import { AlertTriangle, Ban, CheckCircle2, ChevronLeft, ChevronRight, Loader2, Copy, Lock, MessageSquare, PackageCheck, Plus, Search, Undo2 } from 'lucide-react'
+import { AlertTriangle, Ban, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Loader2, Copy, Lock, MessageSquare, PackageCheck, Plus, Search, Undo2 } from 'lucide-react'
 import { toast, invalidTo } from '@/lib/notify'
 import { useAuth } from '@/auth/AuthContext'
 import { apiErrorMessage } from '@/lib/api'
@@ -15,7 +15,7 @@ import { StepsBar } from '@/components/itemRequests/RequestTimeline'
 import { useUnits, type ItemLookupResult } from '@/features/inventory/api'
 import { UomEquivalent } from '@/components/UomEquivalent'
 import { VerifySerials } from '@/components/itemRequests/VerifySerials'
-import { askedText } from '@/lib/askedText'
+import { askedQty, askedText } from '@/lib/askedText'
 import { RequestStatusBadge } from '@/pages/ItemRequestListPage'
 import { BackLink } from '@/components/BackLink'
 import { ItemPicker } from '@/components/ItemPicker'
@@ -348,12 +348,12 @@ function PpbCell({ line, status }: { line: ItemRequestLine; status: string }) {
 
 /** The warehouse item (or the requester's words), with what was asked when it differs. */
 /** An item's name (and what the requester typed), its images beside it: this item, these photos. */
-function LineName({ line, requestId }: { line: ItemRequestLine; requestId: number }) {
-  const matched = !!line.item_description
+function LineName({ line, requestId, nested }: { line: ItemRequestLine; requestId: number; nested?: boolean }) {
+  const matched = !!line.item_description && !nested
   // For Item Request (not PPB/PO), always show the original requester's description
   // For PPB/PO, show the matched item description from Master Produk
   // "HVS A4 1 DUS": what was asked, in the unit asked (from the verification to the approval)
-  const displayName = askedText(line)
+  const displayName = nested ? (line.item_description ?? line.deskripsi_barang) : askedText(line)
   return (
     <div className="min-w-0">
       <div className="break-words font-medium">{displayName}</div>
@@ -374,6 +374,22 @@ function LineName({ line, requestId }: { line: ItemRequestLine; requestId: numbe
 /** a unit beside a quantity: small and muted */
 function Unit({ u }: { u: string | null | undefined }) {
   return u ? <span className="text-[11px] font-normal text-muted-foreground">{u}</span> : null
+}
+
+/**
+ * One requested item: admin gudang may verify it as several Master Produk items (each its own line,
+ * keeping the requester's words). Those lines group back under what was asked; a line still to
+ * verify stands alone (two asks with the same words are two asks).
+ */
+export function groupAsked(lines: ItemRequestLine[]): { key: string; lines: ItemRequestLine[] }[] {
+  const groups: { key: string; lines: ItemRequestLine[] }[] = []
+  for (const l of lines) {
+    const key = l.decision === null ? `#${l.id}` : (l.deskripsi_peminta ?? l.deskripsi_barang ?? '').trim().toLowerCase() + '|' + (l.note ?? '')
+    const g = groups.find((x) => x.key === key)
+    if (g) g.lines.push(l)
+    else groups.push({ key, lines: [l] })
+  }
+  return groups
 }
 
 /**
@@ -404,14 +420,29 @@ function ItemsTable({ req, selectedLineId, onSelectLine }: { req: ItemRequestDet
     return l.available == null ? 'text-muted-foreground' : l.decision !== 'TOLAK' && l.available < need ? 'font-semibold text-red-600' : 'text-emerald-700'
   }
 
-  return (
-    <>
-      {/* phone: one card per item */}
-      <ul className="divide-y sm:hidden">
-        {req.lines.map((l) => (
-          <li key={l.id} className={cn('space-y-2 p-4 text-sm', l.decision === null && 'cursor-pointer active:bg-muted/50', selectedLineId === l.id && 'bg-blue-50 shadow-[inset_3px_0_0_theme(colors.blue.500)]')}
+  // the lines of one requested item group under it; its verified items drop down
+  const groups = groupAsked(req.lines)
+  const [open, setOpen] = useState<Record<string, boolean>>({})
+  const toggle = (k: string) => setOpen((o) => ({ ...o, [k]: !o[k] }))
+  const sum = (ls: ItemRequestLine[], f: (l: ItemRequestLine) => number) => Math.round(ls.reduce((n, l) => n + f(l), 0) * 100) / 100
+  const approvedOrQty = (l: ItemRequestLine) => Number(l.approved_qty ?? l.qty)
+  const sameUnit = (ls: ItemRequestLine[]) => (new Set(ls.map((l) => l.satuan)).size === 1 ? ls[0].satuan : null)
+  // "bukuu 12 PCS": the asked words once, with all that was asked of them
+  const groupName = (ls: ItemRequestLine[]) => {
+    const units = new Set(ls.map((l) => askedQty(l).unit))
+    const name = (ls[0].deskripsi_peminta ?? ls[0].deskripsi_barang ?? '').trim()
+    return units.size === 1 ? `${name} ${fmtQty(sum(ls, (l) => askedQty(l).qty))} ${[...units][0]}`.trim() : name
+  }
+  const groupAskedCell = (ls: ItemRequestLine[]) => {
+    const units = new Set(ls.map((l) => askedQty(l).unit))
+    return units.size === 1 ? <>{fmtQty(sum(ls, (l) => askedQty(l).qty))} <Unit u={[...units][0]} /></> : ''
+  }
+  const npbgQty = (l: ItemRequestLine, status: string) => (l.decision === 'TOLAK' ? 0 : estimate(l, status)?.npbg ?? l.npbg?.qty ?? 0)
+  const ppbQty = (l: ItemRequestLine, status: string) => (l.decision === 'TOLAK' ? 0 : estimate(l, status)?.ppb ?? l.ppb?.qty ?? 0)
+  const card = (l: ItemRequestLine, nested = false) => (
+          <li key={l.id} className={cn('space-y-2 p-4 text-sm', nested && 'bg-muted/20 pl-8', l.decision === null && 'cursor-pointer active:bg-muted/50', selectedLineId === l.id && 'bg-blue-50 shadow-[inset_3px_0_0_theme(colors.blue.500)]')}
             onClick={() => l.decision === null && onSelectLine(l.id)}>
-            <div className="flex items-start justify-between gap-3"><LineName line={l} requestId={req.id} /><DecisionCell line={l} /></div>
+            <div className="flex items-start justify-between gap-3"><LineName line={l} requestId={req.id} nested={nested} /><DecisionCell line={l} /></div>
             <dl className="grid gap-1 text-center text-xs" style={{ gridTemplateColumns: `repeat(${1 + (decided ? 1 : 0) + (handing ? 2 : 0) + 1}, minmax(0, 1fr))` }}>
               {([['Requested', requestedCell(l)], ...(decided ? [['Approved', approvedCell(l)]] : []),
                 ...(handing ? [['Requested/Handed Over', l.approved_qty != null && l.decision !== 'TOLAK' ? <QtyProgress total={Number(l.approved_qty)} done={l.fulfilled_qty} className="mx-auto w-fit" /> : ''], ['Balance', l.approved_qty != null ? <span>{fmtQty(left(l))}</span> : '']] : []),
@@ -426,6 +457,43 @@ function ItemsTable({ req, selectedLineId, onSelectLine }: { req: ItemRequestDet
               <div className="rounded bg-emerald-50/60 px-1 py-1.5"><dt className="text-muted-foreground">Delivery Order</dt><dd className="mt-0.5 tabular-nums">{l.decision === 'TOLAK' ? 0 : <NpbgCell line={l} status={req.status} />}</dd></div>
               <div className="rounded bg-indigo-50/60 px-1 py-1.5"><dt className="text-muted-foreground">Purchase Request</dt><dd className="mt-0.5 tabular-nums">{l.decision === 'TOLAK' ? 0 : <PpbCell line={l} status={req.status} />}</dd></div>
             </dl>
+          </li>
+  )
+  const row = (l: ItemRequestLine, num: number, nested = false) => (
+              <tr key={l.id} className={cn('align-top', nested && 'bg-muted/20', l.decision === null && 'cursor-pointer hover:bg-muted/50', selectedLineId === l.id && 'bg-blue-50 hover:bg-blue-50 [&>td:first-child]:shadow-[inset_3px_0_0_theme(colors.blue.500)]')}
+                onClick={() => l.decision === null && onSelectLine(l.id)}>
+                <td className="px-4 py-3 tabular-nums text-muted-foreground">{nested ? '' : num}</td>
+                <td className={cn('px-3 py-3', nested && 'pl-9')}><LineName line={l} requestId={req.id} nested={nested} /></td>
+                <td className="whitespace-nowrap px-3 py-3 text-right tabular-nums">{requestedCell(l)}</td>
+                {decided && <>
+                  <td className="whitespace-nowrap px-3 py-3 text-right tabular-nums">{approvedCell(l)}</td>
+                  {handing && <>
+                    {/* per item: approved (asked) / handed over so far, e.g. 10/5 */}
+                    <td className="px-3 py-3">{l.approved_qty != null && l.decision !== 'TOLAK' ? <QtyProgress total={Number(l.approved_qty)} done={l.fulfilled_qty} unit={l.satuan} /> : ''}</td>
+                    <td className={cn('whitespace-nowrap px-3 py-3 text-right tabular-nums', left(l) > 0 && 'font-semibold')}>{l.approved_qty != null ? <>{fmtQty(left(l))} <Unit u={l.satuan} /></> : ''}</td>
+                  </>}
+                </>}
+                <td className={cn('whitespace-nowrap px-3 py-3 text-right tabular-nums', stockTone(l))}>{stockOf(l)}</td>
+                <td className="whitespace-nowrap px-3 py-3 text-right tabular-nums">{l.decision === 'TOLAK' ? 0 : <NpbgCell line={l} status={req.status} />}</td>
+                <td className="whitespace-nowrap px-3 py-3 text-right tabular-nums">{l.decision === 'TOLAK' ? 0 : <PpbCell line={l} status={req.status} />}</td>
+                <td className="px-4 py-3"><DecisionCell line={l} /></td>
+                {/* the requester's images of this item, rightmost: from the request to its end */}
+                <td className="px-4 py-3"><LineImagesCell requestId={req.id} lineId={l.id} slots={l.images} /></td>
+              </tr>
+  )
+
+  return (
+    <>
+      {/* phone: one card per item */}
+      <ul className="divide-y sm:hidden">
+        {groups.map((g) => g.lines.length === 1 ? card(g.lines[0]) : (
+          <li key={g.key}>
+            <button type="button" onClick={() => toggle(g.key)} aria-expanded={!!open[g.key]} className={cn('flex w-full items-start gap-2 p-4 text-left text-sm', open[g.key] && 'bg-blue-50/70')}>
+              <ChevronDown className={cn('mt-0.5 size-4 shrink-0 text-muted-foreground transition-transform', !open[g.key] && '-rotate-90')} />
+              <span className="min-w-0 flex-1"><span className="block break-words font-medium">{groupName(g.lines)}</span><span className="block text-xs text-muted-foreground">{g.lines.length} items verified by warehouse</span></span>
+              <span className="shrink-0 text-right tabular-nums"><b>{fmtQty(sum(g.lines, approvedOrQty))}</b> <Unit u={sameUnit(g.lines)} /></span>
+            </button>
+            {open[g.key] && <ul className="divide-y border-t">{g.lines.map((l) => card(l, true))}</ul>}
           </li>
         ))}
       </ul>
@@ -452,28 +520,31 @@ function ItemsTable({ req, selectedLineId, onSelectLine }: { req: ItemRequestDet
             </tr>
           </thead>
           <tbody className="divide-y">
-            {req.lines.map((l, i) => (
-              <tr key={l.id} className={cn('align-top', l.decision === null && 'cursor-pointer hover:bg-muted/50', selectedLineId === l.id && 'bg-blue-50 hover:bg-blue-50 [&>td:first-child]:shadow-[inset_3px_0_0_theme(colors.blue.500)]')}
-                onClick={() => l.decision === null && onSelectLine(l.id)}>
-                <td className="px-4 py-3 tabular-nums text-muted-foreground">{i + 1}</td>
-                <td className="px-3 py-3"><LineName line={l} requestId={req.id} /></td>
-                <td className="whitespace-nowrap px-3 py-3 text-right tabular-nums">{requestedCell(l)}</td>
+            {groups.map((g, gi) => g.lines.length === 1 ? row(g.lines[0], gi + 1) : [
+              <tr key={g.key} className={cn('cursor-pointer align-top hover:bg-muted/50', open[g.key] && 'bg-blue-50/70 hover:bg-blue-50/70')} onClick={() => toggle(g.key)} aria-expanded={!!open[g.key]}>
+                <td className="px-4 py-3 tabular-nums text-muted-foreground">{gi + 1}</td>
+                <td className="px-3 py-3">
+                  <div className="flex items-start gap-1.5">
+                    <ChevronDown className={cn('mt-0.5 size-4 shrink-0 text-muted-foreground transition-transform', !open[g.key] && '-rotate-90')} />
+                    <div className="min-w-0">
+                      <div className="break-words font-medium">{groupName(g.lines)}</div>
+                      <div className="text-xs text-muted-foreground">{g.lines.length} items verified by warehouse{g.lines[0].note ? ` · ${g.lines[0].note}` : ''}</div>
+                    </div>
+                  </div>
+                </td>
+                <td className="whitespace-nowrap px-3 py-3 text-right tabular-nums">{groupAskedCell(g.lines)}</td>
                 {decided && <>
-                  <td className="whitespace-nowrap px-3 py-3 text-right tabular-nums">{approvedCell(l)}</td>
-                  {handing && <>
-                    {/* per item: approved (asked) / handed over so far, e.g. 10/5 */}
-                    <td className="px-3 py-3">{l.approved_qty != null && l.decision !== 'TOLAK' ? <QtyProgress total={Number(l.approved_qty)} done={l.fulfilled_qty} unit={l.satuan} /> : ''}</td>
-                    <td className={cn('whitespace-nowrap px-3 py-3 text-right tabular-nums', left(l) > 0 && 'font-semibold')}>{l.approved_qty != null ? <>{fmtQty(left(l))} <Unit u={l.satuan} /></> : ''}</td>
-                  </>}
+                  <td className="whitespace-nowrap px-3 py-3 text-right tabular-nums">{fmtQty(sum(g.lines, (l) => (l.approved_qty != null ? Number(l.approved_qty) : 0)))} <Unit u={sameUnit(g.lines)} /></td>
+                  {handing && <><td className="px-3 py-3" /><td className="whitespace-nowrap px-3 py-3 text-right tabular-nums">{fmtQty(sum(g.lines, left))} <Unit u={sameUnit(g.lines)} /></td></>}
                 </>}
-                <td className={cn('whitespace-nowrap px-3 py-3 text-right tabular-nums', stockTone(l))}>{stockOf(l)}</td>
-                <td className="whitespace-nowrap px-3 py-3 text-right tabular-nums">{l.decision === 'TOLAK' ? 0 : <NpbgCell line={l} status={req.status} />}</td>
-                <td className="whitespace-nowrap px-3 py-3 text-right tabular-nums">{l.decision === 'TOLAK' ? 0 : <PpbCell line={l} status={req.status} />}</td>
-                <td className="px-4 py-3"><DecisionCell line={l} /></td>
-                {/* the requester's images of this item, rightmost: from the request to its end */}
-                <td className="px-4 py-3"><LineImagesCell requestId={req.id} lineId={l.id} slots={l.images} /></td>
-              </tr>
-            ))}
+                <td className="px-3 py-3" />
+                <td className="whitespace-nowrap px-3 py-3 text-right tabular-nums text-muted-foreground">{fmtQty(sum(g.lines, (l) => npbgQty(l, req.status)))}</td>
+                <td className="whitespace-nowrap px-3 py-3 text-right tabular-nums text-muted-foreground">{fmtQty(sum(g.lines, (l) => ppbQty(l, req.status)))}</td>
+                <td className="px-4 py-3">{new Set(g.lines.map((l) => l.line_status)).size === 1 && <DecisionCell line={g.lines[0]} />}</td>
+                <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}><LineImagesCell requestId={req.id} lineId={g.lines[0].id} slots={g.lines[0].images} /></td>
+              </tr>,
+              ...(open[g.key] ? g.lines.map((l) => row(l, gi + 1, true)) : []),
+            ])}
           </tbody>
         </table>
       </div>
@@ -987,7 +1058,7 @@ export function ItemRequestDetailPage() {
           <Card className="rounded-lg px-4 py-4 sm:px-5"><StepsBar steps={req.timeline} /></Card>
 
           {/* what was asked → approved → given (NPBG) / bought (PPB); while verifying, a click picks the item below */}
-          <Panel title={`Requested items (${req.lines.length})`}
+          <Panel title={`Requested items (${groupAsked(req.lines).length})`}
             >
             <ItemsTable req={req} selectedLineId={open.length > 0 ? selectedLineId : null} onSelectLine={toLine} />
             {(req.images?.length ?? 0) > 0 && (

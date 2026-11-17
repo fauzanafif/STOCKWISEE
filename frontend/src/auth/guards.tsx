@@ -32,7 +32,7 @@ function NoAccess({ needs }: { needs: string }) {
       <ShieldAlert className="size-9 text-muted-foreground" />
       <p className="font-medium">You have no access to this page</p>
       <p className="text-sm text-muted-foreground" title={needs}>Contact the admin if you need it.</p>
-      <Link to="/" className="mt-2 text-sm font-medium text-primary hover:underline">Back to Dashboard</Link>
+      <Link to="/" className="mt-2 text-sm font-medium text-primary hover:underline">Back to Apps</Link>
     </div>
   )
 }

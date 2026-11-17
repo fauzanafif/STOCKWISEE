@@ -27,6 +27,10 @@ export interface ItemUnitConversion {
   ratio: number
   /** ACCURATE ones are changed in Accurate */
   source: 'ACCURATE' | 'MANUAL'
+  /** set against a former base unit of the item: not used until confirmed or corrected */
+  needs_review?: boolean
+  /** the base unit the ratio was set against */
+  set_against?: string | null
 }
 
 export function useUom() {
@@ -97,6 +101,11 @@ export function useUomActions() {
       mutationFn: async ({ itemId, unit_id }: { itemId: number; unit_id: number }) => api.put(`/api/items/${itemId}/base-unit`, { unit_id }),
       meta: { successMessage: 'Base UOM set.' },
       onSuccess: done,
+    }),
+    confirmItemConversion: useMutation({
+      mutationFn: async ({ itemId, id }: { itemId: number; id: number }) => api.post(`/api/items/${itemId}/unit-conversions/${id}/confirm`),
+      meta: { successMessage: 'Conversion confirmed.' },
+      onSuccess: () => { done(); qc.invalidateQueries({ queryKey: ['master-data-quality'] }) },
     }),
     deleteItemConversion: useMutation({
       mutationFn: async ({ itemId, id }: { itemId: number; id: number }) => api.delete(`/api/items/${itemId}/unit-conversions/${id}`),

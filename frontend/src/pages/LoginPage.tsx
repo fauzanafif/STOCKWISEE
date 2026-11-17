@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input'
 import { PasswordInput } from '@/components/ui/password-input'
 import { Label } from '@/components/ui/label'
 import { Logo } from '@/components/Logo'
+import { APPS_HOME } from '@/lib/navigation'
 
 const HIGHLIGHTS = [
   { icon: Boxes, text: 'Actual, reserved & available stock in real time' },
@@ -19,7 +20,7 @@ export function LoginPage() {
   const { user, login } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
-  const from = (location.state as { from?: { pathname: string } } | null)?.from?.pathname ?? '/'
+  const from = (location.state as { from?: { pathname: string } } | null)?.from?.pathname ?? APPS_HOME
 
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')

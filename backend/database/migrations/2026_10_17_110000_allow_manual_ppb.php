@@ -65,6 +65,11 @@ return new class extends Migration
 
     private function foreignKeyExists(string $table, string $name): bool
     {
+        // the tests run on SQLite, which has no information_schema
+        if (DB::getDriverName() !== 'mysql') {
+            return collect(Schema::getForeignKeys($table))->contains(fn ($fk) => ($fk['name'] ?? null) === $name);
+        }
+
         return DB::selectOne(
             'SELECT 1 FROM information_schema.TABLE_CONSTRAINTS
              WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = ? AND CONSTRAINT_NAME = ?',

@@ -159,7 +159,7 @@ export function useReminderAlerts() {
     const today = new Date().toISOString().slice(0, 10)
     try { if (localStorage.getItem(key) === today) return; localStorage.setItem(key, today) } catch { /* private mode: show it anyway */ }
     const parts = [late && `${late} terlambat`, data.meta.soon && `${data.meta.soon} due within 24 hours`, data.meta.urgent && `${data.meta.urgent} urgent`].filter(Boolean).join(', ')
-    toast.warning(<span>You have {parts}. <button type="button" className="font-semibold text-primary underline" onClick={() => navigate('/')}>View reminders</button></span>,
+    toast.warning(<span>You have {parts}. <button type="button" className="font-semibold text-primary underline" onClick={() => navigate('/todo')}>View reminders</button></span>,
       { title: 'Do not miss this', duration: 15_000 })
   }, [user, data, late, navigate])
 }

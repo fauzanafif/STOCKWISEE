@@ -94,7 +94,7 @@ export function usePoDraftActions() {
     onSuccess: done,
   })
   return {
-    toQuotation: useMove('to-quotation', 'Items moved to RFQ.'),
+    toQuotation: useMove('to-quotation', 'Items moved to Price Quotation.'),
     toDraftTable: useMutation({
       mutationFn: async (body: { line_ids: number[]; vendor_ids: number[] }) => (await api.post('/api/po-draft-lines/to-quotation', body)).data,
       meta: { successMessage: 'Items and vendors added to Draft PO.' },
@@ -121,7 +121,7 @@ export function usePoDraftActions() {
       onSuccess: done,
     }),
     backToReady: useMove('back-to-ready', 'Item returned to Approved Purchase Request Items.'),
-    submitQuotation: useMove('submit-quotation', 'RFQ submitted to the Director.'),
+    submitQuotation: useMove('submit-quotation', 'Price Quotation submitted to the Director.'),
     quote: useMutation({
       mutationFn: async ({ id, ...body }: { id: number; vendor_id: number; unit_price: number; note?: string | null; availability?: string | null; eta?: string | null }) =>
         (await api.put<{ data: PoDraftLine }>(`/api/po-draft-lines/${id}/quotes`, body)).data.data,
@@ -145,7 +145,7 @@ export function usePoDraftActions() {
     }),
     returnQuotation: useMutation({
       mutationFn: async ({ id, note }: { id: number; note?: string | null }) => (await api.post<{ data: PoDraftLine }>(`/api/po-draft-lines/${id}/return`, { note })).data.data,
-      meta: { successMessage: 'Returned to RFQ.' },
+      meta: { successMessage: 'Returned to Price Quotation.' },
       onSuccess: done,
     }),
     submit: useMutation({
@@ -162,7 +162,7 @@ export function usePoDraftActions() {
     }),
     removeItem: useMutation({
       mutationFn: async (id: number) => (await api.delete(`/api/po-draft-lines/${id}`)).data,
-      meta: { successMessage: 'Item removed from RFQ.' },
+      meta: { successMessage: 'Item removed from Price Quotation.' },
       onSuccess: done,
     }),
   }

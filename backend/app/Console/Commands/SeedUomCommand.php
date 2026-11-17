@@ -13,7 +13,7 @@ use Illuminate\Support\Facades\DB;
  */
 class SeedUomCommand extends Command
 {
-    protected $signature = 'stockwise:seed-uom';
+    protected $signature = 'stockwise:seed-uom {--dry-run : List what would change, change nothing}';
 
     protected $description = 'Place the units into UOM categories with their standard ratios';
 
@@ -33,6 +33,9 @@ class SeedUomCommand extends Command
 
     public function handle(): int
     {
+        if ($this->option('dry-run')) {
+            return $this->dryRun();
+        }
         DB::transaction(function () {
             foreach (self::CATEGORIES as $name => $units) {
                 $category = UomCategory::firstOrCreate(['name' => $name]);
@@ -45,6 +48,29 @@ class SeedUomCommand extends Command
             }
         });
         $this->info('Units placed: '.Unit::whereNotNull('uom_category_id')->count().' of '.Unit::count().'.');
+
+        return self::SUCCESS;
+    }
+
+    /** What a run would do: the categories it makes, the units it places or adds, the ones it leaves. Writes nothing. */
+    private function dryRun(): int
+    {
+        $rows = [];
+        foreach (self::CATEGORIES as $name => $units) {
+            $exists = UomCategory::where('name', $name)->exists();
+            foreach ($units as $i => [$code, $label, $ratio]) {
+                $unit = Unit::where('code', $code)->first();
+                $action = ! $unit ? 'ADD unit' : ($unit->uom_category_id ? 'keep (already placed)' : 'place');
+                $rows[] = [$exists ? $name : "{$name} (new)", $code, $unit?->name ?? $label, $i === 0 ? 'reference' : ($ratio === null ? 'per item' : "{$ratio} × ".$units[0][0]), $action];
+            }
+        }
+        $this->table(['Category', 'Unit', 'Name', 'Ratio', 'Would'], $rows);
+        $listed = collect(self::CATEGORIES)->flatten(1)->pluck(0)->all();
+        $left = Unit::whereNull('uom_category_id')->whereNotIn('code', $listed)->pluck('code');
+        if ($left->isNotEmpty()) {
+            $this->warn('Left outside any category: '.$left->implode(', '));
+        }
+        $this->info('Dry run: nothing was changed.');
 
         return self::SUCCESS;
     }

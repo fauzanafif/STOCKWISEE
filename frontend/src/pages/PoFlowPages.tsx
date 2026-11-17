@@ -19,6 +19,7 @@ import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { invalidTo, toast } from '@/lib/notify'
 import { cn } from '@/lib/utils'
+import { usePriceReference } from '@/features/priceList/api'
 
 const rupiah = (n: number) => 'Rp ' + Number(n).toLocaleString('id-ID', { maximumFractionDigits: 2 })
 const fmtQty = (n: number) => n.toLocaleString('id-ID', { maximumFractionDigits: 2 })
@@ -90,7 +91,7 @@ const td = 'px-3 py-2.5'
 function FlowSteps({ at, counts }: { at: 'siap' | 'rfq'; counts?: Partial<Record<PoStage, number>> }) {
   const steps = [
     { key: 'siap', to: '/purchase-orders/siap-po', label: 'Approved Purchase Request Items', n: counts?.SIAP },
-    { key: 'rfq', to: '/purchase-orders/draft', label: 'RFQ', n: counts ? (counts.PENAWARAN ?? 0) + (counts.MENUNGGU_DIREKTUR ?? 0) + (counts.DIPILIH ?? 0) : undefined },
+    { key: 'rfq', to: '/purchase-orders/draft', label: 'Price Quotation', n: counts ? (counts.PENAWARAN ?? 0) + (counts.MENUNGGU_DIREKTUR ?? 0) + (counts.DIPILIH ?? 0) : undefined },
   ] as const
   return (
     <ol className="flex flex-wrap items-center gap-1.5 text-sm">
@@ -129,7 +130,7 @@ function StageStatus({ l }: { l: PoDraftLine }) {
   if (l.stage === 'PO') return <span className="inline-flex flex-wrap items-center gap-1.5 whitespace-nowrap"><Link to={`/purchase-orders/${l.po?.id}`} className="text-[13px] text-primary hover:underline">{l.po?.number}</Link>{l.po?.status && <RequestStatusBadge status={l.po.status} />}</span>
   if (l.stage === 'DIPILIH') return <Badge variant="success">Director picked{chosen ? `: ${chosen.vendor_name}` : ''}</Badge>
   if (l.stage === 'MENUNGGU_DIREKTUR') return <Badge variant="warning">Waiting for Director pick</Badge>
-  if (l.stage === 'PENAWARAN') return <Badge>In RFQ</Badge>
+  if (l.stage === 'PENAWARAN') return <Badge>In Price Quotation</Badge>
   return <Badge variant="neutral">Not quoted yet</Badge>
 }
 
@@ -239,7 +240,7 @@ export function PoTodoList() {
         <VendorPicker picked={vendors} onChange={setVendors} />
         <div className="flex items-center gap-3">
           <span className="text-sm text-muted-foreground">{c.live.length ? `${c.live.length} items · ${vendors.length} vendors` : ''}</span>
-          <Button disabled={!c.live.length || act.toDraftTable.isPending} onClick={go}>{act.toDraftTable.isPending ? <Loader2 className="size-4 animate-spin" /> : <ArrowRight className="size-4" />} Add to RFQ</Button>
+          <Button disabled={!c.live.length || act.toDraftTable.isPending} onClick={go}>{act.toDraftTable.isPending ? <Loader2 className="size-4 animate-spin" /> : <ArrowRight className="size-4" />} Add to Price Quotation</Button>
         </div>
       </div>
     </div>
@@ -262,7 +263,7 @@ export function PoReadyPage() {
   const navigate = useNavigate()
   return (
     <div className="space-y-4">
-      <PageHeader title="Approved Purchase Request Items" subtitle="Items from approved Purchase Requests. Tick the items that need prices, then move them to RFQ." />
+      <PageHeader title="Approved Purchase Request Items" subtitle="Items from approved Purchase Requests. Tick the items that need prices, then move them to Price Quotation." />
       <FlowSteps at="siap" counts={data?.meta.stages} />
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <Input className="sm:w-80" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search item / Purchase Request no. / requester / division" aria-label="Search" />
@@ -295,7 +296,7 @@ export function PoReadyPage() {
         <span className="text-sm text-muted-foreground">{c.live.length ? `${c.live.length} items selected` : ''}</span>
         <Button disabled={!c.live.length || act.toQuotation.isPending}
           onClick={() => act.toQuotation.mutate(c.live.map((l) => l.id), { onSuccess: () => { c.clear(); navigate('/purchase-orders/draft') } })}>
-          {act.toQuotation.isPending ? <Loader2 className="size-4 animate-spin" /> : <ArrowRight className="size-4" />} Move to RFQ
+          {act.toQuotation.isPending ? <Loader2 className="size-4 animate-spin" /> : <ArrowRight className="size-4" />} Move to Price Quotation
         </Button>
       </div>
     </div>
@@ -384,7 +385,7 @@ function PickLog({ l }: { l: PoDraftLine }) {
   )
 }
 
-// ------------------------------------------------------------------ 2. RFQ price matrix
+// ------------------------------------------------------------------ 2. Price Quotation price matrix
 
 type VendorLines = { vendorId: number; name: string; lines: PoDraftLine[] }
 type Ask = { kind: 'change'; line: PoDraftLine; quote: PoQuote } | { kind: 'return'; line: PoDraftLine }
@@ -435,7 +436,7 @@ function ReasonModal({ ask, onClose }: { ask: Ask; onClose: () => void }) {
   )
 }
 
-/** RFQ: one price matrix for every role. Purchasing types prices, the Director clicks a price to pick it (green, locked), purchasing then makes the PO. */
+/** Price Quotation: one price matrix for every role. Purchasing types prices, the Director clicks a price to pick it (green, locked), purchasing then makes the PO. */
 export function PoDraftPage() {
   const { hasPermission } = useAuth()
   const purchasing = hasPermission('po.create')
@@ -506,7 +507,7 @@ export function PoDraftPage() {
     act.setPrice.mutate({ id: l.id, vendor_id: vendor, unit_price: price }, { onSuccess: forget, onError: fail })
   }
   const removeItem = async (l: PoDraftLine) => {
-    if (await confirmDialog({ message: `Remove "${l.description}" from RFQ?`, danger: true }))
+    if (await confirmDialog({ message: `Remove "${l.description}" from Price Quotation?`, danger: true }))
       act.removeItem.mutate(l.id)
   }
   const submit = async () => {
@@ -521,16 +522,36 @@ export function PoDraftPage() {
   }
   const toggleLog = (id: number) => setLogOpen((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n })
 
+  // the Price List of the items being priced: a reference Purchasing checks with the vendor, never taken as is
+  const reference = usePriceReference(active.filter((l) => l.stage === 'PENAWARAN' && l.item_id).map((l) => l.item_id!), purchasing)
+  const listed = (l: PoDraftLine, vendorId: number) => {
+    const all = (l.item_id && reference.data?.[String(l.item_id)]?.filter((p) => p.vendor_id === vendorId)) || []
+    return all.find((p) => p.status === 'ACTIVE') ?? all[0]
+  }
+
   const cell = (l: PoDraftLine, v: { id: number; name: string }, low: number | null) => {
     const q = l.quotes.find((x) => x.vendor_id === v.id)
     const key = `${l.id}:${v.id}`
     const tip = q ? [q.availability, q.eta && `ETA ${fmtDate(q.eta)}`, q.note].filter(Boolean).join(' · ') || undefined : undefined
     if (l.stage === 'PENAWARAN' && purchasing) {
+      const pl = listed(l, v.id)
+      // the same unit as the request line, or nothing to copy (a pack price is not a piece price)
+      const sameUnit = !!pl && (pl.unit ?? '').toUpperCase() === (l.unit ?? '').toUpperCase()
       return (
         <td key={v.id} className="border-l px-2 py-1.5 text-right align-top" title={tip}>
           <Input className="ml-auto h-8 w-32 text-right tabular-nums" inputMode="decimal" placeholder="Price" aria-label={`Price ${v.name} for ${l.description}`}
             value={typed[key] ?? (q ? String(q.unit_price) : '')} onChange={(e) => setTyped((t) => ({ ...t, [key]: e.target.value }))} onBlur={() => save(l, v.id, key)} />
           {q && low === q.unit_price && <div className="mt-0.5 text-[11px] text-emerald-700">Cheapest</div>}
+          {pl && (!q || q.unit_price !== pl.price) && (
+            <div className={cn('mt-1 text-[11px] leading-tight', pl.status === 'ACTIVE' ? 'text-sky-700 dark:text-sky-300' : 'text-amber-700 dark:text-amber-300')}
+              title={`Price List: ${pl.status}${pl.valid_until ? `, valid until ${fmtDate(pl.valid_until)}` : ''}${pl.min_qty > 1 ? `, min ${pl.min_qty}` : ''}. Confirm with the vendor before using it.`}>
+              Price List {rupiah(pl.price)}/{pl.unit ?? '?'}{pl.status !== 'ACTIVE' && ` · ${pl.status === 'EXPIRED' ? 'Expired' : 'Draft'}`}
+              {sameUnit && !typed[key] && (
+                <button type="button" className="ml-1 font-semibold underline-offset-2 hover:underline" aria-label={`Use the Price List price of ${v.name} for ${l.description}`}
+                  disabled={act.setPrice.isPending} onClick={() => act.setPrice.mutate({ id: l.id, vendor_id: v.id, unit_price: pl.price }, { onError: fail })}>Use</button>
+              )}
+            </div>
+          )}
           {q && <div className="mt-0.5"><PriceUpdates q={q} item={l.description} /></div>}
         </td>
       )
@@ -563,7 +584,7 @@ export function PoDraftPage() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-2">
-        <PageHeader title="RFQ" subtitle="Set vendor prices, the Director picks the vendor, then create the PO." />
+        <PageHeader title="Price Quotation" subtitle="Set vendor prices, the Director picks the vendor, then create the PO." />
         {purchasing && <Button size="sm" onClick={() => setAddingItem(true)}><Plus className="size-4" /> Add Item</Button>}
       </div>
       <FlowSteps at="rfq" counts={data?.meta.stages} />
@@ -672,7 +693,7 @@ export function PoDraftPage() {
   )
 }
 
-/** Add Item: only items of an approved Purchase Request can enter the RFQ; tick them and they join the matrix. */
+/** Add Item: only items of an approved Purchase Request can enter the Price Quotation; tick them and they join the matrix. */
 function AddItemModal({ onClose }: { onClose: () => void }) {
   const act = usePoDraftActions()
   const { data, isLoading } = usePoDraftLines({})
@@ -680,11 +701,11 @@ function AddItemModal({ onClose }: { onClose: () => void }) {
   const c = useChecks(rows)
   const add = () => act.toQuotation.mutate(c.live.map((l) => l.id), { onSuccess: onClose })
   return (
-    <Modal page open onClose={onClose} title="Add Item to RFQ" description="Only items of an approved Purchase Request can be added. Tick the items that need prices."
+    <Modal page open onClose={onClose} title="Add Item to Price Quotation" description="Only items of an approved Purchase Request can be added. Tick the items that need prices."
       footer={<>
         <span className="mr-auto text-sm text-muted-foreground">{c.live.length ? `${c.live.length} items selected` : ''}</span>
         <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
-        <Button size="sm" disabled={!c.live.length || act.toQuotation.isPending} onClick={add}>{act.toQuotation.isPending ? <Loader2 className="size-4 animate-spin" /> : <ArrowRight className="size-4" />} Add to RFQ</Button>
+        <Button size="sm" disabled={!c.live.length || act.toQuotation.isPending} onClick={add}>{act.toQuotation.isPending ? <Loader2 className="size-4 animate-spin" /> : <ArrowRight className="size-4" />} Add to Price Quotation</Button>
       </>}>
       <div className="overflow-x-auto rounded-lg border">
         <table className="w-full text-sm">

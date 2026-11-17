@@ -3,7 +3,7 @@ import { useLocation } from 'react-router-dom'
 import { api } from '@/lib/api'
 import { crumbsFor } from '@/lib/navigation'
 
-/** "Purchase Order › RFQ" plus the tab, e.g. "Item Request (tab: proses)" */
+/** "Purchase Order › Price Quotation" plus the tab, e.g. "Item Request (tab: proses)" */
 function titleOf(pathname: string, search: string): string {
   const name = crumbsFor(pathname).map((c) => c.label).join(' › ') || pathname
   const tab = new URLSearchParams(search).get('tab')

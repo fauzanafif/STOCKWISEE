@@ -195,7 +195,9 @@ Route::middleware('auth:sanctum')->group(function (): void {
         Route::delete('/item-categories/{id}', 'destroy')->whereNumber('id')->name('api.item-categories.destroy');
     });
     Route::middleware('permission:master.category.view')->group(function () {
-        Route::get('/categories', [MasterDataController::class, 'categories'])->name('api.categories');
+        Route::get('/master-data/quality', [MasterDataController::class, 'quality'])
+        ->middleware('permission:item.view|master.unit.view|master.vendor.view|master.employee.view')->name('api.master-data.quality');
+    Route::get('/categories', [MasterDataController::class, 'categories'])->name('api.categories');
         Route::get('/categories/tree', [MasterDataController::class, 'categoryTree'])->name('api.categories.tree');
     });
     // Master UOM: categories, their units and ratios; conversions per item
@@ -212,6 +214,7 @@ Route::middleware('auth:sanctum')->group(function (): void {
         Route::post('/uom/units', 'storeUnit')->name('api.uom.units.store');
         Route::put('/uom/units/{unit}', 'updateUnit')->name('api.uom.units.update');
         Route::post('/items/{item}/unit-conversions', 'saveItemConversion')->whereNumber('item')->name('api.items.unit-conversions.store');
+        Route::post('/items/{item}/unit-conversions/{conversion}/confirm', 'confirmItemConversion')->whereNumber(['item', 'conversion'])->name('api.items.unit-conversions.confirm');
         Route::delete('/items/{item}/unit-conversions/{conversion}', 'destroyItemConversion')->whereNumber('item')->name('api.items.unit-conversions.destroy');
     });
     Route::get('/units', [MasterDataController::class, 'units'])
@@ -628,6 +631,22 @@ Route::middleware('auth:sanctum')->group(function (): void {
         Route::get('/po-draft-lines/{item}/units', [\App\Http\Controllers\Api\PoDraftController::class, 'orderUnits'])->whereNumber('item')->name('api.po-draft-lines.units');
         Route::put('/po-draft-lines/{item}/quotes', [\App\Http\Controllers\Api\PoDraftController::class, 'quote'])->name('api.po-draft-lines.quote');
         Route::delete('/po-draft-lines/{item}/quotes/{quote}', [\App\Http\Controllers\Api\PoDraftController::class, 'removeQuote'])->name('api.po-draft-lines.quote.destroy');
+    });
+    // Price List: the standing purchase prices, Item × Vendor (apart from any Purchase Request)
+    Route::get('/price-list/reference', [\App\Http\Controllers\Api\PriceListController::class, 'reference'])
+        ->middleware('permission:rfq.view|po.create|po.approve_director')->name('api.price-list.reference');
+    Route::middleware('permission:rfq.view')->group(function () {
+        Route::get('/price-list/matrix', [\App\Http\Controllers\Api\PriceListController::class, 'matrix'])->name('api.price-list.matrix');
+        Route::get('/price-list/items/{item}/units', [\App\Http\Controllers\Api\PriceListController::class, 'units'])->whereNumber('item')->name('api.price-list.units');
+        Route::get('/price-list', [\App\Http\Controllers\Api\PriceListController::class, 'index'])->name('api.price-list.index');
+        Route::get('/price-list/{price}', [\App\Http\Controllers\Api\PriceListController::class, 'show'])->whereNumber('price')->name('api.price-list.show');
+        Route::get('/price-list/{price}/history', [\App\Http\Controllers\Api\PriceListController::class, 'history'])->whereNumber('price')->name('api.price-list.history');
+    });
+    Route::post('/price-list', [\App\Http\Controllers\Api\PriceListController::class, 'store'])
+        ->middleware('permission:rfq.create')->name('api.price-list.store');
+    Route::middleware('permission:rfq.update')->group(function () {
+        Route::put('/price-list/{price}', [\App\Http\Controllers\Api\PriceListController::class, 'update'])->whereNumber('price')->name('api.price-list.update');
+        Route::post('/price-list/{price}/archive', [\App\Http\Controllers\Api\PriceListController::class, 'archive'])->whereNumber('price')->name('api.price-list.archive');
     });
     Route::get('/purchase-orders/divisi-options', [PurchaseOrderController::class, 'divisiOptions'])
         ->middleware('permission:po.view')->name('api.po.divisi-options');

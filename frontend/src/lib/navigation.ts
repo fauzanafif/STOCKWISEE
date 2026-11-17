@@ -1,4 +1,4 @@
-import { Factory, Layers, PackageMinus, BookOpen, ClipboardCheck, ClipboardList, ClipboardPen, FileOutput, History, FolderTree, Handshake, LayoutDashboard, type LucideIcon, Package, PackageCheck, PackageOpen, Settings, ShoppingCart, Store, Undo2, Users, Wrench, BookOpenCheck, ShieldCheck, ClipboardType, Ruler } from 'lucide-react'
+import { Factory, Layers, PackageMinus, BookOpen, ClipboardCheck, ClipboardList, ClipboardPen, History, FolderTree, Handshake, LayoutDashboard, type LucideIcon, Package, PackageCheck, PackageOpen, Settings, ShoppingCart, Store, Undo2, Users, Wrench, BookOpenCheck, ShieldCheck, ClipboardType, Ruler, Tags, ShieldAlert } from 'lucide-react'
 
 /** One menu entry: the sidebar, the breadcrumb and the menu search all read this. */
 export interface NavItem {
@@ -40,9 +40,9 @@ export const NAV: NavGroup[] = [
   {
     label: null, tone: 'bg-blue-100 text-blue-700',
     items: [{
-      to: '/', label: 'Dashboard', icon: LayoutDashboard, keywords: 'beranda ringkasan',
+      to: '/todo', label: 'Dashboard', icon: LayoutDashboard, keywords: 'beranda ringkasan',
       children: [
-        { to: '/', label: 'To-Do', keywords: 'beranda tugas catatan pengingat todo' },
+        { to: '/todo', label: 'To-Do', keywords: 'beranda tugas catatan pengingat todo' },
         { to: '/analytics', label: 'Analytics', keywords: 'analitik grafik visualisasi stok pengadaan tracking kartu stock' },
       ],
     }],
@@ -67,17 +67,17 @@ export const NAV: NavGroup[] = [
     label: 'Item Request', tone: 'bg-sky-100 text-sky-700',
     items: [
       {
-        to: '/item-requests', label: 'Item Request', icon: ClipboardList, keywords: 'permintaan item request', permissions: ['item_request.create', 'item_request.view'],
+        to: '/item-requests', label: 'Item Request', icon: ClipboardList, keywords: 'permintaan item request',
+        selfPermissions: ['item_request.create', 'item_request.view'],
+        permissions: ['item_request.create', 'item_request.view', 'npbg.view'],
         children: [
-          { to: '/item-requests/dashboard', label: 'Dashboard', keywords: 'dashboard pengingat perlu dikerjakan', permissions: ['item_request.create', 'item_request.view'] },
           { to: '/item-requests', label: 'List Request', keywords: 'list request', permissions: ['item_request.create', 'item_request.view'] },
+          { to: '/npbg', label: 'Delivery Order', keywords: 'npbg barang keluar pengeluaran', permissions: ['npbg.view'] },
         ],
       },
-      { to: '/npbg', label: 'Delivery Order', icon: FileOutput, keywords: 'npbg barang keluar pengeluaran', permissions: ['npbg.view'] },
       {
         to: '/ppb', label: 'Purchase Request', icon: PackageOpen, keywords: 'ppb permintaan pembelian', permissions: ['ppb.view', 'ppb.create'],
         children: [
-          { to: '/ppb/dashboard', label: 'Dashboard', keywords: 'dashboard pengingat perlu dikerjakan', permissions: ['ppb.view'] },
           { to: '/ppb/drafts', label: 'Draft Purchase Request', keywords: 'draft ppb perbandingan harga vendor penawaran', permissions: ['ppb.create'] },
           { to: '/ppb', label: 'List Purchase Request', keywords: 'ppb permintaan pembelian', permissions: ['ppb.view'] },
         ],
@@ -85,19 +85,15 @@ export const NAV: NavGroup[] = [
       {
         to: '/purchase-orders', label: 'Purchase Order', icon: ShoppingCart, keywords: 'po purchasing pembelian', permissions: ['po.view', 'po.create', 'po.approve_director'],
         children: [
-          { to: '/purchase-orders/dashboard', label: 'Dashboard', keywords: 'dashboard pengingat perlu dikerjakan siap po', permissions: ['po.view'] },
           { to: '/purchase-orders/siap-po', label: 'Approved Purchase Request Items', keywords: 'ppb siap po disetujui', permissions: ['po.create'] },
-          { to: '/purchase-orders/draft', label: 'RFQ', keywords: 'rfq price quotation penawaran harga vendor perbandingan ketersediaan eta pilihan direktur draft po matriks', permissions: ['po.create', 'po.approve_director'] },
+          { to: '/purchase-orders/draft', label: 'Price Quotation', keywords: 'rfq price quotation penawaran harga vendor perbandingan ketersediaan eta pilihan direktur draft po matriks', permissions: ['po.create', 'po.approve_director'] },
           { to: '/purchase-orders', label: 'List PO', keywords: 'po purchasing pembelian', permissions: ['po.view'] },
         ],
       },
       {
-        to: '/ri', label: 'Receipt', icon: PackageCheck, keywords: 'ri penerimaan barang masuk', permissions: ['ri.view'],
-        children: [
-          { to: '/ri/dashboard', label: 'Dashboard', keywords: 'dashboard pengingat perlu dikerjakan', permissions: ['ri.view'] },
-          { to: '/ri', label: 'List Receipt', keywords: 'list ri', permissions: ['ri.view'] },
-        ],
+        to: '/ri', label: 'Receipt', icon: PackageCheck, keywords: 'ri penerimaan barang masuk list receipt', permissions: ['ri.view'],
       },
+      { to: '/price-list', label: 'Price List', icon: Tags, keywords: 'price list daftar harga matrix vendor item harga beli referensi pricelist', permissions: ['rfq.view'] },
       { to: '/purchase-returns', label: 'Return', icon: Undo2, keywords: 'purchase return retur vendor', permissions: ['purchase_return.view'] },
     ],
   },
@@ -107,7 +103,6 @@ export const NAV: NavGroup[] = [
       {
         to: '/mrp/orders', label: 'Manufacturing Orders', icon: Factory, keywords: 'mo produksi production assembly perakitan manufaktur', permissions: ['mrp.view'],
         children: [
-          { to: '/mrp/dashboard', label: 'Dashboard', keywords: 'ringkasan produksi', permissions: ['mrp.view'] },
           { to: '/mrp/orders', label: 'List MO', keywords: 'manufacturing order produksi', permissions: ['mrp.view'] },
           { to: '/mrp/history', label: 'Production History', keywords: 'riwayat laporan produksi pemakaian scrap traceability', permissions: ['mrp.view'] },
         ],
@@ -116,7 +111,6 @@ export const NAV: NavGroup[] = [
       {
         to: '/disassembly/orders', label: 'Disassembly', icon: PackageMinus, keywords: 'disassembly unbuild bongkar pembongkaran urai', permissions: ['disassembly.view'],
         children: [
-          { to: '/disassembly/dashboard', label: 'Dashboard', keywords: 'ringkasan pembongkaran', permissions: ['disassembly.view'] },
           { to: '/disassembly/orders', label: 'Disassembly Orders', keywords: 'bongkar unbuild', permissions: ['disassembly.view'] },
           { to: '/disassembly/history', label: 'Disassembly History', keywords: 'riwayat pembongkaran scrap hilang', permissions: ['disassembly.view'] },
         ],
@@ -153,6 +147,7 @@ export const NAV: NavGroup[] = [
       { to: '/vendors', label: 'Vendor', icon: Store, keywords: 'master vendor supplier pemasok', permissions: ['master.vendor.view'] },
       { to: '/employees', label: 'Pekerja', icon: Users, keywords: 'employees master pekerja karyawan pegawai roster', permissions: ['master.employee.view'] },
       { to: '/item-categories', label: 'Kategori Barang', icon: FolderTree, keywords: 'item categories master kategori induk anak prefix barang produk', permissions: ['master.category.view'] },
+      { to: '/master-data/quality', label: 'Data Quality', icon: ShieldAlert, keywords: 'kualitas data master duplikat ganda satuan kosong vendor mirip departemen konversi tinjau review', permissions: ['item.view', 'master.unit.view', 'master.vendor.view', 'master.employee.view'] },
       { to: '/uom', label: 'UOM', icon: Ruler, keywords: 'uom satuan konversi unit measure pack pcs', permissions: ['master.unit.view'] },
     ],
   },
@@ -183,11 +178,21 @@ export const NAV: NavGroup[] = [
   },
 ]
 
+/** The App Launcher: the home after login (see lib/launcher.ts). */
+export const APPS_HOME = '/'
+
+/**
+ * The one dashboard of each app (lib/launcher.ts opens it from the tile): its to-do, its key figures,
+ * every menu of the app and its analysis. The menus' own dashboards were folded into these.
+ */
+export const APP_HOMES = { inventory: '/inventory', purchase: '/purchase', manufacturing: '/mrp', tracking: '/tracking' } as const
+const HOME_LABELS: Record<string, string> = { '/inventory': 'Inventory', '/purchase': 'Purchase', '/mrp': 'Manufacturing', '/tracking': 'Tracking' }
+
 /** Pages reached from another menu entry (detail / new pages, older paths). */
 const EXTRA: { prefix: string; parent: string; label: string }[] = [
   { prefix: '/purchase-returns/new', parent: '/purchase-returns', label: 'Create return' },
   { prefix: '/ppb/drafts/', parent: '/ppb', label: 'Draft Purchase Request' },
-  { prefix: '/purchase-orders/draft', parent: '/purchase-orders', label: 'RFQ' },
+  { prefix: '/purchase-orders/draft', parent: '/purchase-orders', label: 'Price Quotation' },
   { prefix: '/stock-card/project', parent: '/stock-card', label: 'Project' },
   { prefix: '/safety-stocks', parent: '/inventory/analysis', label: 'Detail' },
   { prefix: '/sync/', parent: '/sync/history', label: 'Detail' },
@@ -211,7 +216,9 @@ function trailTo(entries: Entry[], pathname: string): Entry[] | null {
 
 /** Breadcrumb of a path: group › menu › sub menu, or › detail. */
 export function crumbsFor(pathname: string): Crumb[] {
-  if (pathname === '/') return [{ label: 'Dashboard' }]
+  if (pathname === APPS_HOME) return [{ label: 'Apps' }]
+  if (pathname.startsWith('/coming-soon/')) return [{ label: 'Apps', to: APPS_HOME }, { label: 'Coming Soon' }]
+  if (HOME_LABELS[pathname]) return [{ label: HOME_LABELS[pathname] }, { label: 'Dashboard' }]
   // a page of its own in the menu (also a sub menu): its trail
   for (const g of NAV) {
     const trail = trailTo(g.items as Entry[], pathname)

@@ -33,8 +33,10 @@ echo [Backend]  http://127.0.0.1:8001
 start "STOCKWISE Backend" cmd /k "cd /d %~dp0backend && php artisan serve --port=8001"
 
 REM --- 3. Frontend Vite :5173 -------------------------------
-echo [Frontend] http://127.0.0.1:5173
-start "STOCKWISE Frontend" cmd /k "cd /d %~dp0frontend && npm run dev"
+REM --host 0.0.0.0: bisa dibuka dari PC lain di jaringan kantor (http://<IP-PC-ini>:5173).
+REM Backend tetap 127.0.0.1 - diakses lewat proxy Vite (/api, /sanctum).
+echo [Frontend] http://127.0.0.1:5173  (jaringan kantor: http://^<IP-PC-ini^>:5173)
+start "STOCKWISE Frontend" cmd /k "cd /d %~dp0frontend && npm run dev -- --host 0.0.0.0"
 
 echo.
 echo STOCKWISE dev berjalan. Tutup jendela Backend/Frontend untuk berhenti.

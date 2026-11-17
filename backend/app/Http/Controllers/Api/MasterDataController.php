@@ -13,11 +13,18 @@ use App\Models\Unit;
 use App\Models\Warehouse;
 use App\Models\WarehouseLocation;
 use App\Models\Workshop;
+use App\Services\MasterDataQualityService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class MasterDataController extends Controller
 {
+    /** GET /api/master-data/quality: master data that needs a person's look (read only; checks follow the user's permissions) */
+    public function quality(Request $request, MasterDataQualityService $service): JsonResponse
+    {
+        return response()->json(['data' => $service->checks($request->user())]);
+    }
+
     public function categories(Request $request): JsonResponse
     {
         $query = Category::query()->orderBy('path');

@@ -264,9 +264,23 @@ function ItemTab({ units, canManage }: { units: UomUnit[]; canManage: boolean })
             <div className="border-b px-4 py-2.5 text-sm font-semibold">Conversions of this item</div>
             <ul className="divide-y text-sm">
               {data?.conversions.map((c) => (
-                <li key={c.code} className="flex items-center justify-between gap-2 px-4 py-2">
-                  <span className="tabular-nums">1 {c.code} = {fmt(c.ratio)} {base}</span>
-                  <span className="flex items-center gap-2">
+                <li key={c.code} className={cn('flex items-center justify-between gap-2 px-4 py-2', c.needs_review && 'bg-amber-50 dark:bg-amber-950/30')}>
+                  <span className="min-w-0">
+                    <span className={cn('tabular-nums', c.needs_review && 'text-muted-foreground line-through')}>1 {c.code} = {fmt(c.ratio)} {c.needs_review ? c.set_against : base}</span>
+                    {c.needs_review && (
+                      <span className="block text-xs text-amber-800 dark:text-amber-300">
+                        Set when the base unit was {c.set_against}; it is now {base}. Not used until you confirm it or save a new ratio below.
+                      </span>
+                    )}
+                  </span>
+                  <span className="flex shrink-0 items-center gap-2">
+                    {c.needs_review && canManage && c.id != null && (
+                      <Button size="sm" variant="outline" className="h-8" disabled={act.confirmItemConversion.isPending}
+                        title={`1 ${c.code} is still ${fmt(c.ratio)} ${base}`}
+                        onClick={() => act.confirmItemConversion.mutate({ itemId: picked.id, id: c.id! }, { onError: (e) => toast.fromError(e, apiErrorMessage(e)) })}>
+                        Still right
+                      </Button>
+                    )}
                     {c.source === 'ACCURATE' ? <Badge variant="neutral">Accurate</Badge> : canManage && c.id != null && (
                       <Button size="sm" variant="ghost" className="h-8 text-destructive" aria-label={`Delete ${c.code}`}
                         onClick={async () => { if (await confirmDialog({ message: `Delete the ${c.code} conversion of this item?`, danger: true })) act.deleteItemConversion.mutate({ itemId: picked.id, id: c.id! }, { onError: (e) => toast.fromError(e, apiErrorMessage(e)) }) }}><Trash2 className="size-3.5" /></Button>

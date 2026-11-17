@@ -38,8 +38,46 @@ class PoDraftService
                 DB::table('purchase_order_item_vendors')->insertOrIgnore(['purchase_order_item_id' => $line, 'vendor_id' => $vendor, 'created_by' => $user->id, 'created_at' => now()]);
             }
         }
+        $this->prefillFromPriceList($user, $lines->all(), array_values(array_unique($vendorIds)));
 
         return $lines->count();
+    }
+
+    /**
+     * A crossing with no price yet takes the vendor's price from the Master Price List: an Active price, still
+     * valid, in the line's own unit, of the tier its quantity reaches. A crossing without such a price stays
+     * empty ("–"); a price already typed is never overwritten.
+     *
+     * @param  list<int>  $lineIds
+     * @param  list<int>  $vendorIds
+     */
+    private function prefillFromPriceList(User $user, array $lineIds, array $vendorIds): void
+    {
+        if (! AppSupportSchemaCache::hasColumn('vendor_prices', 'item_id') || $lineIds === [] || $vendorIds === []) {
+            return;
+        }
+        $lines = PurchaseOrderItem::whereIn('id', $lineIds)->where('quote_stage', 'PENAWARAN')->whereNotNull('item_id')->whereNotNull('unit_id')->with('quotes:id,purchase_order_item_id,vendor_id')->get();
+        if ($lines->isEmpty()) {
+            return;
+        }
+        $today = today()->toDateString();
+        $prices = AppModelsVendorPrice::query()->where('status', AppModelsVendorPrice::ACTIVE)
+            ->where(fn ($q) => $q->whereNull('valid_until')->orWhere('valid_until', '>=', $today))
+            ->whereIn('item_id', $lines->pluck('item_id')->unique()->all())->whereIn('vendor_id', $vendorIds)
+            ->with('item:id,unit_id')->get()
+            ->reject(fn ($p) => $p->needsReview());
+        foreach ($lines as $line) {
+            foreach ($vendorIds as $vendorId) {
+                if ($line->quotes->contains('vendor_id', $vendorId)) {
+                    continue;
+                }
+                $best = $prices->filter(fn ($p) => $p->item_id === $line->item_id && $p->vendor_id === $vendorId && $p->unit_id === $line->unit_id && (float) $p->min_qty <= (float) $line->qty + 0.0001)
+                    ->sortByDesc(fn ($p) => (float) $p->min_qty)->first();
+                if ($best) {
+                    $this->quote($line, $user, $vendorId, (float) $best->price, 'Dari Price List');
+                }
+            }
+        }
     }
 
     /** A column goes from these items; one with a price stays until the price is removed. */

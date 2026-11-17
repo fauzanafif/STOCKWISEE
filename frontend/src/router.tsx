@@ -3,6 +3,9 @@ import { recordLocation } from '@/lib/navHistory'
 import { RequireAuth, RequirePermission, RequireRole } from '@/auth/guards'
 import { AppLayout } from '@/components/AppLayout'
 import { DashboardPage } from '@/pages/DashboardPage'
+import { AppsPage } from '@/pages/AppsPage'
+import { ComingSoonPage } from '@/pages/ComingSoonPage'
+import { AppDashboardPage } from '@/pages/AppDashboardPage'
 import { AnalyticsPage } from '@/pages/AnalyticsPage'
 import { VendorsPage } from '@/pages/VendorsPage'
 import { EmployeesPage } from '@/pages/EmployeesPage'
@@ -26,6 +29,8 @@ import { StockCardProjectPage } from '@/pages/StockCardProjectPage'
 import { PoDetailPage } from '@/pages/PoDetailPage'
 import { PoListPage } from '@/pages/PoListPage'
 import { PoDraftPage, PoReadyPage } from '@/pages/PoFlowPages'
+import { PriceListPage } from '@/pages/PriceListPage'
+import { DataQualityPage } from '@/pages/DataQualityPage'
 import { PpbDetailPage } from '@/pages/PpbDetailPage'
 import { PpbListPage } from '@/pages/PpbListPage'
 import { RiDetailPage } from '@/pages/RiDetailPage'
@@ -54,13 +59,11 @@ import { PpbDraftListPage, PpbDraftPage } from '@/pages/PpbDraftPage'
 import { PurchaseReturnListPage } from '@/pages/PurchaseReturnListPage'
 import { PurchaseReturnNewPage } from '@/pages/PurchaseReturnNewPage'
 import { PurchaseReturnDetailPage } from '@/pages/PurchaseReturnDetailPage'
-import { MrpDashboardPage } from '@/pages/mrp/MrpDashboardPage'
 import { BomListPage } from '@/pages/mrp/BomListPage'
 import { BomDetailPage } from '@/pages/mrp/BomDetailPage'
 import { MoListPage } from '@/pages/mrp/MoListPage'
 import { MoDetailPage } from '@/pages/mrp/MoDetailPage'
 import { ProductionHistoryPage } from '@/pages/mrp/ProductionHistoryPage'
-import { DisassemblyDashboardPage } from '@/pages/disassembly/DisassemblyDashboardPage'
 import { DisassemblyListPage } from '@/pages/disassembly/DisassemblyListPage'
 import { DisassemblyDetailPage } from '@/pages/disassembly/DisassemblyDetailPage'
 import { DisassemblyHistoryPage } from '@/pages/disassembly/DisassemblyHistoryPage'
@@ -91,13 +94,27 @@ export const router = createBrowserRouter([
       {
         element: <AppLayout />,
         children: [
-          { path: '/', element: <DashboardPage /> },
+          { path: '/', element: <AppsPage /> },
+          { path: '/todo', element: <DashboardPage /> },
+          { path: '/apps', element: <Navigate to="/" replace /> },
+          { path: '/coming-soon/:app', element: <ComingSoonPage /> },
+          // one dashboard per app (the tile on the launcher opens it); the old menu dashboards lead to it
+          { path: '/inventory', element: <AppDashboardPage key="inventory" appKey="inventory" /> },
+          { path: '/purchase', element: <AppDashboardPage key="purchase" appKey="purchase" /> },
+          { path: '/mrp', element: <AppDashboardPage key="manufacturing" appKey="manufacturing" /> },
+          { path: '/tracking', element: <AppDashboardPage key="tracking" appKey="tracking" /> },
           { path: '/analytics', element: <AnalyticsPage /> },
+          { path: '/item-requests/dashboard', element: <Navigate to="/inventory" replace /> },
+          { path: '/ri/dashboard', element: <Navigate to="/inventory" replace /> },
+          { path: '/ppb/dashboard', element: <Navigate to="/purchase" replace /> },
+          { path: '/purchase-orders/dashboard', element: <Navigate to="/purchase" replace /> },
+          { path: '/mrp/dashboard', element: <Navigate to="/mrp" replace /> },
+          { path: '/disassembly', element: <Navigate to="/mrp" replace /> },
+          { path: '/disassembly/dashboard', element: <Navigate to="/mrp" replace /> },
           {
             element: <RequirePermission permission={['item_request.create', 'item_request.view']} />,
             children: [
               { path: '/item-requests', element: <ItemRequestListPage /> },
-              { path: '/item-requests/dashboard', element: <ModuleDashboardPage key="request" module="request" /> },
             ],
           },
           {
@@ -161,8 +178,6 @@ export const router = createBrowserRouter([
             // Manufacturing (BoM + Manufacturing Order); the Tracking sheet stays at /manufacturing
             element: <RequirePermission permission={['mrp.view']} />,
             children: [
-              { path: '/mrp', element: <Navigate to="/mrp/dashboard" replace /> },
-              { path: '/mrp/dashboard', element: <MrpDashboardPage /> },
               { path: '/mrp/orders', element: <MoListPage /> },
               { path: '/mrp/orders/:id', element: <MoDetailPage /> },
               { path: '/mrp/history', element: <ProductionHistoryPage /> },
@@ -178,8 +193,6 @@ export const router = createBrowserRouter([
             // Disassembly (unbuild): one product taken apart into its BoM components
             element: <RequirePermission permission={['disassembly.view']} />,
             children: [
-              { path: '/disassembly', element: <Navigate to="/disassembly/dashboard" replace /> },
-              { path: '/disassembly/dashboard', element: <DisassemblyDashboardPage /> },
               { path: '/disassembly/orders', element: <DisassemblyListPage /> },
               { path: '/disassembly/orders/:id', element: <DisassemblyDetailPage /> },
               { path: '/disassembly/history', element: <DisassemblyHistoryPage /> },
@@ -215,12 +228,21 @@ export const router = createBrowserRouter([
             element: <RequirePermission permission={['ppb.view']} />,
             children: [
               { path: '/ppb', element: <PpbListPage /> },
-              { path: '/ppb/dashboard', element: <ModuleDashboardPage key="ppb" module="ppb" /> },
               { path: '/ppb/:id', element: <PpbDetailPage /> },
             ],
           },
           {
-            // PPB Siap PO → RFQ (vendor prices, Director picks, Draft PO)
+            // Data Quality: master data that needs a look (read only)
+            element: <RequirePermission permission={['item.view', 'master.unit.view', 'master.vendor.view', 'master.employee.view']} />,
+            children: [{ path: '/master-data/quality', element: <DataQualityPage /> }],
+          },
+          {
+            // Price List: the standing prices, Item × Vendor (apart from any Purchase Request)
+            element: <RequirePermission permission={['rfq.view']} />,
+            children: [{ path: '/price-list', element: <PriceListPage /> }],
+          },
+          {
+            // PPB Siap PO → Price Quotation (vendor prices, Director picks, Draft PO)
             element: <RequirePermission permission={['po.create', 'po.approve_director']} />,
             children: [
               { path: '/purchase-orders/siap-po', element: <PoReadyPage /> },
@@ -233,7 +255,6 @@ export const router = createBrowserRouter([
             element: <RequirePermission permission="po.view" />,
             children: [
               { path: '/purchase-orders', element: <PoListPage /> },
-              { path: '/purchase-orders/dashboard', element: <ModuleDashboardPage key="po" module="po" /> },
               { path: '/purchase-orders/:id', element: <PoDetailPage /> },
             ],
           },
@@ -241,7 +262,6 @@ export const router = createBrowserRouter([
             element: <RequirePermission permission={['ri.view']} />,
             children: [
               { path: '/ri', element: <RiListPage /> },
-              { path: '/ri/dashboard', element: <ModuleDashboardPage key="ri" module="ri" /> },
               { path: '/ri/:id', element: <RiDetailPage /> },
             ],
           },
