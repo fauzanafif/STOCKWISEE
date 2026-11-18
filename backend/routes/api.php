@@ -306,6 +306,12 @@ Route::middleware('auth:sanctum')->group(function (): void {
         ->middleware('permission:item_request.approve_manager|item_request.approve_director|item_request.handover|ppb.approve_manager|ppb.approve_director|po.approve_director|npbg.approve_manager|npbg.approve_director')->name('api.approvals.index');
     // each menu's Dashboard: basic analytics (permission per module, checked in the controller) and the user's own layout
     Route::get('/module-stats/{module}', [\App\Http\Controllers\Api\ModuleStatsController::class, 'show'])->name('api.module-stats');
+    // Custom dashboards: the layout only; each widget reads an existing API with the viewer's permissions
+    Route::get('/custom-dashboards', [\App\Http\Controllers\Api\CustomDashboardController::class, 'index'])->name('api.custom-dashboards.index');
+    Route::post('/custom-dashboards', [\App\Http\Controllers\Api\CustomDashboardController::class, 'store'])->middleware('throttle:30,1')->name('api.custom-dashboards.store');
+    Route::get('/custom-dashboards/{id}', [\App\Http\Controllers\Api\CustomDashboardController::class, 'show'])->whereNumber('id')->name('api.custom-dashboards.show');
+    Route::put('/custom-dashboards/{id}', [\App\Http\Controllers\Api\CustomDashboardController::class, 'update'])->whereNumber('id')->middleware('throttle:120,1')->name('api.custom-dashboards.update');
+    Route::delete('/custom-dashboards/{id}', [\App\Http\Controllers\Api\CustomDashboardController::class, 'destroy'])->whereNumber('id')->middleware('throttle:30,1')->name('api.custom-dashboards.destroy');
     Route::get('/preferences/{key}', [\App\Http\Controllers\Api\PreferenceController::class, 'show'])->name('api.preferences.show');
     Route::put('/preferences/{key}', [\App\Http\Controllers\Api\PreferenceController::class, 'update'])->middleware('throttle:60,1')->name('api.preferences.update');
     // User Log: pages opened are written by the app; reading the log needs audit_log.view
@@ -635,6 +641,22 @@ Route::middleware('auth:sanctum')->group(function (): void {
     // Price List: the standing purchase prices, Item × Vendor (apart from any Purchase Request)
     Route::get('/price-list/reference', [\App\Http\Controllers\Api\PriceListController::class, 'reference'])
         ->middleware('permission:rfq.view|po.create|po.approve_director')->name('api.price-list.reference');
+    // Draft Price List: items × vendors priced in one draft, then "Set Harga" into the Master Price List
+    Route::middleware('permission:rfq.view')->group(function () {
+        Route::get('/price-list/drafts', [\App\Http\Controllers\Api\PriceListDraftController::class, 'index'])->name('api.price-list.drafts.index');
+        Route::get('/price-list/drafts/{id}', [\App\Http\Controllers\Api\PriceListDraftController::class, 'show'])->whereNumber('id')->name('api.price-list.drafts.show');
+    });
+    Route::middleware('permission:rfq.create')->group(function () {
+        Route::get('/price-list/drafts/available-items', [\App\Http\Controllers\Api\PriceListDraftController::class, 'availableItems'])->name('api.price-list.drafts.available-items');
+        Route::post('/price-list/drafts', [\App\Http\Controllers\Api\PriceListDraftController::class, 'store'])->name('api.price-list.drafts.store');
+        Route::post('/price-list/drafts/{id}/items', [\App\Http\Controllers\Api\PriceListDraftController::class, 'addItems'])->whereNumber('id')->name('api.price-list.drafts.items.store');
+        Route::delete('/price-list/drafts/{id}/items/{item}', [\App\Http\Controllers\Api\PriceListDraftController::class, 'removeItem'])->whereNumber('id')->whereNumber('item')->name('api.price-list.drafts.items.destroy');
+        Route::post('/price-list/drafts/{id}/vendors', [\App\Http\Controllers\Api\PriceListDraftController::class, 'addVendors'])->whereNumber('id')->name('api.price-list.drafts.vendors.store');
+        Route::delete('/price-list/drafts/{id}/vendors/{vendor}', [\App\Http\Controllers\Api\PriceListDraftController::class, 'removeVendor'])->whereNumber('id')->whereNumber('vendor')->name('api.price-list.drafts.vendors.destroy');
+        Route::put('/price-list/drafts/{id}/cells', [\App\Http\Controllers\Api\PriceListDraftController::class, 'setCell'])->whereNumber('id')->name('api.price-list.drafts.cells');
+        Route::post('/price-list/drafts/{id}/finish', [\App\Http\Controllers\Api\PriceListDraftController::class, 'finish'])->whereNumber('id')->name('api.price-list.drafts.finish');
+        Route::delete('/price-list/drafts/{id}', [\App\Http\Controllers\Api\PriceListDraftController::class, 'destroy'])->whereNumber('id')->name('api.price-list.drafts.destroy');
+    });
     Route::middleware('permission:rfq.view')->group(function () {
         Route::get('/price-list/matrix', [\App\Http\Controllers\Api\PriceListController::class, 'matrix'])->name('api.price-list.matrix');
         Route::get('/price-list/items/{item}/units', [\App\Http\Controllers\Api\PriceListController::class, 'units'])->whereNumber('item')->name('api.price-list.units');

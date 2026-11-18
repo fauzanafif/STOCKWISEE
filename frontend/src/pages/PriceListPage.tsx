@@ -132,7 +132,7 @@ export function PriceListPage() {
 
   return (
     <div className="space-y-4">
-      <PageHeader title="Price List" actions={<>
+      <PageHeader title="Master Price List" actions={<>
         <div className="flex rounded-md border bg-card p-0.5" role="tablist" aria-label="View">
           {([['matrix', 'Matrix', Grid3x3], ['list', 'List', List]] as const).map(([v, label, Icon]) => (
             <button key={v} type="button" role="tab" aria-selected={view === v} onClick={() => switchView(v)}

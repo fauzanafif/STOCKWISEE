@@ -59,7 +59,8 @@ const LAUNCHER: LauncherDef[] = [
     targets: ['Purchase Request', 'Purchase Order', 'Price List', 'Return', 'Vendor'], home: APP_HOMES.purchase,
     menus: [
       { label: 'Orders', pages: ['Draft Purchase Request', { page: 'List Purchase Request', as: 'Purchase Request' }, 'Approved Purchase Request Items', 'Price Quotation', { page: 'List PO', as: 'Purchase Order' }, 'Return'] },
-      { label: 'Master Data', pages: ['Price List', 'Vendor'] },
+      { label: 'Price List', pages: ['Draft Price List', 'Master Price List'] },
+      { label: 'Master Data', pages: ['Vendor'] },
     ],
   },
   {

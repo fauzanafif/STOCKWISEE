@@ -57,9 +57,9 @@ class PriceListDraftController extends Controller
         return response()->json(['data' => $this->service->availableItems($f['search'] ?? null, (int) ($f['limit'] ?? 30))]);
     }
 
-    public function show(int $draft): JsonResponse
+    public function show(int $id): JsonResponse
     {
-        return response()->json(['data' => $this->service->show($this->draft($draft))]);
+        return response()->json(['data' => $this->service->show($this->draft($id))]);
     }
 
     /** POST /price-list/drafts {item_ids[], vendor_ids[], note?} */

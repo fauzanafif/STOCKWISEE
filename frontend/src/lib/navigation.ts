@@ -44,6 +44,7 @@ export const NAV: NavGroup[] = [
       children: [
         { to: '/todo', label: 'To-Do', keywords: 'beranda tugas catatan pengingat todo' },
         { to: '/analytics', label: 'Analytics', keywords: 'analitik grafik visualisasi stok pengadaan tracking kartu stock' },
+        { to: '/dashboards', label: 'Custom Dashboards', keywords: 'dashboard kustom sendiri buat widget grafik kpi tabel new dashboard' },
       ],
     }],
   },
@@ -93,7 +94,13 @@ export const NAV: NavGroup[] = [
       {
         to: '/ri', label: 'Receipt', icon: PackageCheck, keywords: 'ri penerimaan barang masuk list receipt', permissions: ['ri.view'],
       },
-      { to: '/price-list', label: 'Price List', icon: Tags, keywords: 'price list daftar harga matrix vendor item harga beli referensi pricelist', permissions: ['rfq.view'] },
+      {
+        to: '/price-list', label: 'Price List', icon: Tags, keywords: 'price list daftar harga matrix vendor item harga beli referensi pricelist', permissions: ['rfq.view'],
+        children: [
+          { to: '/price-list/drafts', label: 'Draft Price List', keywords: 'draft price list buat harga matrix item vendor set harga', permissions: ['rfq.view'] },
+          { to: '/price-list', label: 'Master Price List', keywords: 'master price list harga resmi riwayat history last update', permissions: ['rfq.view'] },
+        ],
+      },
       { to: '/purchase-returns', label: 'Return', icon: Undo2, keywords: 'purchase return retur vendor', permissions: ['purchase_return.view'] },
     ],
   },
@@ -193,6 +200,8 @@ const EXTRA: { prefix: string; parent: string; label: string }[] = [
   { prefix: '/purchase-returns/new', parent: '/purchase-returns', label: 'Create return' },
   { prefix: '/ppb/drafts/', parent: '/ppb', label: 'Draft Purchase Request' },
   { prefix: '/purchase-orders/draft', parent: '/purchase-orders', label: 'Price Quotation' },
+  { prefix: '/price-list/drafts/', parent: '/price-list/drafts', label: 'Draft' },
+  { prefix: '/dashboards/', parent: '/dashboards', label: 'Dashboard' },
   { prefix: '/stock-card/project', parent: '/stock-card', label: 'Project' },
   { prefix: '/safety-stocks', parent: '/inventory/analysis', label: 'Detail' },
   { prefix: '/sync/', parent: '/sync/history', label: 'Detail' },

@@ -35,17 +35,20 @@ class SampleDataTest extends TestCase
     {
         $this->artisan('stockwise:sample-data')->assertSuccessful();
 
-        $this->assertGreaterThanOrEqual(8, $this->getJson('/api/item-requests?per_page=50')->assertOk()->json('meta.total'));
-        $this->assertGreaterThanOrEqual(3, $this->getJson('/api/npbg')->assertOk()->json('meta.total'));
-        $this->assertCount(4, $this->getJson('/api/ppb-draft-lines')->assertOk()->json('data'));
+        $this->assertSame(7, $this->getJson('/api/item-requests?per_page=50')->assertOk()->json('meta.total'));
+        $this->assertSame(7, $this->getJson('/api/npbg')->assertOk()->json('meta.total'));
+        $this->assertCount(5, $this->getJson('/api/ppb-draft-lines')->assertOk()->json('data'));
         $this->assertCount(1, $this->getJson('/api/ppb-saved-drafts')->assertOk()->json('data'));
         $this->getJson('/api/ppb')->assertOk();
         $stages = $this->getJson('/api/po-draft-lines?done=1')->assertOk()->json('meta.stages');
-        $this->assertEquals([2, 2, 1, 1], [$stages['SIAP'], $stages['PENAWARAN'], $stages['MENUNGGU_DIREKTUR'], $stages['DIPILIH']]);
-        $this->assertGreaterThanOrEqual(2, $this->getJson('/api/ri')->assertOk()->json('meta.total'));
-        $this->getJson('/api/purchase-returns')->assertOk()->assertJsonPath('data.0.number', 'RTR/26/XI/901');
+        $this->assertEquals([2, 3, 1, 1], [$stages['SIAP'], $stages['PENAWARAN'], $stages['MENUNGGU_DIREKTUR'], $stages['DIPILIH']]);
+        $this->assertSame(7, $this->getJson('/api/ri')->assertOk()->json('meta.total'));
+        $this->assertSame(7, $this->getJson('/api/purchase-returns')->assertOk()->json('meta.total'));
+        $this->assertSame(7, $this->getJson('/api/price-list/drafts')->assertOk()->json('meta.total'));
+        $this->assertSame(11, $this->getJson('/api/price-list?per_page=50')->assertOk()->json('meta.total'));
+        $this->assertContains('RTR/26/XI/901', array_column($this->getJson('/api/purchase-returns')->assertOk()->json('data'), 'number'));
         $this->getJson('/api/stock-opnames')->assertOk();
-        $this->assertGreaterThanOrEqual(5, $this->getJson('/api/important-requests?per_page=50')->assertOk()->json('meta.total'));
+        $this->assertSame(7, $this->getJson('/api/important-requests?per_page=50')->assertOk()->json('meta.total'));
 
         // alerts: on the page and in their history, popping up for nobody
         $alert = $this->getJson('/api/update-alerts')->assertOk()->json('data.0');
@@ -73,7 +76,7 @@ class SampleDataTest extends TestCase
         $unit = \App\Models\Unit::where('code', 'PCS')->value('id');
         $real = Item::factory()->create(['code' => 'REAL.1', 'unit_id' => $unit, 'is_active' => true]);
         app(StockLedgerService::class)->openingBalance($real->id, Warehouse::factory()->create()->id, 77);
-        $tables = ['items', 'item_requests', 'item_request_lines', 'npbg', 'ppb', 'ppb_drafts', 'ppb_draft_lines', 'ppb_saved_drafts', 'purchase_orders', 'purchase_order_items', 'purchase_order_quotes', 'purchase_order_item_vendors', 'ri', 'purchase_returns', 'stock_opnames', 'important_requests', 'update_alerts', 'update_alert_views', 'item_unit_conversions', 'stock_movements', 'inventory', 'vendors'];
+        $tables = ['price_list_drafts', 'price_list_draft_items', 'price_list_draft_cells', 'vendor_prices', 'vendor_price_histories', 'purchase_return_lines', 'items', 'item_requests', 'item_request_lines', 'npbg', 'ppb', 'ppb_drafts', 'ppb_draft_lines', 'ppb_saved_drafts', 'purchase_orders', 'purchase_order_items', 'purchase_order_quotes', 'purchase_order_item_vendors', 'ri', 'purchase_returns', 'stock_opnames', 'important_requests', 'update_alerts', 'update_alert_views', 'item_unit_conversions', 'stock_movements', 'inventory', 'vendors'];
         $before = collect($tables)->mapWithKeys(fn ($t) => [$t => DB::table($t)->count()])->all();
         $notes = DB::table('notifications')->count();
 

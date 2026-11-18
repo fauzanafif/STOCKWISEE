@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { ArrowRight, BadgeCheck, Loader2, Lock, Pencil, Plus, Send, Trash2, TriangleAlert, Undo2, X } from 'lucide-react'
+import { ArrowRight, BadgeCheck, Eye, FileText, Loader2, Lock, Pencil, Plus, Send, Trash2, TriangleAlert, Undo2, X } from 'lucide-react'
 import { apiErrorMessage } from '@/lib/api'
 import { usePoDraftActions, usePoDraftLines, usePoLineUnits, type PoDraftLine, type PoQuote, type PoStage } from '@/features/poDrafts/api'
 import { useSaveVendor, useVendors } from '@/features/purchasing/api'
@@ -19,7 +19,7 @@ import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { invalidTo, toast } from '@/lib/notify'
 import { cn } from '@/lib/utils'
-import { usePriceReference } from '@/features/priceList/api'
+import { usePriceHistory, usePriceReference } from '@/features/priceList/api'
 
 const rupiah = (n: number) => 'Rp ' + Number(n).toLocaleString('id-ID', { maximumFractionDigits: 2 })
 const fmtQty = (n: number) => n.toLocaleString('id-ID', { maximumFractionDigits: 2 })
@@ -31,11 +31,88 @@ const num = (v: string) => {
   return Number(t.replace(',', '.'))
 }
 /** An offer against the last purchase price: ▲ dearer (red) / ▼ cheaper (green), in %. */
+/**
+ * This offer against the price the item was last bought at (its last approved PO): green ▼ = cheaper by that
+ * many percent, red ▲ = dearer.
+ */
 function VsLast({ price, last }: { price: number; last?: number }) {
   if (!last) return null
   const d = ((price - last) / last) * 100
-  if (Math.abs(d) < 0.05) return <span className="ml-1 text-[11px] text-muted-foreground">= last price</span>
-  return <span className={cn('ml-1 text-[11px] font-medium', d > 0 ? 'text-red-600' : 'text-emerald-700')}>{d > 0 ? '▲' : '▼'} {Math.abs(d).toLocaleString('id-ID', { maximumFractionDigits: 1 })}%</span>
+  const tip = `Last purchase price ${rupiah(last)}`
+  if (Math.abs(d) < 0.05) return <span className="ml-1 text-[11px] text-muted-foreground" title={tip}>= last purchase</span>
+  const pct = Math.abs(d).toLocaleString('id-ID', { maximumFractionDigits: 1 })
+  return (
+    <span className={cn('ml-1 text-[11px] font-medium', d > 0 ? 'text-red-600' : 'text-emerald-700')} title={`${d > 0 ? 'Dearer' : 'Cheaper'} than the last purchase by ${pct}% (${tip})`}>
+      {d > 0 ? '▲' : '▼'} {pct}% vs last purchase
+    </span>
+  )
+}
+
+/**
+ * The prices of one item at every vendor, in a popup: its Master Price List prices (each with its change
+ * history) and the last prices it was bought at.
+ */
+function PriceHistoryModal({ line, onClose }: { line: PoDraftLine; onClose: () => void }) {
+  const ref = usePriceReference(line.item_id ? [line.item_id] : [])
+  const prices = (line.item_id && ref.data?.[String(line.item_id)]) || []
+  const [open, setOpen] = useState<number | null>(null)
+  const history = usePriceHistory(open)
+  return (
+    <Modal open onClose={onClose} title="Price history" description={`${line.description}${line.item_code ? ` · ${line.item_code}` : ''}`} className="max-w-2xl"
+      footer={<Button variant="outline" onClick={onClose}>Close</Button>}>
+      <div className="space-y-5">
+        <section className="space-y-2">
+          <h3 className="text-sm font-semibold">Price List per vendor</h3>
+          {!line.item_id && <p className="text-sm text-muted-foreground">An item outside the Master Item has no Price List.</p>}
+          {line.item_id && ref.isLoading && <Loader2 className="size-4 animate-spin text-muted-foreground" />}
+          {line.item_id && !ref.isLoading && prices.length === 0 && <p className="text-sm text-muted-foreground">No vendor has a price for this item in the Price List yet.</p>}
+          {prices.length > 0 && (
+            <ul className="divide-y rounded-md border text-sm">
+              {prices.map((p) => (
+                <li key={p.id}>
+                  <button type="button" onClick={() => setOpen(open === p.id ? null : p.id)} aria-expanded={open === p.id}
+                    className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-muted/40">
+                    <span className="min-w-0 flex-1 truncate font-medium">{p.vendor ?? '-'}</span>
+                    <span className="tabular-nums">{rupiah(p.price)}<span className="text-xs text-muted-foreground">/{p.unit ?? '?'}{p.min_qty > 1 ? ` · min ${p.min_qty}` : ''}</span></span>
+                    <span className={cn('w-16 text-right text-[11px]', p.status === 'ACTIVE' ? 'text-emerald-700' : 'text-amber-700')}>{p.status === 'ACTIVE' ? 'Active' : p.status === 'EXPIRED' ? 'Expired' : 'Draft'}</span>
+                  </button>
+                  {open === p.id && (
+                    <div className="border-t bg-muted/20 px-3 py-2">
+                      {history.isLoading && <Loader2 className="size-4 animate-spin text-muted-foreground" />}
+                      {history.data?.length === 0 && <p className="text-xs text-muted-foreground">No change recorded.</p>}
+                      <ul className="space-y-1 text-xs">
+                        {history.data?.map((h) => (
+                          <li key={h.id} className="flex flex-wrap gap-x-2">
+                            <span className="text-muted-foreground">{h.at ? new Date(h.at).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''}</span>
+                            <span>{h.old_price != null && h.new_price != null && h.old_price !== h.new_price ? `${rupiah(h.old_price)} → ${rupiah(h.new_price)}` : h.new_price != null ? rupiah(h.new_price) : h.action}</span>
+                            {h.user && <span className="text-muted-foreground">· {h.user}</span>}
+                            {h.note && <span className="text-muted-foreground">· {h.note}</span>}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+        <section className="space-y-2">
+          <h3 className="text-sm font-semibold">Last purchases</h3>
+          {line.price_history.length === 0 ? <p className="text-sm text-muted-foreground">{line.item_id ? 'Never purchased yet.' : 'New item (outside the master).'}</p> : (
+            <ul className="divide-y rounded-md border text-sm">
+              {line.price_history.map((h, i) => (
+                <li key={i} className="flex items-center gap-3 px-3 py-2">
+                  <span className="min-w-0 flex-1"><span className="block truncate font-medium">{h.vendor ?? '-'}</span><span className="text-xs text-muted-foreground">{h.po}{h.date ? ` · ${fmtDate(h.date)}` : ''}</span></span>
+                  <span className="tabular-nums">{rupiah(h.unit_price)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      </div>
+    </Modal>
+  )
 }
 
 /** The last 3 purchase prices of the item (newest first), beside the offers now. */
@@ -174,7 +251,7 @@ const PPB_HEAD = ['Purchase Request No', 'Purchase Request Date', 'Code', 'Item'
 // ------------------------------------------------------------------ Dashboard To do
 
 /** Vendors picked for the table: any of them, added one by one. */
-function VendorPicker({ picked, onChange, exclude = [], label = 'Add vendor' }: { picked: number[]; onChange: (ids: number[]) => void; exclude?: number[]; label?: string }) {
+export function VendorPicker({ picked, onChange, exclude = [], label = 'Add vendor' }: { picked: number[]; onChange: (ids: number[]) => void; exclude?: number[]; label?: string }) {
   const { data: vendors } = useVendors({ limit: 2000, is_active: '1' })
   const saveVendor = useSaveVendor()
   const [creating, setCreating] = useState(false)
@@ -385,6 +462,50 @@ function PickLog({ l }: { l: PoDraftLine }) {
   )
 }
 
+/** the note of a price the matrix took from the Master Price List */
+const PRICE_LIST_NOTE = 'Dari Price List'
+
+/** The note of a crossing: a paper icon, filled when it holds a note. */
+function NoteIcon({ note, label, onClick }: { note?: string | null; label: string; onClick: () => void }) {
+  return (
+    <button type="button" onClick={onClick} aria-label={label} title={note || 'Add a note'}
+      className={cn('flex size-7 shrink-0 items-center justify-center rounded transition-colors hover:bg-muted', note ? 'text-primary' : 'text-muted-foreground/60 hover:text-foreground')}>
+      <FileText className={cn('size-4', note && 'fill-primary/15')} />
+    </button>
+  )
+}
+
+/** The note of one vendor's price for one item, in a popup. Purchasing writes it while pricing; the others read it. */
+function NoteModal({ line, vendor, canEdit, onClose }: { line: PoDraftLine; vendor: { id: number; name: string }; canEdit: boolean; onClose: () => void }) {
+  const act = usePoDraftActions()
+  const q = line.quotes.find((x) => x.vendor_id === vendor.id)
+  const [note, setNote] = useState(q?.note ?? '')
+  const [err, setErr] = useState<string | null>(null)
+  const save = () => {
+    if (!q) return
+    act.quote.mutate({ id: line.id, vendor_id: vendor.id, unit_price: q.unit_price, availability: q.availability, eta: q.eta, note: note.trim() || null }, {
+      onSuccess: onClose, onError: (e) => setErr(apiErrorMessage(e)),
+    })
+  }
+  const editable = canEdit && !!q
+  return (
+    <Modal open onClose={onClose} title="Note" description={`${line.description} · ${vendor.name}`} className="max-w-md"
+      footer={editable ? <>
+        <Button variant="outline" onClick={onClose}>Cancel</Button>
+        <Button disabled={act.quote.isPending} onClick={save}>{act.quote.isPending && <Loader2 className="size-4 animate-spin" />}Save note</Button>
+      </> : <Button variant="outline" onClick={onClose}>Close</Button>}>
+      {canEdit && !q
+        ? <p className="text-sm text-muted-foreground">Fill in the price of {vendor.name} first, then add its note.</p>
+        : editable
+          ? <div className="space-y-1.5">
+            <Textarea rows={4} autoFocus value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. price incl. delivery, stock ready next week" aria-label="Note" />
+            {err && <p className="text-sm text-red-600">{err}</p>}
+          </div>
+          : <p className="whitespace-pre-wrap text-sm">{q?.note || <span className="text-muted-foreground">No note.</span>}</p>}
+    </Modal>
+  )
+}
+
 // ------------------------------------------------------------------ 2. Price Quotation price matrix
 
 type VendorLines = { vendorId: number; name: string; lines: PoDraftLine[] }
@@ -484,6 +605,8 @@ export function PoDraftPage() {
   const [addingItem, setAddingItem] = useState(false)
   const [editingItem, setEditingItem] = useState<PoDraftLine | null>(null)
   const [quoting, setQuoting] = useState<number | null>(null)
+  // the note of one crossing, in a popup
+  const [noting, setNoting] = useState<{ line: PoDraftLine; vendor: { id: number; name: string } } | null>(null)
   const [ask, setAsk] = useState<Ask | null>(null)
   const [logOpen, setLogOpen] = useState<Set<number>>(new Set())
   const navigate = useNavigate()
@@ -504,7 +627,8 @@ export function PoDraftPage() {
     const price = num(text)
     if (!(price >= 0)) { toast.invalid('The price must be a number.'); forget(); return }
     if (q && q.unit_price === price) { forget(); return }
-    act.setPrice.mutate({ id: l.id, vendor_id: vendor, unit_price: price }, { onSuccess: forget, onError: fail })
+    const keep = q ? { note: q.note === PRICE_LIST_NOTE ? null : q.note, availability: q.availability, eta: q.eta } : {}
+    act.setPrice.mutate({ id: l.id, vendor_id: vendor, unit_price: price, ...keep }, { onSuccess: forget, onError: fail })
   }
   const removeItem = async (l: PoDraftLine) => {
     if (await confirmDialog({ message: `Remove "${l.description}" from Price Quotation?`, danger: true }))
@@ -522,36 +646,23 @@ export function PoDraftPage() {
   }
   const toggleLog = (id: number) => setLogOpen((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n })
 
-  // the Price List of the items being priced: a reference Purchasing checks with the vendor, never taken as is
-  const reference = usePriceReference(active.filter((l) => l.stage === 'PENAWARAN' && l.item_id).map((l) => l.item_id!), purchasing)
-  const listed = (l: PoDraftLine, vendorId: number) => {
-    const all = (l.item_id && reference.data?.[String(l.item_id)]?.filter((p) => p.vendor_id === vendorId)) || []
-    return all.find((p) => p.status === 'ACTIVE') ?? all[0]
-  }
+  // a price of the Master Price List is taken in by the server itself (note "Dari Price List"): no button for it here
+  const [historyOf, setHistoryOf] = useState<PoDraftLine | null>(null)
 
   const cell = (l: PoDraftLine, v: { id: number; name: string }, low: number | null) => {
     const q = l.quotes.find((x) => x.vendor_id === v.id)
     const key = `${l.id}:${v.id}`
     const tip = q ? [q.availability, q.eta && `ETA ${fmtDate(q.eta)}`, q.note].filter(Boolean).join(' · ') || undefined : undefined
     if (l.stage === 'PENAWARAN' && purchasing) {
-      const pl = listed(l, v.id)
-      // the same unit as the request line, or nothing to copy (a pack price is not a piece price)
-      const sameUnit = !!pl && (pl.unit ?? '').toUpperCase() === (l.unit ?? '').toUpperCase()
       return (
         <td key={v.id} className="border-l px-2 py-1.5 text-right align-top" title={tip}>
-          <Input className="ml-auto h-8 w-32 text-right tabular-nums" inputMode="decimal" placeholder="Price" aria-label={`Price ${v.name} for ${l.description}`}
-            value={typed[key] ?? (q ? String(q.unit_price) : '')} onChange={(e) => setTyped((t) => ({ ...t, [key]: e.target.value }))} onBlur={() => save(l, v.id, key)} />
+          <div className="flex items-center justify-end gap-1">
+            <Input className="h-8 w-32 text-right tabular-nums" inputMode="decimal" placeholder="–" aria-label={`Price ${v.name} for ${l.description}`}
+              value={typed[key] ?? (q ? String(q.unit_price) : '')} onChange={(e) => setTyped((t) => ({ ...t, [key]: e.target.value }))} onBlur={() => save(l, v.id, key)} />
+            <NoteIcon note={q?.note} label={`Note ${v.name} for ${l.description}`} onClick={() => setNoting({ line: l, vendor: v })} />
+          </div>
           {q && low === q.unit_price && <div className="mt-0.5 text-[11px] text-emerald-700">Cheapest</div>}
-          {pl && (!q || q.unit_price !== pl.price) && (
-            <div className={cn('mt-1 text-[11px] leading-tight', pl.status === 'ACTIVE' ? 'text-sky-700 dark:text-sky-300' : 'text-amber-700 dark:text-amber-300')}
-              title={`Price List: ${pl.status}${pl.valid_until ? `, valid until ${fmtDate(pl.valid_until)}` : ''}${pl.min_qty > 1 ? `, min ${pl.min_qty}` : ''}. Confirm with the vendor before using it.`}>
-              Price List {rupiah(pl.price)}/{pl.unit ?? '?'}{pl.status !== 'ACTIVE' && ` · ${pl.status === 'EXPIRED' ? 'Expired' : 'Draft'}`}
-              {sameUnit && !typed[key] && (
-                <button type="button" className="ml-1 font-semibold underline-offset-2 hover:underline" aria-label={`Use the Price List price of ${v.name} for ${l.description}`}
-                  disabled={act.setPrice.isPending} onClick={() => act.setPrice.mutate({ id: l.id, vendor_id: v.id, unit_price: pl.price }, { onError: fail })}>Use</button>
-              )}
-            </div>
-          )}
+          {q?.note === PRICE_LIST_NOTE && <div className="mt-0.5 text-[11px] text-sky-700 dark:text-sky-300" title="Taken from the Master Price List">From Price List</div>}
           {q && <div className="mt-0.5"><PriceUpdates q={q} item={l.description} /></div>}
         </td>
       )
@@ -576,7 +687,7 @@ export function PoDraftPage() {
           ? <button type="button" aria-label={action.label} disabled={act.choose.isPending} onClick={action.run}
             className={cn('block w-full cursor-pointer px-3 pb-1 pt-2.5 text-right transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-500 disabled:opacity-60', action.hover)}>{body}</button>
           : <div className="px-3 pb-1 pt-2.5">{body}</div>}
-        <div className="px-3 pb-2"><PriceUpdates q={q} item={l.description} /></div>
+        <div className="flex items-center justify-end gap-1 px-3 pb-2"><PriceUpdates q={q} item={l.description} />{q.note && <NoteIcon note={q.note} label={`Note ${v.name} for ${l.description}`} onClick={() => setNoting({ line: l, vendor: v })} />}</div>
       </td>
     )
   }
@@ -628,7 +739,11 @@ export function PoDraftPage() {
                   <tr key={l.id} className={c.picked.has(l.id) ? 'bg-primary/5' : undefined}>
                     <td className="sticky left-0 z-10 bg-card px-3 py-2.5 align-top">{checkable(l) && <Check on={c.picked.has(l.id)} onChange={() => c.toggle(l.id)} label={`Select ${l.description}`} />}</td>
                     <td className="sticky left-10 z-10 bg-card px-3 py-2.5 align-top">
-                      <div className="font-medium">{l.description}</div>
+                      <div className="flex items-start gap-1.5">
+                        <span className="font-medium">{l.description}</span>
+                        <button type="button" onClick={() => setHistoryOf(l)} aria-label={`Price history of ${l.description}`} title="Price history at every vendor"
+                          className="mt-0.5 shrink-0 text-muted-foreground hover:text-primary"><Eye className="size-3.5" /></button>
+                      </div>
                       <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
                         <span>{[l.item_code, l.ppb?.no_ppb].filter(Boolean).join(' · ') || (l.item_id ? '' : 'manual')}</span>
                         {editable && <button type="button" onClick={() => setQuoting(l.id)} className="text-primary hover:underline">Quotes</button>}
@@ -689,6 +804,8 @@ export function PoDraftPage() {
       {editingItem && <EditItemModal item={editingItem} onClose={() => setEditingItem(null)} />}
       {quoted && <QuoteModal l={quoted} onClose={() => setQuoting(null)} />}
       {ask && <ReasonModal ask={ask} onClose={() => setAsk(null)} />}
+      {historyOf && <PriceHistoryModal line={historyOf} onClose={() => setHistoryOf(null)} />}
+      {noting && <NoteModal line={allLines.find((r) => r.id === noting.line.id) ?? noting.line} vendor={noting.vendor} canEdit={purchasing && noting.line.stage === 'PENAWARAN'} onClose={() => setNoting(null)} />}
     </div>
   )
 }

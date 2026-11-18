@@ -111,7 +111,8 @@ export function usePoDraftActions() {
       onSuccess: done,
     }),
     setPrice: useMutation({
-      mutationFn: async ({ id, ...body }: { id: number; vendor_id: number; unit_price: number }) => (await api.put(`/api/po-draft-lines/${id}/quotes`, body)).data,
+      // the note, availability and ETA of the quote go along: the server keeps only what it is sent
+      mutationFn: async ({ id, ...body }: { id: number; vendor_id: number; unit_price: number; note?: string | null; availability?: string | null; eta?: string | null }) => (await api.put(`/api/po-draft-lines/${id}/quotes`, body)).data,
       meta: { successMessage: false },
       onSuccess: done,
     }),

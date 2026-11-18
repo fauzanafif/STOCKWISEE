@@ -125,8 +125,8 @@ export function AppsPage() {
 
   return (
     <div className="relative w-full py-6 sm:py-12 lg:py-16">
-      {/* the launcher's backdrop: a soft wash over the whole screen, behind the header's line */}
-      <div aria-hidden className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(1200px_600px_at_15%_0%,#dbeafe_0%,transparent_60%),radial-gradient(900px_600px_at_90%_10%,#ede9fe_0%,transparent_55%),radial-gradient(900px_700px_at_50%_100%,#ccfbf1_0%,transparent_60%)] bg-slate-50 dark:bg-slate-950 dark:bg-[radial-gradient(1200px_600px_at_15%_0%,#1e3a8a55_0%,transparent_60%),radial-gradient(900px_600px_at_90%_10%,#4c1d9555_0%,transparent_55%)]" />
+      {/* the launcher's backdrop: soft colours drifting slowly behind the icons (index.css .sw-aurora) */}
+      <div aria-hidden className="sw-aurora"><i /><i /><i /><i /></div>
       <h1 className="sr-only">{greeting()}, {user?.name ?? ''}</h1>
 
       {nothing && (

@@ -128,5 +128,16 @@ class PriceListDraftTest extends TestCase
         $this->assertSame([$a->id], $q->pluck('vendor_id')->all());
         $this->assertEquals(900, $q->first()->unit_price);
         $this->assertSame('Dari Price List', $q->first()->note);
+
+        // vendor B's price set later in the Master (Set Harga of a draft) reaches the open quotation at once
+        $d = $this->postJson('/api/price-list/drafts', ['item_ids' => [$item->id], 'vendor_ids' => [$b->id]])->assertCreated()->json('data');
+        $this->putJson("/api/price-list/drafts/{$d['id']}/cells", ['item_id' => $item->id, 'vendor_id' => $b->id, 'price' => 870])->assertOk();
+        $this->postJson("/api/price-list/drafts/{$d['id']}/finish")->assertOk();
+        $this->assertEquals(870, PurchaseOrderQuote::where(['purchase_order_item_id' => $line->id, 'vendor_id' => $b->id])->value('unit_price'));
+        // a price typed in the quotation is never overwritten by a later Master price
+        $this->putJson("/api/po-draft-lines/{$line->id}/quotes", ['vendor_id' => $a->id, 'unit_price' => 880])->assertOk();
+        $priceA = VendorPrice::where(['item_id' => $item->id, 'vendor_id' => $a->id])->sole();
+        $this->putJson("/api/price-list/{$priceA->id}", ['vendor_id' => $a->id, 'unit_id' => $this->pcs->id, 'price' => 850, 'status' => 'ACTIVE'])->assertOk();
+        $this->assertEquals(880, PurchaseOrderQuote::where(['purchase_order_item_id' => $line->id, 'vendor_id' => $a->id])->value('unit_price'));
     }
 }

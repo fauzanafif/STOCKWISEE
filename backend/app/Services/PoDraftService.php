@@ -44,6 +44,25 @@ class PoDraftService
     }
 
     /**
+     * A price set in the Master Price List reaches the Price Quotation at once: every item still being quoted
+     * (of these items, or all) takes it at each vendor column it has with no price yet.
+     *
+     * @param  list<int>|null  $itemIds
+     */
+    public function fillOpenFromPriceList(User $user, ?array $itemIds = null): void
+    {
+        $lines = self::waiting()->where('quote_stage', 'PENAWARAN')->whereNotNull('item_id')
+            ->when($itemIds !== null, fn ($q) => $q->whereIn('item_id', $itemIds))->pluck('id');
+        if ($lines->isEmpty()) {
+            return;
+        }
+        $columns = DB::table('purchase_order_item_vendors')->whereIn('purchase_order_item_id', $lines)->get(['purchase_order_item_id', 'vendor_id'])->groupBy('purchase_order_item_id');
+        foreach ($columns as $line => $vendors) {
+            $this->prefillFromPriceList($user, [(int) $line], $vendors->pluck('vendor_id')->map(fn ($v) => (int) $v)->unique()->values()->all());
+        }
+    }
+
+    /**
      * A crossing with no price yet takes the vendor's price from the Master Price List: an Active price, still
      * valid, in the line's own unit, of the tier its quantity reaches. A crossing without such a price stays
      * empty ("–"); a price already typed is never overwritten.
@@ -53,15 +72,15 @@ class PoDraftService
      */
     private function prefillFromPriceList(User $user, array $lineIds, array $vendorIds): void
     {
-        if (! AppSupportSchemaCache::hasColumn('vendor_prices', 'item_id') || $lineIds === [] || $vendorIds === []) {
+        if (! \App\Support\SchemaCache::hasColumn('vendor_prices', 'item_id') || $lineIds === [] || $vendorIds === []) {
             return;
         }
-        $lines = PurchaseOrderItem::whereIn('id', $lineIds)->where('quote_stage', 'PENAWARAN')->whereNotNull('item_id')->whereNotNull('unit_id')->with('quotes:id,purchase_order_item_id,vendor_id')->get();
+        $lines = PurchaseOrderItem::whereIn('id', $lineIds)->where('quote_stage', 'PENAWARAN')->whereNotNull('item_id')->with('quotes:id,purchase_order_item_id,vendor_id')->get();
         if ($lines->isEmpty()) {
             return;
         }
         $today = today()->toDateString();
-        $prices = AppModelsVendorPrice::query()->where('status', AppModelsVendorPrice::ACTIVE)
+        $prices = \App\Models\VendorPrice::query()->where('status', \App\Models\VendorPrice::ACTIVE)
             ->where(fn ($q) => $q->whereNull('valid_until')->orWhere('valid_until', '>=', $today))
             ->whereIn('item_id', $lines->pluck('item_id')->unique()->all())->whereIn('vendor_id', $vendorIds)
             ->with('item:id,unit_id')->get()
@@ -71,7 +90,9 @@ class PoDraftService
                 if ($line->quotes->contains('vendor_id', $vendorId)) {
                     continue;
                 }
-                $best = $prices->filter(fn ($p) => $p->item_id === $line->item_id && $p->vendor_id === $vendorId && $p->unit_id === $line->unit_id && (float) $p->min_qty <= (float) $line->qty + 0.0001)
+                // a line without a unit of its own is in the item's own unit
+                $unitId = $line->unit_id ?? $prices->firstWhere('item_id', $line->item_id)?->item?->unit_id;
+                $best = $prices->filter(fn ($p) => $p->item_id === $line->item_id && $p->vendor_id === $vendorId && $unitId && $p->unit_id === $unitId && (float) $p->min_qty <= (float) $line->qty + 0.0001)
                     ->sortByDesc(fn ($p) => (float) $p->min_qty)->first();
                 if ($best) {
                     $this->quote($line, $user, $vendorId, (float) $best->price, 'Dari Price List');

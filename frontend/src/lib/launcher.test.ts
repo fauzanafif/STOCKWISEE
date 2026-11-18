@@ -20,7 +20,8 @@ describe('the menu bar of an app, in the order of the work', () => {
   it('Purchase: the orders from request to return, then the master data', () => {
     expect(bar(['ppb.view', 'ppb.create', 'po.view', 'po.create', 'purchase_return.view', 'rfq.view', 'master.vendor.view'], 'purchase')).toEqual([
       ['Orders', ['Draft Purchase Request', 'Purchase Request', 'Approved Purchase Request Items', 'Price Quotation', 'Purchase Order', 'Return']],
-      ['Master Data', ['Price List', 'Vendor']],
+      ['Price List', ['Draft Price List', 'Master Price List']],
+      ['Vendor', []],
     ])
   })
 

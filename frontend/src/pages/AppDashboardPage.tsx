@@ -13,6 +13,8 @@ import { launcherApps, type LauncherApp } from '@/lib/launcher'
 import { useNavCounts } from '@/lib/navCounts'
 import { APPS_HOME, visibleNav } from '@/lib/navigation'
 import { cn } from '@/lib/utils'
+import { useCustomDashboards } from '@/features/customDashboards/api'
+import { DashboardIcon } from '@/pages/CustomDashboardPages'
 import { ModuleDashboardBody } from '@/pages/ModuleDashboardPage'
 import { MrpDashboardBody } from '@/pages/mrp/MrpDashboardPage'
 import { DisassemblyDashboardBody } from '@/pages/disassembly/DisassemblyDashboardPage'
@@ -107,6 +109,28 @@ function Section({ part }: { part: Part }) {
   )
 }
 
+/** The custom dashboards of this workspace (mine and shared), and a way to add one; the built-in one stays first. */
+function CustomDashboardsMenu({ appKey }: { appKey: string }) {
+  const { data } = useCustomDashboards(appKey)
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="relative">
+      <Button size="sm" variant="outline" aria-expanded={open} aria-haspopup="menu" onClick={() => setOpen((v) => !v)}>Dashboards{data?.length ? ` (${data.length})` : ''}</Button>
+      {open && (
+        <div role="menu" className="absolute right-0 top-full z-30 mt-1 w-64 rounded-md border bg-card p-1 shadow-lg" onMouseLeave={() => setOpen(false)}>
+          {(data ?? []).map((d) => (
+            <Link key={d.id} role="menuitem" to={`/dashboards/${d.id}`} className="flex items-center gap-2 rounded px-2.5 py-2 text-sm hover:bg-muted">
+              <DashboardIcon name={d.icon} className="size-4 text-muted-foreground" /><span className="min-w-0 flex-1 truncate">{d.name}</span>
+            </Link>
+          ))}
+          {(data?.length ?? 0) > 0 && <div className="my-1 border-t" />}
+          <Link role="menuitem" to={`/dashboards?new=1&app=${appKey}`} className="flex items-center gap-2 rounded px-2.5 py-2 text-sm font-medium text-primary hover:bg-muted">+ Add New Dashboard</Link>
+        </div>
+      )}
+    </div>
+  )
+}
+
 type View = 'overview' | 'todo' | 'analysis'
 
 /**
@@ -159,6 +183,7 @@ export function AppDashboardPage({ appKey }: { appKey: keyof typeof PARTS }) {
       <div className="-mx-3 mb-5 flex flex-wrap items-center gap-x-4 gap-y-2 border-b bg-card px-3 py-2.5 sm:-mx-5 sm:px-5 print:hidden">
         <h1 className="min-w-0 truncate text-lg font-semibold tracking-tight">{app.label} <span className="font-normal text-muted-foreground">/ {views.find(([k]) => k === view)![1]}</span></h1>
         <div className="ml-auto flex items-center gap-2">
+          <CustomDashboardsMenu appKey={appKey} />
           {view === 'analysis' && (
             <>
               <Button size="sm" variant="outline" onClick={exportPdf} disabled={exporting}>

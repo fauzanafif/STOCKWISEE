@@ -76,7 +76,7 @@ class PriceListService
             throw ValidationException::withMessages(['price' => "{$vendor->name} sudah punya harga untuk item ini dengan satuan dan minimum quantity yang sama. Edit harga itu, atau isi minimum quantity lain untuk harga bertingkat."]);
         }
 
-        return DB::transaction(function () use ($user, $price, $values, $data) {
+        $saved = DB::transaction(function () use ($user, $price, $values, $data) {
             if (! $price) {
                 $price = VendorPrice::create($values + ['created_by' => $user->id, 'updated_by' => $user->id]);
                 $this->log($price, $user, 'CREATE', null, $price->price, null, $price->status, null, $data['change_note'] ?? null);
@@ -105,6 +105,12 @@ class PriceListService
 
             return $price;
         });
+        // an Active price reaches the items still being quoted at once (only crossings with no price yet)
+        if ($saved->status === VendorPrice::ACTIVE) {
+            app(PoDraftService::class)->fillOpenFromPriceList($user, [$saved->item_id]);
+        }
+
+        return $saved;
     }
 
     /** Deactivate: the price stays (with its history) but no longer shows as a reference. */

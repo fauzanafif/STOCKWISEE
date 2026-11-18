@@ -6,6 +6,7 @@ import { DashboardPage } from '@/pages/DashboardPage'
 import { AppsPage } from '@/pages/AppsPage'
 import { ComingSoonPage } from '@/pages/ComingSoonPage'
 import { AppDashboardPage } from '@/pages/AppDashboardPage'
+import { CustomDashboardListPage, CustomDashboardPage } from '@/pages/CustomDashboardPages'
 import { AnalyticsPage } from '@/pages/AnalyticsPage'
 import { VendorsPage } from '@/pages/VendorsPage'
 import { EmployeesPage } from '@/pages/EmployeesPage'
@@ -30,6 +31,7 @@ import { PoDetailPage } from '@/pages/PoDetailPage'
 import { PoListPage } from '@/pages/PoListPage'
 import { PoDraftPage, PoReadyPage } from '@/pages/PoFlowPages'
 import { PriceListPage } from '@/pages/PriceListPage'
+import { PriceListDraftListPage, PriceListDraftPage } from '@/pages/PriceListDraftPages'
 import { DataQualityPage } from '@/pages/DataQualityPage'
 import { PpbDetailPage } from '@/pages/PpbDetailPage'
 import { PpbListPage } from '@/pages/PpbListPage'
@@ -104,6 +106,9 @@ export const router = createBrowserRouter([
           { path: '/mrp', element: <AppDashboardPage key="manufacturing" appKey="manufacturing" /> },
           { path: '/tracking', element: <AppDashboardPage key="tracking" appKey="tracking" /> },
           { path: '/analytics', element: <AnalyticsPage /> },
+          // custom dashboards: every signed-in user; each widget reads its data with the viewer's permissions
+          { path: '/dashboards', element: <CustomDashboardListPage /> },
+          { path: '/dashboards/:id', element: <CustomDashboardPage /> },
           { path: '/item-requests/dashboard', element: <Navigate to="/inventory" replace /> },
           { path: '/ri/dashboard', element: <Navigate to="/inventory" replace /> },
           { path: '/ppb/dashboard', element: <Navigate to="/purchase" replace /> },
@@ -239,7 +244,11 @@ export const router = createBrowserRouter([
           {
             // Price List: the standing prices, Item × Vendor (apart from any Purchase Request)
             element: <RequirePermission permission={['rfq.view']} />,
-            children: [{ path: '/price-list', element: <PriceListPage /> }],
+            children: [
+              { path: '/price-list', element: <PriceListPage /> },
+              { path: '/price-list/drafts', element: <PriceListDraftListPage /> },
+              { path: '/price-list/drafts/:id', element: <PriceListDraftPage /> },
+            ],
           },
           {
             // PPB Siap PO → Price Quotation (vendor prices, Director picks, Draft PO)
