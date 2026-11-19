@@ -47,6 +47,22 @@ class PersonalTodoTest extends TestCase
         $this->getJson('/api/dashboard-notes')->assertOk()->assertJsonCount(0, 'data');
     }
 
+    public function test_a_note_stuck_on_an_overview_card_keeps_where_it_floats(): void
+    {
+        $this->actingAsRole('admin_gudang');
+        // stuck on a card it may start empty, ready to be written on
+        $id = $this->postJson('/api/dashboard-notes', ['anchor' => 'inventory:/npbg', 'layout' => ['x' => 40, 'y' => 120.4, 'w' => 240, 'h' => 200, 'open' => true, 'junk' => 1]])
+            ->assertCreated()->assertJsonPath('data.anchor', 'inventory:/npbg')->json('data.id');
+        $this->assertSame(['x' => 40, 'y' => 120, 'w' => 240, 'h' => 200, 'open' => true], $this->getJson('/api/dashboard-notes')->json('data.0.layout'));
+
+        // moved and closed; emptied, it is still a card note
+        $this->putJson("/api/dashboard-notes/{$id}", ['layout' => ['x' => 300, 'y' => 10, 'w' => 260, 'h' => 180, 'open' => false], 'body' => ''])->assertOk()
+            ->assertJsonPath('data.layout.open', false)->assertJsonPath('data.layout.x', 300);
+        $this->putJson("/api/dashboard-notes/{$id}", ['layout' => ['w' => 5000]])->assertStatus(422);
+        // a plain note still needs some content
+        $this->postJson('/api/dashboard-notes', ['body' => ' '])->assertStatus(422);
+    }
+
     public function test_notes_never_leak_between_users(): void
     {
         $this->actingAsRole('karyawan', ['username' => 'satu']);

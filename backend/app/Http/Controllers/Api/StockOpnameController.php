@@ -9,6 +9,8 @@ use App\Services\StockOpnameService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class StockOpnameController extends Controller
@@ -25,7 +27,8 @@ class StockOpnameController extends Controller
                 'items as diff_count' => fn ($q) => $q->whereRaw('abs(difference) > 0.001'),
             ])
             ->latest();
-        $request->whenFilled('status', fn ($v) => $query->where('status', strtoupper((string) $v)));
+        // a controlled-workflow status also finds the documents saved with its earlier equivalent
+        $request->whenFilled('status', fn ($v) => $query->whereIn('status', StockOpname::statusesFor(strtoupper((string) $v))));
         $request->whenFilled('warehouse_id', fn ($v) => $query->where('warehouse_id', $v));
         // source=internal: scheduled & counted in STOCKWISE; source=accurate: ITEMADJ mirror
         $request->whenFilled('source', fn ($v) => $v === 'accurate'
@@ -77,7 +80,8 @@ class StockOpnameController extends Controller
         $request->whenFilled('source', fn ($v) => $v === 'accurate'
             ? $query->whereNotNull('so.accurate_itemadj_id')
             : ($v === 'internal' ? $query->whereNull('so.accurate_itemadj_id') : null));
-        $request->whenFilled('status', fn ($v) => $query->where('so.status', strtoupper((string) $v)));
+        $request->whenFilled('status', fn ($v) => $query->whereIn('so.status', StockOpname::statusesFor(strtoupper((string) $v))));
+        $request->whenFilled('opname_id', fn ($v) => $query->where('so.id', (int) $v));
         $request->whenFilled('date_from', fn ($v) => $query->whereDate('so.scheduled_date', '>=', $v));
         $request->whenFilled('date_to', fn ($v) => $query->whereDate('so.scheduled_date', '<=', $v));
         $request->whenFilled('search', function ($v) use ($query) {
@@ -100,6 +104,7 @@ class StockOpnameController extends Controller
                     'id' => $l->opname?->id,
                     'number' => $l->opname?->number,
                     'status' => $l->opname?->status,
+                    'flow_status' => $l->opname?->flowStatus(),
                     'date' => $l->opname?->scheduled_date?->toDateString(),
                     'warehouse' => $l->opname?->warehouse?->code,
                     'accurate_itemadj_id' => $l->opname?->accurate_itemadj_id,
@@ -203,13 +208,13 @@ class StockOpnameController extends Controller
      *
      * @return array{npbg: array<string,int>, ppb: array<string,int>}
      */
-    private function usageCounts(\Illuminate\Support\Collection $codes, ?string $from = null, ?string $to = null): array
+    private function usageCounts(Collection $codes, ?string $from = null, ?string $to = null): array
     {
         $codes = $codes->filter()->unique()->values();
         if ($codes->isEmpty()) {
             return ['npbg' => [], 'ppb' => []];
         }
-        $count = fn (string $table, string $dateCol) => $codes->chunk(1000)->flatMap(fn ($chunk) => \Illuminate\Support\Facades\DB::table($table)
+        $count = fn (string $table, string $dateCol) => $codes->chunk(1000)->flatMap(fn ($chunk) => DB::table($table)
             ->whereIn('kode_barang', $chunk->all())
             ->when($from, fn ($q) => $q->whereDate($dateCol, '>=', $from))
             ->when($to, fn ($q) => $q->whereDate($dateCol, '<=', $to))
@@ -385,6 +390,7 @@ class StockOpnameController extends Controller
             'id' => $o->id,
             'number' => $o->number,
             'status' => $o->status,
+            'flow_status' => $o->flowStatus(),
             'type' => $o->type,
             'warehouse' => $o->relationLoaded('warehouse') ? $o->warehouse?->only('id', 'code', 'name') : null,
             'scheduled_date' => $o->scheduled_date?->toDateString(),

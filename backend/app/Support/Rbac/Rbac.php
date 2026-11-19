@@ -117,6 +117,7 @@ final class Rbac
             'opname.approve' => 'Approve opname (buat adjustment)',
             'opname.reject' => 'Reject opname',
             'opname.request_recount' => 'Minta hitung ulang',
+            'opname.view_variance' => 'Lihat stok sistem & selisih opname (auditor, tanpa aksi)',
         ],
         // Mirror Accurate REQUISITION/REQUISITIONDET — read-only (sync), tapi bisa juga dibuat manual.
         'ppb' => [
@@ -279,7 +280,7 @@ final class Rbac
             'item_request.create', 'item_request.view', 'item_request.process',
             'npbg.verification.view', 'npbg.verification.manage', 'npbg.verification.respond',
             'opname.view', 'opname.schedule', 'opname.count', 'opname.submit',
-            'opname.review', 'opname.approve', 'opname.reject', 'opname.request_recount',
+            'opname.review', 'opname.approve', 'opname.reject', 'opname.request_recount', 'opname.view_variance',
             'ppb.view', 'ppb.create', 'ri.view', 'ri.create',
             'purchase_return.view', 'purchase_return.manage',
             'lend.view', 'lend.create', 'lend.update', 'lend.return',
@@ -319,7 +320,7 @@ final class Rbac
             'inventory.view', 'inventory.view_analysis', 'stock_movement.view', 'item.view',
             'npbg.view', 'npbg.verification.view', 'npbg.verification.bos_decide',
             'ppb.view', 'ri.view', 'po.view', 'purchase_return.view',
-            'opname.view',
+            'opname.view', 'opname.view_variance',
             'lend.view', 'borrow.view', 'stpp.view', 'tyre.view', 'maintenance.view',
             'manufacturing.view', 'used_return.view', 'mrp.view', 'disassembly.view',
             'dashboard.executive',

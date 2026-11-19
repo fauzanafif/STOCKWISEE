@@ -14,7 +14,7 @@ use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
 
 #[Fillable(['name', 'username', 'email', 'phone', 'position', 'password', 'site_id', 'employee_id', 'is_active'])]
-#[Hidden(['password', 'remember_token', 'avatar_path'])]
+#[Hidden(['password', 'remember_token', 'avatar_path', 'signature_path'])]
 class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */
@@ -34,6 +34,7 @@ class User extends Authenticatable
             'password' => 'hashed',
             'is_active' => 'boolean',
             'avatar_updated_at' => 'datetime',
+            'signature_updated_at' => 'datetime',
         ];
     }
 
@@ -51,6 +52,22 @@ class User extends Authenticatable
     public static function avatarSignature(int $id, string $version): string
     {
         return substr(hash_hmac('sha256', "avatar|{$id}|{$version}", (string) config('app.key')), 0, 32);
+    }
+
+    /** The e-sign image's URL (signed: an <img> sends no token), or null without one. */
+    public function signatureUrl(): ?string
+    {
+        if (! $this->signature_path) {
+            return null;
+        }
+        $v = (string) ($this->signature_updated_at?->timestamp ?? 0);
+
+        return '/api/signatures/'.$this->id.'?v='.$v.'&s='.self::signatureSignature($this->id, $v);
+    }
+
+    public static function signatureSignature(int $id, string $version): string
+    {
+        return substr(hash_hmac('sha256', "signature|{$id}|{$version}", (string) config('app.key')), 0, 32);
     }
 
     public function site(): BelongsTo

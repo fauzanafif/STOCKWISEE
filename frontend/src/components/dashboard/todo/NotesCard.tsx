@@ -13,7 +13,7 @@ import { cn } from '@/lib/utils'
 import { fmtWhen } from './when'
 
 /** [the note itself, its swatch] */
-const COLOR: Record<NoteColor, [string, string]> = {
+export const NOTE_COLOR_CLASSES: Record<NoteColor, [string, string]> = {
   yellow: ['border-yellow-200 bg-yellow-100 dark:border-yellow-800 dark:bg-yellow-900/40', 'bg-yellow-300'],
   pink: ['border-pink-200 bg-pink-100 dark:border-pink-800 dark:bg-pink-900/40', 'bg-pink-300'],
   green: ['border-emerald-200 bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-900/40', 'bg-emerald-300'],
@@ -36,7 +36,7 @@ function StickyNote({ n, onEdit }: { n: DashboardNote; onEdit: () => void }) {
   const tick = (i: number) => act.update.mutate({ id: n.id, checklist: n.checklist.map((c, j) => (j === i ? { ...c, done: !c.done } : c)) })
   const remove = async () => { if (await confirmDialog({ message: `Delete the note "${n.title || n.body?.slice(0, 40) || 'checklist'}"?`, danger: true, confirmLabel: 'Delete' })) act.remove.mutate(n.id) }
   return (
-    <article className={cn('group relative flex min-h-[7.5rem] flex-col rounded-sm border p-3 shadow-[0_2px_4px_rgb(15_23_42/0.08)]', COLOR[n.color]?.[0] ?? COLOR.yellow[0], n.done && 'opacity-60')}>
+    <article className={cn('group relative flex min-h-[7.5rem] flex-col rounded-sm border p-3 shadow-[0_2px_4px_rgb(15_23_42/0.08)]', NOTE_COLOR_CLASSES[n.color]?.[0] ?? NOTE_COLOR_CLASSES.yellow[0], n.done && 'opacity-60')}>
       <div className="flex items-start gap-1.5">
         <button type="button" onClick={() => act.update.mutate({ id: n.id, done: !n.done })} aria-label={n.done ? 'Mark as not done' : 'Mark as done'} aria-pressed={n.done}
           className="mt-0.5 shrink-0 text-slate-500 hover:text-emerald-700 dark:text-slate-300">
@@ -103,7 +103,7 @@ export function NoteEditor({ note, onClose }: { note: DashboardNote | null; onCl
         <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
         <Button size="sm" disabled={busy} onClick={save}>{busy && <Loader2 className="size-4 animate-spin" />} Save</Button>
       </>}>
-      <div className={cn('space-y-3 rounded-md border p-3', COLOR[color][0])}>
+      <div className={cn('space-y-3 rounded-md border p-3', NOTE_COLOR_CLASSES[color][0])}>
         <Input value={title} maxLength={120} onChange={(e) => setTitle(e.target.value)} placeholder="Title" aria-label="Title" className="bg-white/70 dark:bg-black/20" autoFocus />
         <Textarea value={body} maxLength={2000} rows={4} onChange={(e) => setBody(e.target.value)} placeholder="Note" aria-label="Note" className="bg-white/70 dark:bg-black/20" />
         <div className="space-y-1.5">
@@ -134,7 +134,7 @@ export function NoteEditor({ note, onClose }: { note: DashboardNote | null; onCl
           <div className="flex gap-1.5" role="radiogroup" aria-label="Color">
             {NOTE_COLORS.map((c) => (
               <button key={c} type="button" role="radio" aria-checked={color === c} aria-label={c} onClick={() => setColor(c)}
-                className={cn('size-7 rounded-full border-2', COLOR[c][1], color === c ? 'border-slate-800 dark:border-white' : 'border-transparent')} />
+                className={cn('size-7 rounded-full border-2', NOTE_COLOR_CLASSES[c][1], color === c ? 'border-slate-800 dark:border-white' : 'border-transparent')} />
             ))}
           </div>
         </div>

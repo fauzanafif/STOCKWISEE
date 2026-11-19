@@ -4,8 +4,10 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\DashboardNote;
+use App\Support\SchemaCache;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
@@ -23,7 +25,7 @@ class DashboardNoteController extends Controller
             ->orderByDesc('pinned')->orderByRaw('done_at IS NOT NULL')->orderByDesc('updated_at')
             ->limit(self::LIMIT)->get();
 
-        return response()->json(['data' => $notes->map(fn (DashboardNote $n) => $this->out($n))]);
+        return response()->json(['data' => $notes->map(fn (DashboardNote $n) => $this->out($n)), 'meta' => ['card_notes' => self::anchored()]]);
     }
 
     public function store(Request $request): JsonResponse
@@ -43,7 +45,8 @@ class DashboardNoteController extends Controller
         $row = $this->mine($request, $note);
         $data = $this->validated($request, false);
         $row->fill($data);
-        if (blank($row->title) && blank($row->body) && empty($row->checklist)) {
+        // a note stuck on a card may stay empty for a while: it shows on the screen, ready to be written on
+        if (blank($row->anchor ?? null) && blank($row->title) && blank($row->body) && empty($row->checklist)) {
             throw ValidationException::withMessages(['title' => 'Isi judul, catatan, atau checklist.']);
         }
         $row->save();
@@ -76,7 +79,21 @@ class DashboardNoteController extends Controller
             'pinned' => [$req, 'boolean'],
             'done' => [$req, 'boolean'],
             'remind_at' => [$req, 'nullable', 'date'],
+            // a note stuck on an overview card, and where it floats (before the migration: ignored)
+            'anchor' => [$req, 'nullable', 'string', 'max:160'],
+            'layout' => [$req, 'nullable', 'array'],
+            'layout.x' => ['sometimes', 'numeric', 'between:-5000,20000'],
+            'layout.y' => ['sometimes', 'numeric', 'between:-5000,50000'],
+            'layout.w' => ['sometimes', 'numeric', 'between:160,900'],
+            'layout.h' => ['sometimes', 'numeric', 'between:120,900'],
+            'layout.open' => ['sometimes', 'boolean'],
         ]);
+        if (! self::anchored()) {
+            unset($data['anchor'], $data['layout']);
+        } elseif (array_key_exists('layout', $data)) {
+            $data['layout'] = $data['layout'] === null ? null : collect($data['layout'])->only(['x', 'y', 'w', 'h', 'open'])
+                ->map(fn ($v, $k) => $k === 'open' ? (bool) $v : round((float) $v))->all();
+        }
         if (array_key_exists('title', $data)) {
             $data['title'] = filled($data['title']) ? trim($data['title']) : null;
         }
@@ -87,22 +104,29 @@ class DashboardNoteController extends Controller
         }
         if (! empty($data['remind_at'])) {
             // the browser sends its own moment (ISO with offset); keep it as the same moment in the app's time
-            $data['remind_at'] = \Illuminate\Support\Carbon::parse($data['remind_at'])->setTimezone(config('app.timezone'));
+            $data['remind_at'] = Carbon::parse($data['remind_at'])->setTimezone(config('app.timezone'));
         }
         if (array_key_exists('done', $data)) {
             $data['done_at'] = $data['done'] ? now() : null;
             unset($data['done']);
         }
-        if ($creating && blank($data['title'] ?? null) && blank($data['body'] ?? null) && empty($data['checklist'])) {
+        if ($creating && blank($data['anchor'] ?? null) && blank($data['title'] ?? null) && blank($data['body'] ?? null) && empty($data['checklist'])) {
             throw ValidationException::withMessages(['title' => 'Isi judul, catatan, atau checklist.']);
         }
 
         return $data;
     }
 
+    /** whether notes can be stuck on overview cards yet (migration 2026_11_18_130000 ran) */
+    private static function anchored(): bool
+    {
+        return SchemaCache::hasColumn('dashboard_notes', 'layout');
+    }
+
     private function out(DashboardNote $n): array
     {
         return [
+            ...(self::anchored() ? ['anchor' => $n->anchor, 'layout' => $n->layout] : []),
             'id' => $n->id, 'title' => $n->title, 'body' => $n->body, 'checklist' => $n->checklist ?? [],
             'color' => $n->color, 'pinned' => $n->pinned, 'done' => $n->done_at !== null,
             'done_at' => $n->done_at?->toIso8601String(), 'remind_at' => $n->remind_at?->toIso8601String(),

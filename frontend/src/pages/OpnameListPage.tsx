@@ -1,8 +1,8 @@
-import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { FileText, PackageCheck, Plus, Rows3, Search, X } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import { FileText, LayoutDashboard, PackageCheck, Plus, Rows3, Search, X } from 'lucide-react'
 import { useOpnameLines, useOpnames, type Opname, type OpnameLineRow, type UsagePeriod } from '@/features/opname/api'
-import { OpnameStatusBadge, STATUS_FILTERS, isFromAccurate, typeLabel } from '@/features/opname/status'
+import { FLOW_FILTERS, OpnameStatusBadge, isFromAccurate, typeLabel } from '@/features/opname/status'
 import { useAuth } from '@/auth/AuthContext'
 import { cn } from '@/lib/utils'
 import { ExportBar } from '@/components/export/ExportBar'
@@ -10,7 +10,7 @@ import { PageHeader } from '@/components/PageHeader'
 import { ColumnMenu, useHiddenColumns, visibleColumns } from '@/components/ColumnVisibility'
 import { DataTable, type Column } from '@/components/DataTable'
 import { useInfiniteRows } from '@/components/InfiniteRows'
-import { ScheduleOpnameModal } from '@/components/ScheduleOpnameModal'
+import { OpnameOrderForm } from '@/pages/opname/OpnameOrderForm'
 import { ItemUsageCount } from '@/components/ItemUsageCount'
 import { usagePeriodPresets } from '@/components/UsagePeriodFilter'
 import { Badge } from '@/components/ui/badge'
@@ -113,6 +113,18 @@ export function OpnameListPage() {
   const [onlyDiff, setOnlyDiff] = useRemembered('stock-opnames', 'onlyDiff', false)
   const [page, setPage] = useRemembered('stock-opnames', 'page', 1)
   const [scheduleOpen, setScheduleOpen] = useState(false)
+  // the dashboard's KPI tiles open the list on a status (?source=internal&status=REVIEW&view=docs)
+  const [params, setParams] = useSearchParams()
+  useEffect(() => {
+    if (!params.toString()) return
+    const src = params.get('source')
+    if (src === 'internal' || src === 'accurate') setSource(src)
+    const v = params.get('view')
+    if (v === 'docs' || v === 'items') setView(v)
+    setStatus(params.get('status') ?? '')
+    setPage(1)
+    setParams({}, { replace: true })
+  }, [params]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const filters = {
     source,
@@ -222,7 +234,7 @@ export function OpnameListPage() {
     ? 'No data for this filter.'
     : acc
       ? 'No opname data from Accurate yet.'
-      : 'No stock opname yet. Click "Schedule Opname" to schedule a count.'
+      : 'No stock opname yet. Click "New Stock Opname" to create an order.'
 
   // Hide-kolom terpisah untuk tiap tampilan ("Per item" vs "Per dokumen") —
   // juga menentukan kolom apa yang ikut ke export/cetak (lihat ExportBar di bawah).
@@ -243,9 +255,12 @@ export function OpnameListPage() {
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <ExportBar dataset={exportDataset} filters={exportFilters} filenameBase="stock-opname" viewPermission="report.opname" columns={exportColumns} />
+            <Button size="sm" variant="outline" onClick={() => navigate('/stock-opnames/dashboard')}>
+              <LayoutDashboard className="size-4" /> Dashboard
+            </Button>
             {hasPermission('opname.schedule') && (
               <Button size="sm" onClick={() => setScheduleOpen(true)}>
-                <Plus className="size-4" /> Schedule Opname
+                <Plus className="size-4" /> New Stock Opname
               </Button>
             )}
           </div>
@@ -291,7 +306,7 @@ export function OpnameListPage() {
             <Field label="Status" className="w-full sm:w-52">
               <Select className="h-9" value={status} onChange={(e) => resetPage(setStatus)(e.target.value)}>
                 <option value="">All statuses</option>
-                {STATUS_FILTERS.map((st) => <option key={st.value} value={st.value}>{st.label}</option>)}
+                {FLOW_FILTERS.map((st) => <option key={st.value} value={st.value}>{st.label}</option>)}
               </Select>
             </Field>
           )}
@@ -392,14 +407,7 @@ export function OpnameListPage() {
       )}
 
 
-      <ScheduleOpnameModal
-        open={scheduleOpen}
-        onClose={() => setScheduleOpen(false)}
-        onScheduled={(o) => {
-          setScheduleOpen(false)
-          if (o) open(o.id)
-        }}
-      />
+      {scheduleOpen && <OpnameOrderForm onClose={() => setScheduleOpen(false)} />}
     </div>
   )
 }

@@ -11,6 +11,7 @@ use App\Models\Npbg;
 use App\Models\Ppb;
 use App\Models\PurchaseOrderItem;
 use App\Models\Ri;
+use App\Models\StockAdjustment;
 use App\Models\StockMovement;
 use App\Models\StockOpname;
 use App\Models\StockOpnameItem;
@@ -19,7 +20,10 @@ use App\Models\TyreChange;
 use App\Models\UsedReturnItem;
 use App\Services\Export\DatasetExporter;
 use App\Services\Inventory\InventoryAnalyzer;
+use App\Services\Search\ItemSmartSearch;
+use App\Support\PpbLineStatus;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -43,6 +47,7 @@ class ExportController extends Controller
         'ri' => 'report.ri',
         'stock-opnames' => 'report.opname',
         'stock-opname-lines' => 'report.opname',
+        'stock-opname-adjustments' => 'report.opname',
         'stock-movements' => 'report.stock_movement',
         'lend' => 'lend.view',
         'borrow' => 'borrow.view',
@@ -82,7 +87,7 @@ class ExportController extends Controller
     }
 
     /** Comma-join of a distinct, non-empty collection — a line can span several PPB/RI/PO documents. */
-    private static function joinDistinct(\Illuminate\Support\Collection $values): ?string
+    private static function joinDistinct(Collection $values): ?string
     {
         $values = $values->filter()->unique()->values();
 
@@ -229,19 +234,19 @@ class ExportController extends Controller
             'item-brands' => (function () use ($request) {
                 $q = trim((string) $request->query('q', ''));
                 abort_if(mb_strlen($q) < 2, 422, 'Isi kata pencarian (minimal 2 karakter).');
-                $sum = app(\App\Services\Search\ItemSmartSearch::class)->brandSummary($q, true, $request->boolean('exclude_used'), $request->boolean('exclude_damaged'));
+                $sum = app(ItemSmartSearch::class)->brandSummary($q, true, $request->boolean('exclude_used'), $request->boolean('exclude_damaged'));
                 $without = array_filter([$sum['exclude_used'] ? 'bekas' : null, $sum['exclude_damaged'] ? 'rusak' : null]);
                 $cond = ['BEKAS' => 'Bekas', 'RUSAK' => 'Rusak', 'VULKANISIR' => 'Vulkanisir'];
                 $rows = [];
                 foreach ($sum['groups'] as $g) {
                     foreach ($g['items'] as $it) {
-                        $rows[] = [$g['brand'] ?? '(merek tidak jelas dari nama)', $g['items_count'], \App\Services\Search\ItemSmartSearch::totalsText($g['totals']),
+                        $rows[] = [$g['brand'] ?? '(merek tidak jelas dari nama)', $g['items_count'], ItemSmartSearch::totalsText($g['totals']),
                             $it['code'], $it['description'], $cond[$it['condition']] ?? '', $it['qty'], $it['unit'], $it['relevance']];
                     }
                 }
 
                 return [
-                    "Smart Search: {$q}".($without ? ' (tanpa '.implode(' & ', $without).')' : '').' — '.$sum['brands_count'].' merek, '.$sum['items_count'].' item, total '.\App\Services\Search\ItemSmartSearch::totalsText($sum['totals']),
+                    "Smart Search: {$q}".($without ? ' (tanpa '.implode(' & ', $without).')' : '').' — '.$sum['brands_count'].' merek, '.$sum['items_count'].' item, total '.ItemSmartSearch::totalsText($sum['totals']),
                     ['Merek', 'Jumlah Item Merek', 'Total Stok Merek', 'Kode Barang', 'Nama Barang', 'Kondisi', 'QTY', 'UOM', 'Kecocokan'],
                     $rows,
                 ];
@@ -400,7 +405,7 @@ class ExportController extends Controller
                         ->orWhereHas('poItems.riLines', fn ($r) => $r->where('no_ri', 'like', "%{$w}%")));
                 }
                 $request->whenFilled('status', fn ($v) => $query->where('status', strtoupper((string) $v)));
-                $request->whenFilled('line_status', fn ($v) => strtoupper((string) $v) === \App\Support\PpbLineStatus::AMEND
+                $request->whenFilled('line_status', fn ($v) => strtoupper((string) $v) === PpbLineStatus::AMEND
                     ? $query->where('is_amend', true)
                     : $query->where('line_status', strtoupper((string) $v)));
                 $request->whenFilled('amend', fn ($v) => $query->where('is_amend', filter_var($v, FILTER_VALIDATE_BOOLEAN)));
@@ -506,7 +511,7 @@ class ExportController extends Controller
             // dokumen") — sumber tunggal yang sama dipakai StockOpnameController::index().
             'stock-opnames' => (function () use ($request) {
                 $query = StockOpname::query()->withCount('items')->with('warehouse:id,code');
-                $request->whenFilled('status', fn ($v) => $query->where('status', strtoupper((string) $v)));
+                $request->whenFilled('status', fn ($v) => $query->whereIn('status', StockOpname::statusesFor(strtoupper((string) $v))));
                 $request->whenFilled('warehouse_id', fn ($v) => $query->where('warehouse_id', $v));
                 $request->whenFilled('source', fn ($v) => $v === 'accurate'
                     ? $query->whereNotNull('accurate_itemadj_id')
@@ -519,7 +524,7 @@ class ExportController extends Controller
                     'Laporan Stock Opname',
                     ['Nomor', 'Status', 'Gudang', 'Jumlah Baris', 'Tanggal'],
                     $query->latest()->lazy()->map(fn ($o) => [
-                        $o->number, $o->status, $o->warehouse?->code, $o->items_count, $o->scheduled_date?->toDateString(),
+                        $o->number, $o->flowStatus(), $o->warehouse?->code, $o->items_count, $o->scheduled_date?->toDateString(),
                     ]),
                 ];
             })(),
@@ -528,20 +533,22 @@ class ExportController extends Controller
             // ?columns=key1,key2 — kosong = semua kolom yang tersedia untuk user ini
             // (Qty sebelum/Selisih hanya untuk opname.review, sama seperti di layar).
             'stock-opname-lines' => (function () use ($request) {
-                $canReview = $request->user()->hasPermission('opname.review');
+                // blind count: system qty / variance only for a reviewer or an auditor (same as the screen)
+                $canReview = $request->user()->hasAnyPermission('opname.review', 'opname.view_variance');
                 $acc = $request->string('source')->value() === 'accurate';
 
                 $query = StockOpnameItem::query()
                     ->join('stock_opnames as so', 'so.id', '=', 'stock_opname_items.stock_opname_id')
                     ->join('items as it', 'it.id', '=', 'stock_opname_items.item_id')
                     ->select('stock_opname_items.*')
-                    ->with(['item:id,code,description,unit_id', 'item.unit:id,code', 'opname:id,number,status,scheduled_date,accurate_itemadj_id'])
+                    ->with(['item:id,code,description,unit_id', 'item.unit:id,code', 'opname:id,number,status,scheduled_date,accurate_itemadj_id', 'countedBy:id,name'])
                     ->orderByDesc('so.scheduled_date')->orderByDesc('so.id')->orderBy('stock_opname_items.id');
 
                 $request->whenFilled('source', fn ($v) => $v === 'accurate'
                     ? $query->whereNotNull('so.accurate_itemadj_id')
                     : ($v === 'internal' ? $query->whereNull('so.accurate_itemadj_id') : null));
-                $request->whenFilled('status', fn ($v) => $query->where('so.status', strtoupper((string) $v)));
+                $request->whenFilled('status', fn ($v) => $query->whereIn('so.status', StockOpname::statusesFor(strtoupper((string) $v))));
+                $request->whenFilled('opname_id', fn ($v) => $query->where('so.id', (int) $v));
                 $request->whenFilled('date_from', fn ($v) => $query->whereDate('so.scheduled_date', '>=', $v));
                 $request->whenFilled('date_to', fn ($v) => $query->whereDate('so.scheduled_date', '<=', $v));
                 $request->whenFilled('search', function ($v) use ($query) {
@@ -589,11 +596,14 @@ class ExportController extends Controller
                 $columns['after'] = [[$acc ? 'Qty Sesudah' : 'Jumlah Fisik', fn ($l) => $l->physical_qty]];
                 if ($canReview) {
                     $columns['diff'] = [['Selisih', fn ($l) => $l->difference]];
+                    $columns['pct'] = [['Selisih %', fn ($l) => $l->variancePct()]];
                 }
                 if (! $acc) {
                     $columns['note'] = [['Catatan', fn ($l) => $l->note]];
+                    $columns['counted'] = [['Dihitung Oleh', fn ($l) => $l->countedBy?->name], ['Waktu Hitung', fn ($l) => $l->counted_at?->toDateTimeString()]];
+                    $columns['review'] = [['Keputusan Review', fn ($l) => $l->review_status], ['Alasan Selisih', fn ($l) => $l->review_note]];
                 }
-                $columns['status'] = [['Status', fn ($l) => $l->opname?->status]];
+                $columns['status'] = [['Status', fn ($l) => $l->opname?->flowStatus()]];
 
                 $keys = self::requestedColumnKeys($request, $columns);
                 $flat = collect($keys)->flatMap(fn ($k) => $columns[$k])->values();
@@ -602,6 +612,28 @@ class ExportController extends Controller
                     'Laporan Stock Opname (Per Barang)',
                     $flat->map(fn ($c) => $c[0])->all(),
                     $query->lazy()->map(fn (StockOpnameItem $l) => $flat->map(fn ($c) => $c[1]($l))->all()),
+                ];
+            })(),
+            // stock adjustments posted by Stock Opname (opname_id / warehouse_id / date_from / date_to)
+            'stock-opname-adjustments' => (function () use ($request) {
+                $q = StockAdjustment::query()->whereNotNull('stock_opname_item_id')
+                    ->with(['item:id,code,description', 'warehouse:id,code', 'opnameItem:id,stock_opname_id', 'opnameItem.opname:id,number', 'approvedBy:id,name'])
+                    ->orderByDesc('id');
+                $request->whenFilled('opname_id', fn ($v) => $q->whereIn('stock_opname_item_id', StockOpnameItem::where('stock_opname_id', $v)->select('id')));
+                $request->whenFilled('warehouse_id', fn ($v) => $q->where('warehouse_id', $v));
+                $request->whenFilled('date_from', fn ($v) => $q->whereDate('approved_at', '>=', $v));
+                $request->whenFilled('date_to', fn ($v) => $q->whereDate('approved_at', '<=', $v));
+                $see = $request->user()->hasAnyPermission('opname.review', 'opname.view_variance');
+
+                return [
+                    'Riwayat Penyesuaian Stok (Stock Opname)',
+                    $see ? ['Tanggal Posting', 'No. Opname', 'Kode Barang', 'Deskripsi', 'Gudang', 'Qty Sebelum', 'Qty Sesudah', 'Selisih', 'Alasan', 'Disetujui Oleh', 'ID Movement']
+                        : ['Tanggal Posting', 'No. Opname', 'Kode Barang', 'Deskripsi', 'Gudang', 'Alasan', 'Disetujui Oleh'],
+                    $q->lazy()->map(fn ($a) => $see
+                        ? [$a->approved_at?->toDateTimeString(), $a->opnameItem?->opname?->number, $a->item?->code, $a->item?->description, $a->warehouse?->code,
+                            $a->qty_before, $a->qty_after, $a->difference, $a->reason, $a->approvedBy?->name, $a->stock_movement_id]
+                        : [$a->approved_at?->toDateTimeString(), $a->opnameItem?->opname?->number, $a->item?->code, $a->item?->description, $a->warehouse?->code,
+                            $a->reason, $a->approvedBy?->name]),
                 ];
             })(),
             'stock-movements' => [

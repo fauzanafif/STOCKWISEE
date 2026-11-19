@@ -22,7 +22,8 @@ import { ItemsPage } from '@/pages/ItemsPage'
 import { LoginPage } from '@/pages/LoginPage'
 import { NpbgDetailPage } from '@/pages/NpbgDetailPage'
 import { NpbgListPage } from '@/pages/NpbgListPage'
-import { OpnameDetailPage } from '@/pages/OpnameDetailPage'
+import { OpnameRoute } from '@/pages/opname/OpnameRoute'
+import { OpnameDashboardPage } from '@/pages/opname/OpnameDashboardPage'
 import { OpnameListPage } from '@/pages/OpnameListPage'
 import { StockCardPage } from '@/pages/StockCardPage'
 import { StockCardProjectsPage } from '@/pages/StockCardProjectsPage'
@@ -286,7 +287,8 @@ export const router = createBrowserRouter([
             element: <RequirePermission permission="opname.view" />,
             children: [
               { path: '/stock-opnames', element: <OpnameListPage /> },
-              { path: '/stock-opnames/:id', element: <OpnameDetailPage /> },
+              { path: '/stock-opnames/dashboard', element: <OpnameDashboardPage /> },
+              { path: '/stock-opnames/:id', element: <OpnameRoute /> },
             ],
           },
           {

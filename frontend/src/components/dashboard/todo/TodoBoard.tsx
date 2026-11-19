@@ -29,7 +29,7 @@ const W_CLASS: Record<W, string> = { 1: '', 2: 'md:col-span-2', 3: 'md:col-span-
 const H_PX: Record<H, number> = { 1: 260, 2: 380, 3: 540 }
 /** documents shown per height before "View all" */
 const ROWS: Record<H, number> = { 1: 3, 2: 5, 3: 8 }
-const MODULE: Record<ReminderModule, string> = { important: 'Important Request', request: 'Item Request', ppb: 'Purchase Request', po: 'Purchase Order', ri: 'Receipt' }
+const MODULE: Record<ReminderModule, string> = { important: 'Important Request', request: 'Item Request', ppb: 'Purchase Request', po: 'Purchase Order', ri: 'Receipt', opname: 'Stock Opname' }
 
 /** the card under the pointer wins (cards differ in size); the keyboard has no pointer, so the nearest one */
 const collide: CollisionDetection = (args) => { const hit = pointerWithin(args); return hit.length ? hit : closestCenter(args) }

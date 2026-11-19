@@ -3,21 +3,27 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\DocActivity;
 use App\Models\ImportantRequest;
 use App\Models\ImportantRequestAssignee;
 use App\Models\ImportantRequestSubmission;
 use App\Models\ItemRequest;
 use App\Models\PpbDraftLine;
+use App\Models\PpbSavedDraft;
 use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderItem;
+use App\Models\StockOpname;
 use App\Services\ItemRequestApprovalService;
 use App\Services\PoDraftService;
 use App\Services\PurchaseOrderService;
+use App\Support\Documents\DocumentActivities;
+use App\Support\Documents\DocumentRegistry;
 use Carbon\CarbonInterface;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Schema;
 
 /**
  * GET /api/reminders?module=important|request|ppb|po|ri — the work waiting for this user, so nothing is
@@ -30,10 +36,26 @@ use Illuminate\Support\Collection;
  */
 class ReminderController extends Controller
 {
-    public const MODULES = ['important', 'request', 'ppb', 'po', 'ri'];
+    public const MODULES = ['important', 'request', 'ppb', 'po', 'ri', 'opname'];
 
     /** documents shown per reminder */
     private const PREVIEW = 5;
+
+    /** the bars of an overview card, in order (as in Odoo's Inventory Overview) */
+    public const BUCKETS = ['before', 'yesterday', 'today', 'tomorrow', 'after'];
+
+    private static function bucket(CarbonInterface $planned, CarbonInterface $now): string
+    {
+        $days = (int) $now->copy()->startOfDay()->diffInDays($planned->copy()->startOfDay(), false);
+
+        return match (true) {
+            $days < -1 => 'before',
+            $days === -1 => 'yesterday',
+            $days === 0 => 'today',
+            $days === 1 => 'tomorrow',
+            default => 'after',
+        };
+    }
 
     public function index(Request $request): JsonResponse
     {
@@ -59,7 +81,11 @@ class ReminderController extends Controller
                 $dueEnd = $due && $due->format('H:i:s') === '00:00:00' ? $due->copy()->endOfDay() : $due;
                 $late = ($dueEnd && $dueEnd->isPast()) || ($age !== null && $age >= $sla && ! $due);
 
+                // when it should be done (Odoo's "scheduled date"): its due date, else the day it turns late
+                $planned = $due ?? $since?->copy()->addDays($sla);
+
                 return [
+                    'planned' => $planned ? self::bucket($planned, $now) : 'after',
                     'label' => (string) $r['label'], 'sub' => $r['sub'] ?? null, 'to' => $r['to'],
                     'since' => $since?->toIso8601String(), 'age_days' => $age, 'due' => $due?->toIso8601String(),
                     'late' => $late, 'urgent' => (bool) ($r['urgent'] ?? false),
@@ -80,7 +106,9 @@ class ReminderController extends Controller
                 'priority' => $overdue ? 'overdue' : ($urgent ? 'urgent' : ($soon ? 'soon' : 'normal')),
                 'oldest_days' => $list->max('age_days'),
                 'next_due' => $list->pluck('due')->filter()->sort()->first(),
-                'items' => $sorted->take(self::PREVIEW)->values(),
+                // the overview card's bar chart: how many by when they should be done (Odoo's Before … After)
+                'graph' => collect(self::BUCKETS)->mapWithKeys(fn ($b) => [$b => $list->where('planned', $b)->count()])->all(),
+                'items' => $sorted->take(self::PREVIEW)->map(fn ($r) => collect($r)->except('planned')->all())->values(),
             ];
         };
 
@@ -131,7 +159,7 @@ class ReminderController extends Controller
         }
 
         if ($can('ppb.create')) {
-            $add('ppb_saved', ['ppb'], fn () => \App\Models\PpbSavedDraft::withCount('openLines')->whereHas('openLines')->get()
+            $add('ppb_saved', ['ppb'], fn () => PpbSavedDraft::withCount('openLines')->whereHas('openLines')->get()
                 ->map(fn ($d) => ['label' => $d->name ?: 'Draft #'.$d->id, 'sub' => "{$d->open_lines_count} barang", 'to' => '/ppb/drafts?tab=saved', 'since' => $d->updated_at]),
                 'draft Purchase Request belum diminta approval', '/ppb/drafts?tab=saved', 'amber', 2);
             $add('ppb_draft', ['ppb'], fn () => PpbDraftLine::whereNull('ppb_id')->whereNull('saved_draft_id')->whereHas('draft', fn ($d) => $d->where('status', 'DRAFT'))->with('draft:id,number')->get()
@@ -166,12 +194,33 @@ class ReminderController extends Controller
                 'barang sudah dibeli, menunggu diterima (buat RI)', '/ri', 'teal', 7);
         }
 
+        // Stock Opname (internal documents only — the Accurate ITEMADJ mirrors are finished documents)
+        $opnames = fn (string ...$flow) => fn () => StockOpname::whereNull('accurate_itemadj_id')
+            ->whereIn('status', collect($flow)->flatMap(fn ($f) => StockOpname::statusesFor($f))->all())
+            ->with('warehouse:id,code')->withCount('items')->orderBy('scheduled_date')->get()
+            ->map(fn ($o) => ['label' => $o->number, 'sub' => trim(($o->warehouse?->code ?? '')." · {$o->items_count} barang", ' ·'),
+                'to' => "/stock-opnames/{$o->id}", 'since' => $o->updated_at, 'due' => $o->scheduled_date]);
+        if ($can('opname.count')) {
+            $add('opname_count', ['opname'], $opnames('CONFIRMED', 'COUNTING', 'RECOUNT'), 'stock opname perlu dihitung fisik', '/stock-opnames', 'teal', 1);
+        }
+        if ($can('opname.schedule')) {
+            $add('opname_draft', ['opname'], $opnames('DRAFT'), 'draft stock opname belum dikonfirmasi', '/stock-opnames', 'indigo', 2);
+        }
+        if ($can('opname.review')) {
+            $add('opname_review', ['opname'], fn () => $opnames('REVIEW', 'POSTED')()->map(fn ($r) => ['due' => null] + $r),
+                'stock opname menunggu review / ditutup', '/stock-opnames', 'amber', 1);
+        }
+        if ($can('opname.approve')) {
+            $add('opname_approval', ['opname'], fn () => $opnames('WAITING_APPROVAL')()->map(fn ($r) => ['due' => null] + $r),
+                'stock opname menunggu approval & posting', '/stock-opnames', 'blue', 1);
+        }
+
         // activities scheduled on a document and given to this user (Chatter › Activities); every module shows them
-        if (\Illuminate\Support\Facades\Schema::hasTable('doc_activities')) {
-            $add('doc_activity', self::MODULES, fn () => \App\Models\DocActivity::where('assignee_id', $user->id)->whereNull('done_at')->whereNull('cancelled_at')
+        if (Schema::hasTable('doc_activities')) {
+            $add('doc_activity', self::MODULES, fn () => DocActivity::where('assignee_id', $user->id)->whereNull('done_at')->whereNull('cancelled_at')
                 ->orderBy('due_date')->get()
-                ->map(fn ($a) => ['label' => "{$a->res_number} · {$a->summary}", 'sub' => \App\Support\Documents\DocumentRegistry::label($a->res_type),
-                    'to' => \App\Support\Documents\DocumentActivities::path($a->res_type, (int) $a->res_id), 'since' => $a->created_at, 'due' => $a->due_date]),
+                ->map(fn ($a) => ['label' => "{$a->res_number} · {$a->summary}", 'sub' => DocumentRegistry::label($a->res_type),
+                    'to' => DocumentActivities::path($a->res_type, (int) $a->res_id), 'since' => $a->created_at, 'due' => $a->due_date]),
                 'aktivitas dokumen ditugaskan ke Anda', '/', 'violet', 3);
         }
 

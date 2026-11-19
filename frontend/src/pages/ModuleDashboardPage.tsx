@@ -20,6 +20,7 @@ const MODULES: Record<ReminderModule, { title: string; subtitle: string }> = {
   po: { title: 'Purchase Order', subtitle: 'What needs to be done on purchase orders.' },
   ri: { title: 'Receipt', subtitle: 'What needs to be done on receipts.' },
   important: { title: 'Important Request', subtitle: 'Tasks that need to be done.' },
+  opname: { title: 'Stock Opname', subtitle: 'Stock opnames waiting for your step.' },
 }
 
 const TONE: Record<Tone, string> = {

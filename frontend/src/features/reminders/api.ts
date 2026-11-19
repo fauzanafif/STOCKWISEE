@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 
 /** A module's Dashboard (Request Barang, PPB, PO, RI, Important Request): what waits for this user. */
-export type ReminderModule = 'important' | 'request' | 'ppb' | 'po' | 'ri'
+export type ReminderModule = 'important' | 'request' | 'ppb' | 'po' | 'ri' | 'opname'
 
 /** overdue: past due / waiting longer than its SLA · urgent: marked urgent · soon: due within a day */
 export type ReminderPriority = 'overdue' | 'urgent' | 'soon' | 'normal'
@@ -38,7 +38,12 @@ export interface Reminder {
   next_due: string | null
   /** the most pressing first (at most 5) */
   items: ReminderItem[]
+  /** how many by when they should be done (due date, else the day they turn late) — the overview card's bars */
+  graph?: ReminderGraph
 }
+
+export const GRAPH_BUCKETS = ['before', 'yesterday', 'today', 'tomorrow', 'after'] as const
+export type ReminderGraph = Record<(typeof GRAPH_BUCKETS)[number], number>
 
 export interface ReminderMeta { total: number; overdue: number; urgent: number; soon: number }
 

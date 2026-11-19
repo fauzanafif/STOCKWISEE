@@ -10,16 +10,16 @@ const bar = (perms: string[], key: string) => appsFor(perms).find((a) => a.key =
 
 describe('the menu bar of an app, in the order of the work', () => {
   it('Inventory: Operations, Products, Reporting', () => {
-    expect(bar(['item_request.view', 'npbg.view', 'ri.view', 'opname.view', 'item.view', 'master.category.view', 'master.unit.view'], 'inventory')).toEqual([
-      ['Operations', ['Item Request', 'Delivery Order', 'Receipt', 'Physical Inventory']],
+    expect(bar(['item_request.view', 'npbg.view', 'ppb.view', 'ppb.create', 'ri.view', 'opname.view', 'item.view', 'master.category.view', 'master.unit.view'], 'inventory')).toEqual([
+      ['Operations', ['Item Request', 'Delivery Order', 'Draft Purchase Request', 'Purchase Request', 'Receipt', 'Physical Inventory']],
       ['Products', ['Barang', 'Jasa', 'Kategori Barang', 'UOM']],
       ['Reporting', ['Kartu Stok', 'Data Quality']],
     ])
   })
 
-  it('Purchase: the orders from request to return, then the master data', () => {
+  it('Purchase: the orders from approved request to return, then the master data', () => {
     expect(bar(['ppb.view', 'ppb.create', 'po.view', 'po.create', 'purchase_return.view', 'rfq.view', 'master.vendor.view'], 'purchase')).toEqual([
-      ['Orders', ['Draft Purchase Request', 'Purchase Request', 'Approved Purchase Request Items', 'Price Quotation', 'Purchase Order', 'Return']],
+      ['Orders', ['Approved Purchase Request Items', 'Price Quotation', 'Purchase Order', 'Return']],
       ['Price List', ['Draft Price List', 'Master Price List']],
       ['Vendor', []],
     ])

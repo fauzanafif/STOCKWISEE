@@ -7,6 +7,8 @@ export interface AuthUser {
   position: string | null
   /** profile photo (signed URL), null without one */
   avatar_url?: string | null
+  /** e-sign image (signed URL), null without one */
+  signature_url?: string | null
   is_active: boolean
   site: { id: number; code: string; name: string } | null
   roles: string[]

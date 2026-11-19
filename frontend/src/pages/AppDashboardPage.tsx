@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from 'react'
+import { createContext, useContext, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { Loader2, ShieldAlert } from 'lucide-react'
 import { useAuth } from '@/auth/AuthContext'
@@ -10,7 +10,9 @@ import { useDsaDashboard } from '@/features/disassembly/api'
 import { useMrpDashboard } from '@/features/mrp/api'
 import { exportElementToPdf } from '@/lib/exportDashboardPdf'
 import { launcherApps, type LauncherApp } from '@/lib/launcher'
-import { useNavCounts } from '@/lib/navCounts'
+import { CardNoteButton, FloatingCardNotes, cardAnchor } from '@/components/dashboard/CardStickyNotes'
+import { useCardStats, useNavCounts, type CardStats } from '@/lib/navCounts'
+import { GRAPH_BUCKETS, type ReminderGraph } from '@/features/reminders/api'
 import { APPS_HOME, visibleNav } from '@/lib/navigation'
 import { cn } from '@/lib/utils'
 import { useCustomDashboards } from '@/features/customDashboards/api'
@@ -30,20 +32,21 @@ function Procurement() {
 
 /**
  * What each app dashboard holds besides its cards. `todo`: the to-do lists of the module dashboards it
- * replaced (Item Request, Receipt, Purchase Request, Purchase Order, Manufacturing, Disassembly), their
+ * replaced (Item Request, Purchase Request, Receipt, Purchase Order, Manufacturing, Disassembly), their
  * counts are on the cards. `analysis`: the sections of the former Analytics page that belong to the app.
  */
 const PARTS: Record<string, { todo: Part[]; analysis: Part[] }> = {
   inventory: {
     todo: [
       { id: 'request', title: 'Item Request', permissions: ['item_request.create', 'item_request.view'], body: <ModuleDashboardBody module="request" counts={false} /> },
+      { id: 'ppb', title: 'Purchase Request', permissions: ['ppb.view', 'ppb.create'], body: <ModuleDashboardBody module="ppb" counts={false} /> },
       { id: 'ri', title: 'Receipt', permissions: ['ri.view'], body: <ModuleDashboardBody module="ri" counts={false} /> },
+      { id: 'opname', title: 'Stock Opname', permissions: ['opname.view'], body: <ModuleDashboardBody module="opname" counts={false} /> },
     ],
     analysis: [],
   },
   purchase: {
     todo: [
-      { id: 'ppb', title: 'Purchase Request', permissions: ['ppb.view'], body: <ModuleDashboardBody module="ppb" counts={false} /> },
       { id: 'po', title: 'Purchase Order', permissions: ['po.view'], body: <ModuleDashboardBody module="po" counts={false} /> },
     ],
     analysis: [{ id: 'pengadaan', title: 'Procurement', body: <Procurement /> }],
@@ -62,15 +65,64 @@ const PARTS: Record<string, { todo: Part[]; analysis: Part[] }> = {
 /** a page of the app: one card of the overview */
 type Page = { to: string; label: string }
 
-/** One card: the feature's name and one button, to what waits to be processed or to open it. Nothing else. */
-function Card({ page, todo }: { page: Page; todo?: number }) {
+const BAR_LABELS: Record<(typeof GRAPH_BUCKETS)[number], string> = { before: 'Before', yesterday: 'Yesterday', today: 'Today', tomorrow: 'Tomorrow', after: 'After' }
+
+/**
+ * The card's bar chart, as on Odoo's Inventory Overview: what waits, by when it should be done. Bars before
+ * today are late. With nothing waiting, faint placeholder bars (Odoo's sample graph) keep the cards even.
+ */
+function CardGraph({ graph }: { graph: ReminderGraph }) {
+  const max = Math.max(...GRAPH_BUCKETS.map((b) => graph[b]))
+  const empty = max === 0
+  return (
+    <div className="relative" role="img" aria-label={empty ? 'Nothing to process' : GRAPH_BUCKETS.map((b) => `${BAR_LABELS[b]}: ${graph[b]}`).join(', ')}>
+      <div className="flex h-20 items-end gap-2 border-b border-slate-200 dark:border-slate-700">
+        {GRAPH_BUCKETS.map((b, i) => {
+          const n = graph[b]
+          const pct = empty ? [35, 55, 80, 45, 25][i] : Math.max(n ? 6 : 0, (n / max) * 100)
+          const late = b === 'before' || b === 'yesterday'
+          return (
+            <div key={b} className="flex h-full flex-1 flex-col items-center justify-end" title={empty ? undefined : `${BAR_LABELS[b]}: ${n}`}>
+              {!empty && n > 0 && <span className="mb-0.5 text-[11px] tabular-nums text-slate-500 dark:text-slate-400">{n}</span>}
+              <div style={{ height: `${pct}%` }} className={cn('w-full max-w-9 rounded-t-sm',
+                empty ? 'bg-slate-100 dark:bg-slate-800' : late ? 'bg-red-400/80 dark:bg-red-500/70' : b === 'today' ? 'bg-primary' : 'bg-primary/55')} />
+            </div>
+          )
+        })}
+      </div>
+      <div className="mt-1 flex gap-2">
+        {GRAPH_BUCKETS.map((b) => <span key={b} className="flex-1 truncate text-center text-[11px] text-slate-500 dark:text-slate-400">{BAR_LABELS[b]}</span>)}
+      </div>
+      {empty && <span className="absolute inset-x-0 top-6 text-center text-xs text-slate-400">Nothing to process</span>}
+    </div>
+  )
+}
+
+/** the overview board the cards sit on: which app, and the element sticky notes float over */
+const Board = createContext<{ appKey: string; ref: RefObject<HTMLElement | null> } | null>(null)
+
+/** One card: the feature's name, one button to what waits to be processed (or to open it) and, for an operation, its late / urgent counts and the bars by date. */
+function Card({ page, todo, stats }: { page: Page; todo?: number; stats?: CardStats }) {
+  const board = useContext(Board)
   return (
     <article aria-label={page.label} className="flex flex-col justify-between gap-4 rounded-md border border-slate-200 bg-white p-4 shadow-[0_1px_2px_rgb(15_23_42/0.04)] transition-shadow hover:shadow-[0_4px_12px_rgb(15_23_42/0.08)] dark:border-slate-800 dark:bg-slate-900">
-      <Link to={page.to} className="truncate text-[15px] font-semibold text-slate-800 hover:text-primary dark:text-slate-100">{page.label}</Link>
-      <Link to={page.to} className={cn('inline-flex h-8 w-fit items-center rounded px-3 text-[13px] font-medium transition-colors',
-        todo ? 'bg-primary text-primary-foreground hover:bg-primary/90' : 'border border-slate-200 text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800')}>
-        {todo ? `${todo > 99 ? '99+' : todo} To Process` : 'Open'}
-      </Link>
+      <div className="flex items-center justify-between gap-2">
+        <Link to={page.to} className="min-w-0 truncate text-[15px] font-semibold text-slate-800 hover:text-primary dark:text-slate-100">{page.label}</Link>
+        {board && <CardNoteButton anchor={cardAnchor(board.appKey, page.to)} label={page.label} boardRef={board.ref} />}
+      </div>
+      <div className="flex items-start justify-between gap-3">
+        <Link to={page.to} className={cn('inline-flex h-8 w-fit shrink-0 items-center rounded px-3 text-[13px] font-medium transition-colors',
+          todo ? 'bg-primary text-primary-foreground hover:bg-primary/90' : 'border border-slate-200 text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800')}>
+          {todo ? `${todo > 99 ? '99+' : todo} To Process` : 'Open'}
+        </Link>
+        {stats && (stats.late > 0 || stats.urgent > 0) && (
+          <div className="flex flex-col items-end gap-0.5 text-[13px]">
+            {stats.late > 0 && <Link to={page.to} className="text-red-600 hover:underline dark:text-red-400">{stats.late} Late</Link>}
+            {stats.urgent > 0 && <Link to={page.to} className="text-amber-700 hover:underline dark:text-amber-400">{stats.urgent} Urgent</Link>}
+          </div>
+        )}
+      </div>
+      {stats && <CardGraph graph={stats.graph} />}
     </article>
   )
 }
@@ -87,9 +139,10 @@ function DsaCard({ page }: { page: Page }) {
 /** A page's card, with what waits in it where the module counts it. */
 function PageCard({ page }: { page: Page }) {
   const countOf = useNavCounts()
+  const statsOf = useCardStats()
   if (page.label === 'Manufacturing Orders') return <MrpCard page={page} />
   if (page.label === 'Disassembly Orders') return <DsaCard page={page} />
-  return <Card page={page} todo={countOf({ to: page.to, label: page.label })} />
+  return <Card page={page} todo={countOf({ to: page.to, label: page.label })} stats={statsOf(page.label)} />
 }
 
 /** The app's features in the order of its menu bar: one card each. */
@@ -141,6 +194,7 @@ export function AppDashboardPage({ appKey }: { appKey: keyof typeof PARTS }) {
   const { hasPermission, hasRole } = useAuth()
   const [params, setParams] = useSearchParams()
   const exportRef = useRef<HTMLDivElement>(null)
+  const boardRef = useRef<HTMLDivElement>(null)
   const [exporting, setExporting] = useState(false)
 
   const app = launcherApps(visibleNav(hasPermission, hasRole('super_admin')), hasPermission).apps.find((a) => a.key === appKey)
@@ -206,7 +260,13 @@ export function AppDashboardPage({ appKey }: { appKey: keyof typeof PARTS }) {
       </div>
 
       {view === 'overview' && (
-        <nav aria-label={`Menu ${app.label}`} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">{pages.map((p) => <PageCard key={p.to + p.label} page={p} />)}</nav>
+        <Board.Provider value={{ appKey, ref: boardRef }}>
+          {/* the cards, and the sticky notes stuck on them floating over the board */}
+          <div ref={boardRef} className="relative">
+            <nav aria-label={`Menu ${app.label}`} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">{pages.map((p) => <PageCard key={p.to + p.label} page={p} />)}</nav>
+            <FloatingCardNotes appKey={appKey} boardRef={boardRef} labels={Object.fromEntries(pages.map((p) => [cardAnchor(appKey, p.to), p.label]))} />
+          </div>
+        </Board.Provider>
       )}
       {view === 'todo' && <div className="space-y-8">{todo.map((p) => <Section key={p.id} part={p} />)}</div>}
       {view === 'analysis' && <div ref={exportRef} className="space-y-10">{analysis.map((p) => <Section key={p.id} part={p} />)}</div>}

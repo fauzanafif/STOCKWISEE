@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\ImportantRequest;
 use App\Models\ItemRequest;
+use App\Models\User;
 use Database\Seeders\RbacSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -20,7 +21,7 @@ class ReminderTest extends TestCase
     public function test_reminders_say_what_is_late_urgent_or_due_soon_and_link_each_document(): void
     {
         $me = $this->actingAsRole('karyawan');
-        $boss = \App\Models\User::factory()->create();
+        $boss = User::factory()->create();
         $task = fn (string $no, $deadline, string $priority = 'MEDIUM') => tap(ImportantRequest::create(['number' => $no, 'title' => "Tugas {$no}", 'description' => 'x',
             'priority' => $priority, 'status' => 'DITUGASKAN', 'created_by' => $boss->id, 'sent_at' => now()->subDays(4), 'deadline' => $deadline]),
             fn ($r) => $r->assignees()->create(['user_id' => $me->id, 'status' => 'DITUGASKAN']));
@@ -44,6 +45,21 @@ class ReminderTest extends TestCase
         $verify = collect($this->getJson('/api/reminders?module=request')->json('data'))->firstWhere('key', 'request_verify');
         $this->assertSame([2, 1, 1, 2], [$verify['count'], $verify['overdue'], $verify['urgent'], $verify['oldest_days']]);
         $this->assertSame(['REQ/1 · Budi', 'REQ/2 · Ani'], array_column($verify['items'], 'label'));
+    }
+
+    public function test_each_reminder_counts_its_documents_by_when_they_should_be_done(): void
+    {
+        $this->travelTo(now()->setTime(12, 0));
+        $me = $this->actingAsRole('karyawan');
+        $boss = User::factory()->create();
+        foreach ([-5, -1, 0, 0, 1, 7] as $i => $days) {
+            ImportantRequest::create(['number' => "IMP/{$i}", 'title' => 't', 'description' => 'x', 'priority' => 'MEDIUM', 'status' => 'DITUGASKAN',
+                'created_by' => $boss->id, 'sent_at' => now()->subDays(10), 'deadline' => now()->addDays($days)])
+                ->assignees()->create(['user_id' => $me->id, 'status' => 'DITUGASKAN']);
+        }
+        $todo = collect($this->getJson('/api/reminders?module=important')->json('data'))->firstWhere('key', 'ir_todo');
+        $this->assertSame(['before' => 1, 'yesterday' => 1, 'today' => 2, 'tomorrow' => 1, 'after' => 1], $todo['graph']);
+        $this->assertArrayNotHasKey('planned', $todo['items'][0]);
     }
 
     public function test_the_requester_is_reminded_when_the_goods_are_ready(): void

@@ -30,8 +30,9 @@ const ACCURATE: Record<string, { label: string; variant: Variant; hint: string }
 export const isFromAccurate = (o: Pick<Opname, 'accurate_itemadj_id'>) => o.accurate_itemadj_id != null
 
 export function opnameStatus(o: Pick<Opname, 'status' | 'accurate_itemadj_id'>) {
-  const map = isFromAccurate(o) ? ACCURATE : INTERNAL
-  return map[o.status] ?? INTERNAL[o.status] ?? { label: o.status, variant: 'neutral' as Variant, hint: '' }
+  if (isFromAccurate(o)) return ACCURATE[o.status] ?? INTERNAL[o.status] ?? { label: o.status, variant: 'neutral' as Variant, hint: '' }
+  // an internal document is shown in the controlled workflow's terms (its earlier status mapped)
+  return FLOW[toFlow(o.status)] ?? INTERNAL[o.status] ?? { label: o.status, variant: 'neutral' as Variant, hint: '' }
 }
 
 export function OpnameStatusBadge({ opname }: { opname: Pick<Opname, 'status' | 'accurate_itemadj_id'> }) {
@@ -52,3 +53,40 @@ export const REVIEW_LABELS: Record<string, { label: string; variant: Variant }> 
 export function typeLabel(type: string) {
   return type === 'FULL' ? 'All items' : 'Selected items'
 }
+
+// ---------------------------------------------------------------- the controlled workflow
+
+/** The workflow's steps, in order (Recount loops back into Review; Cancelled is off the line). */
+export const FLOW_STEPS = [
+  { status: 'DRAFT', label: 'Draft' },
+  { status: 'CONFIRMED', label: 'Confirmed' },
+  { status: 'COUNTING', label: 'Counting' },
+  { status: 'REVIEW', label: 'Review' },
+  { status: 'WAITING_APPROVAL', label: 'Approval' },
+  { status: 'POSTED', label: 'Posted' },
+  { status: 'DONE', label: 'Done' },
+] as const
+
+export const FLOW: Record<string, { label: string; variant: Variant; hint: string }> = {
+  DRAFT: { label: 'Draft', variant: 'neutral', hint: 'Order being prepared — items and team can still change' },
+  CONFIRMED: { label: 'Confirmed', variant: 'default', hint: 'Item list fixed, waiting for counting to start' },
+  COUNTING: { label: 'Counting', variant: 'default', hint: 'Staff are counting (blind: no book quantity shown)' },
+  REVIEW: { label: 'Review', variant: 'warning', hint: 'Variances are being reviewed' },
+  RECOUNT: { label: 'Recount', variant: 'danger', hint: 'Some items must be counted again' },
+  WAITING_APPROVAL: { label: 'Waiting Approval', variant: 'warning', hint: 'Waiting for the supervisor to approve and post' },
+  POSTED: { label: 'Posted', variant: 'success', hint: 'Adjustments recorded in the Stock Ledger' },
+  DONE: { label: 'Done', variant: 'success', hint: 'Closed and locked' },
+  CANCELLED: { label: 'Cancelled', variant: 'neutral', hint: 'Cancelled — stock unchanged' },
+}
+
+/** What a stored status (earlier flow or new) is in the controlled workflow. */
+const LEGACY: Record<string, string> = { SCHEDULED: 'CONFIRMED', IN_PROGRESS: 'COUNTING', PENDING_REVIEW: 'REVIEW', RECOUNT_REQUIRED: 'RECOUNT', COMPLETED: 'DONE' }
+export const toFlow = (status: string) => LEGACY[status] ?? status
+
+export function FlowBadge({ status, className }: { status: string; className?: string }) {
+  const s = FLOW[toFlow(status)] ?? { label: status, variant: 'neutral' as Variant, hint: '' }
+  return <Badge variant={s.variant} title={s.hint} className={className}>{s.label}</Badge>
+}
+
+/** Status filter of the internal documents (controlled workflow). */
+export const FLOW_FILTERS = Object.entries(FLOW).map(([value, s]) => ({ value, label: s.label }))

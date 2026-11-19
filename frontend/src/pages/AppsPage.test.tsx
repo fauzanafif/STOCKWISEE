@@ -26,7 +26,7 @@ describe('AppsPage (App Launcher)', () => {
   })
 
   it('opens each app at its one dashboard, or at its only page', async () => {
-    mockApi(['ppb.view', 'item.view', 'maintenance.view', 'important_request.access'])
+    mockApi(['ppb.view', 'po.view', 'item.view', 'maintenance.view', 'important_request.access'])
     renderWithProviders(<AppsPage />)
     const grid = await launcher()
 
@@ -74,7 +74,7 @@ describe('AppsPage (App Launcher)', () => {
 
   it('shows the apps in the order the user saved', async () => {
     vi.spyOn(api, 'get').mockImplementation((url: string) => {
-      if (url === '/api/me') return Promise.resolve({ data: { user: { id: 1, name: 'Budi', roles: ['x'], permissions: ['ppb.view', 'item.view'] } } }) as never
+      if (url === '/api/me') return Promise.resolve({ data: { user: { id: 1, name: 'Budi', roles: ['x'], permissions: ['ppb.view', 'po.view', 'item.view'] } } }) as never
       if (url === '/api/preferences/launcher:order') return Promise.resolve({ data: { data: ['inventory', 'sales', 'purchase'] } }) as never
       return Promise.resolve({ data: { data: [] } }) as never
     })
@@ -92,12 +92,14 @@ describe('AppsPage (App Launcher)', () => {
   })
 
   it('filters the apps by the name typed in the navbar search (?q=)', async () => {
-    mockApi(['ppb.view', 'item.view'])
+    mockApi(['ppb.view', 'po.view', 'item.view'])
     renderWithProviders(<AppsPage />, { route: '/?q=purch' })
     await launcher()
 
+    // Purchase Request now lives in Inventory, so both apps match "purch"
     expect(screen.getByRole('link', { name: 'Purchase' })).toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: 'Inventory' })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Inventory' })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Manufacturing' })).not.toBeInTheDocument()
   })
 
   it('says so when no app has the name searched, and clears the search', async () => {
@@ -110,7 +112,7 @@ describe('AppsPage (App Launcher)', () => {
   })
 
   it('greets the user by name, with the icons in one grid (no category titles)', async () => {
-    mockApi(['ppb.view', 'item.view'])
+    mockApi(['ppb.view', 'po.view', 'item.view'])
     renderWithProviders(<AppsPage />)
     await launcher()
 

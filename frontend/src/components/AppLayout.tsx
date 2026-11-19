@@ -1,11 +1,12 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
 import { Link, Outlet, ScrollRestoration, useLocation, useSearchParams } from 'react-router-dom'
-import { Camera, ChevronDown, ChevronRight, KeyRound, LayoutGrid, LogOut, Search, X } from 'lucide-react'
+import { Camera, ChevronDown, ChevronRight, KeyRound, LayoutGrid, LogOut, PenLine, Search, X } from 'lucide-react'
 import { useAuth } from '@/auth/AuthContext'
 import { ChangePasswordModal } from '@/components/ChangePasswordModal'
 import { CommandMenu } from '@/components/CommandMenu'
 import { Logo } from '@/components/Logo'
 import { ProfilePhotoModal, UserAvatar } from '@/components/ProfilePhotoModal'
+import { SignatureModal } from '@/components/SignatureModal'
 import { NotificationBell } from '@/components/NotificationBell'
 import { NotesButton } from '@/components/NotesButton'
 import { ReminderButton, useReminderAlerts } from '@/components/reminders/ReminderCenter'
@@ -22,6 +23,7 @@ function UserMenu({ onChangePassword }: { onChangePassword: () => void }) {
   const { user, logout } = useAuth()
   const [open, setOpen] = useState(false)
   const [photo, setPhoto] = useState(false)
+  const [esign, setEsign] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -61,12 +63,14 @@ function UserMenu({ onChangePassword }: { onChangePassword: () => void }) {
             </div>
             <div className="pt-1">
               <button type="button" className={item} onClick={() => { setOpen(false); setPhoto(true) }}><Camera className="size-3.5" /> Profile photo</button>
+              <button type="button" className={item} onClick={() => { setOpen(false); setEsign(true) }}><PenLine className="size-3.5" /> E-sign</button>
               <button type="button" className={item} onClick={() => { setOpen(false); onChangePassword() }}><KeyRound className="size-3.5" /> Change password</button>
               <button type="button" className={cn(item, 'text-destructive')} onClick={() => logout()}><LogOut className="size-3.5" /> Logout</button>
             </div>
           </div>
         )}
         {photo && <ProfilePhotoModal onClose={() => setPhoto(false)} />}
+        {esign && <SignatureModal onClose={() => setEsign(false)} />}
       </div>
       <button type="button" onClick={() => logout()} title="Logout" aria-label="Logout"
         className="flex size-9 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive max-sm:hidden">

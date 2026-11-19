@@ -1,28 +1,67 @@
 <?php
 
+use App\Http\Controllers\Api\AccurateSessionController;
+use App\Http\Controllers\Api\ActivityLogController;
 use App\Http\Controllers\Api\Agent\AccurateIngestController;
+use App\Http\Controllers\Api\AgentLogController;
+use App\Http\Controllers\Api\AgentRunController;
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\AutoRefreshController;
+use App\Http\Controllers\Api\AvatarController;
+use App\Http\Controllers\Api\CustomDashboardController;
 use App\Http\Controllers\Api\DashboardController;
+use App\Http\Controllers\Api\DashboardNoteController;
+use App\Http\Controllers\Api\Disassembly\DisassemblyController;
+use App\Http\Controllers\Api\DocumentController;
+use App\Http\Controllers\Api\EmployeeController;
 use App\Http\Controllers\Api\ExportController;
 use App\Http\Controllers\Api\HealthController;
+use App\Http\Controllers\Api\ImportantRequestController;
 use App\Http\Controllers\Api\InventoryController;
 use App\Http\Controllers\Api\InventoryDashboardController;
+use App\Http\Controllers\Api\ItemCategoryController;
 use App\Http\Controllers\Api\ItemController;
 use App\Http\Controllers\Api\ItemRequestController;
+use App\Http\Controllers\Api\ItemRequestLinkController;
 use App\Http\Controllers\Api\LegacyExportController;
+use App\Http\Controllers\Api\LiveController;
 use App\Http\Controllers\Api\MasterDataController;
+use App\Http\Controllers\Api\ModuleStatsController;
+use App\Http\Controllers\Api\Mrp\BomController;
+use App\Http\Controllers\Api\Mrp\MrpReportController;
+use App\Http\Controllers\Api\Mrp\ProductionController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\NpbgController;
 use App\Http\Controllers\Api\NpbgVerificationController;
+use App\Http\Controllers\Api\OperationsDashboardController;
 use App\Http\Controllers\Api\PermissionController;
+use App\Http\Controllers\Api\PoDraftController;
 use App\Http\Controllers\Api\PpbController;
+use App\Http\Controllers\Api\PpbDraftController;
+use App\Http\Controllers\Api\PreferenceController;
+use App\Http\Controllers\Api\PriceListController;
+use App\Http\Controllers\Api\PriceListDraftController;
+use App\Http\Controllers\Api\PublicItemRequestController;
+use App\Http\Controllers\Api\PublicStockCardController;
 use App\Http\Controllers\Api\PurchaseOrderController;
+use App\Http\Controllers\Api\PurchaseReturnController;
+use App\Http\Controllers\Api\PurchasingApprovalController;
+use App\Http\Controllers\Api\RecordNoteController;
+use App\Http\Controllers\Api\ReminderController;
 use App\Http\Controllers\Api\RiController;
 use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\SafetyStockController;
+use App\Http\Controllers\Api\SignatureController;
+use App\Http\Controllers\Api\StockCardController;
+use App\Http\Controllers\Api\StockCardDashboardController;
+use App\Http\Controllers\Api\StockCardProjectController;
+use App\Http\Controllers\Api\StockCardShareLinkController;
 use App\Http\Controllers\Api\StockOpnameController;
+use App\Http\Controllers\Api\StockOpnameWorkflowController;
 use App\Http\Controllers\Api\SyncController;
 use App\Http\Controllers\Api\Tracking;
+use App\Http\Controllers\Api\UomController;
+use App\Http\Controllers\Api\UpdateAlertController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\VendorController;
 use Illuminate\Http\Request;
@@ -45,8 +84,12 @@ Route::get('/login', fn () => response()->json(['message' => 'Unauthenticated.']
     ->name('login');
 
 // a profile photo through its signed URL (User::avatarUrl): an <img> sends no token
-Route::get('/avatars/{user}', [\App\Http\Controllers\Api\AvatarController::class, 'show'])->whereNumber('user')
+Route::get('/avatars/{user}', [AvatarController::class, 'show'])->whereNumber('user')
     ->middleware('throttle:600,1,avatars')->name('api.avatars.show');
+
+// an e-sign image through its signed URL (User::signatureUrl): an <img> sends no token
+Route::get('/signatures/{user}', [SignatureController::class, 'show'])->whereNumber('user')
+    ->middleware('throttle:600,1,signatures')->name('api.signatures.show');
 
 Route::post('/login', [AuthController::class, 'login'])
     ->middleware('throttle:20,1')
@@ -60,31 +103,31 @@ Route::post('/login', [AuthController::class, 'login'])
 | Request Barang through a share link (no account): can only SEND a request.
 | The admin turns each link on / off (ItemRequestLinkController).
 */
-Route::get('public/item-request/{token}', [\App\Http\Controllers\Api\PublicItemRequestController::class, 'show'])
+Route::get('public/item-request/{token}', [PublicItemRequestController::class, 'show'])
     ->middleware('throttle:60,1')->name('api.public.item-request.show');
-Route::post('public/item-request/{token}', [\App\Http\Controllers\Api\PublicItemRequestController::class, 'store'])
+Route::post('public/item-request/{token}', [PublicItemRequestController::class, 'store'])
     ->middleware('throttle:6,1,public-request-store')->name('api.public.item-request.store');
 // the form opens for a STOCKWISE account: username + password, the requester's data comes back for the form
-Route::post('public/item-request/{token}/login', [\App\Http\Controllers\Api\PublicItemRequestController::class, 'login'])
+Route::post('public/item-request/{token}/login', [PublicItemRequestController::class, 'login'])
     ->middleware('throttle:10,1,public-request-login')->name('api.public.item-request.login');
 // Cek Permintaan: the requester follows their requests by track token (kept on their device)
 // or finds one by number + name. Only the status and the items are shown.
-Route::get('public/request-status', [\App\Http\Controllers\Api\PublicItemRequestController::class, 'status'])
+Route::get('public/request-status', [PublicItemRequestController::class, 'status'])
     ->middleware('throttle:60,1')->name('api.public.request-status');
-Route::get('public/request-status/image', [\App\Http\Controllers\Api\PublicItemRequestController::class, 'image'])
+Route::get('public/request-status/image', [PublicItemRequestController::class, 'image'])
     ->middleware('throttle:120,1')->name('api.public.request-status.image');
-Route::post('public/request-status/proxy', [\App\Http\Controllers\Api\PublicItemRequestController::class, 'createProxy'])
+Route::post('public/request-status/proxy', [PublicItemRequestController::class, 'createProxy'])
     ->middleware('throttle:10,1')->name('api.public.request-status.proxy');
-Route::get('public/request-status/proxy-people', [\App\Http\Controllers\Api\PublicItemRequestController::class, 'proxyPeople'])
+Route::get('public/request-status/proxy-people', [PublicItemRequestController::class, 'proxyPeople'])
     ->middleware('throttle:120,1,public-proxy-people')->name('api.public.request-status.proxy-people');
-Route::delete('public/request-status/proxy', [\App\Http\Controllers\Api\PublicItemRequestController::class, 'cancelProxy'])
+Route::delete('public/request-status/proxy', [PublicItemRequestController::class, 'cancelProxy'])
     ->middleware('throttle:10,1')->name('api.public.request-status.proxy-cancel');
-Route::post('public/request-status/mine', [\App\Http\Controllers\Api\PublicItemRequestController::class, 'mine'])
+Route::post('public/request-status/mine', [PublicItemRequestController::class, 'mine'])
     ->middleware('throttle:60,1,public-request-mine')->name('api.public.request-status.mine');
-Route::post('public/request-status/lookup', [\App\Http\Controllers\Api\PublicItemRequestController::class, 'lookup'])
+Route::post('public/request-status/lookup', [PublicItemRequestController::class, 'lookup'])
     ->middleware('throttle:10,1')->name('api.public.request-status.lookup');
 
-Route::prefix('public/kartu-stock/{token}')->middleware('throttle:240,1')->controller(\App\Http\Controllers\Api\PublicStockCardController::class)->group(function (): void {
+Route::prefix('public/kartu-stock/{token}')->middleware('throttle:240,1')->controller(PublicStockCardController::class)->group(function (): void {
     Route::get('/', 'project')->name('api.public.stock-card.project');
     Route::get('/pdf', 'projectPdf')->name('api.public.stock-card.project-pdf');
     Route::get('/items', 'items')->name('api.public.stock-card.items');
@@ -124,8 +167,8 @@ Route::middleware('auth:sanctum')->group(function (): void {
     Route::get('/user', fn (Request $request) => $request->user())->name('api.user');
 
     // "Catatan" column on every data table (any signed-in user)
-    Route::get('/record-notes', [\App\Http\Controllers\Api\RecordNoteController::class, 'index'])->name('api.record-notes.index');
-    Route::put('/record-notes', [\App\Http\Controllers\Api\RecordNoteController::class, 'upsert'])->name('api.record-notes.upsert');
+    Route::get('/record-notes', [RecordNoteController::class, 'index'])->name('api.record-notes.index');
+    Route::put('/record-notes', [RecordNoteController::class, 'upsert'])->name('api.record-notes.upsert');
 
     Route::get('/roles', [RoleController::class, 'index'])
         ->middleware('permission:role.view')->name('api.roles.index');
@@ -133,8 +176,12 @@ Route::middleware('auth:sanctum')->group(function (): void {
         ->middleware('permission:permission.view|role.manage')->name('api.permissions.index');
 
     // Profile photo (any logged-in user, their own)
-    Route::post('/me/avatar', [\App\Http\Controllers\Api\AvatarController::class, 'update'])->middleware('throttle:20,1')->name('api.me.avatar');
-    Route::delete('/me/avatar', [\App\Http\Controllers\Api\AvatarController::class, 'destroy'])->name('api.me.avatar.destroy');
+    Route::post('/me/avatar', [AvatarController::class, 'update'])->middleware('throttle:20,1')->name('api.me.avatar');
+    Route::delete('/me/avatar', [AvatarController::class, 'destroy'])->name('api.me.avatar.destroy');
+
+    // E-sign (any logged-in user, their own)
+    Route::post('/me/signature', [SignatureController::class, 'update'])->middleware('throttle:20,1')->name('api.me.signature');
+    Route::delete('/me/signature', [SignatureController::class, 'destroy'])->name('api.me.signature.destroy');
 
     // Self-service password change (any logged-in user).
     Route::post('/me/password', [AuthController::class, 'changePassword'])
@@ -161,17 +208,17 @@ Route::middleware('auth:sanctum')->group(function (): void {
 
     // Accurate Online: PCs connected to Accurate + manual disconnect. Standalone —
     // not tied to the Sync Agent or the sync (see AccurateSessionMonitor).
-    Route::get('/accurate/sessions', [\App\Http\Controllers\Api\AccurateSessionController::class, 'index'])
+    Route::get('/accurate/sessions', [AccurateSessionController::class, 'index'])
         ->middleware('permission:accurate.session.view')->name('api.accurate.sessions');
-    Route::post('/accurate/sessions/terminate', [\App\Http\Controllers\Api\AccurateSessionController::class, 'terminate'])
+    Route::post('/accurate/sessions/terminate', [AccurateSessionController::class, 'terminate'])
         ->middleware(['permission:accurate.session.terminate', 'throttle:30,1'])->name('api.accurate.sessions.terminate');
-    Route::put('/accurate/ip-labels', [\App\Http\Controllers\Api\AccurateSessionController::class, 'saveLabel'])
+    Route::put('/accurate/ip-labels', [AccurateSessionController::class, 'saveLabel'])
         ->middleware(['permission:accurate.session.terminate', 'throttle:60,1'])->name('api.accurate.ip-labels.save');
 
     // Manual Sync Agent run (copy Accurate .GDB -> staging [-> sync]) — Log Agen page.
-    Route::get('/agent-runs/status', [\App\Http\Controllers\Api\AgentRunController::class, 'status'])
+    Route::get('/agent-runs/status', [AgentRunController::class, 'status'])
         ->middleware('permission:sync.accurate.view')->name('api.agent-runs.status');
-    Route::post('/agent-runs', [\App\Http\Controllers\Api\AgentRunController::class, 'store'])
+    Route::post('/agent-runs', [AgentRunController::class, 'store'])
         ->middleware(['permission:sync.accurate.trigger', 'throttle:10,1'])->name('api.agent-runs.store');
 
     Route::middleware('permission:notification.view_own')->group(function () {
@@ -187,26 +234,26 @@ Route::middleware('auth:sanctum')->group(function (): void {
     |--------------------------------------------------------------------------
     */
     // Master Kategori Barang (Kategori Induk / Anak 1 / 2 / 3 of a Master Produk)
-    Route::get('/item-categories', [\App\Http\Controllers\Api\ItemCategoryController::class, 'index'])
+    Route::get('/item-categories', [ItemCategoryController::class, 'index'])
         ->middleware('permission:master.category.view')->name('api.item-categories.index');
-    Route::middleware('permission:master.category.manage')->controller(\App\Http\Controllers\Api\ItemCategoryController::class)->group(function (): void {
+    Route::middleware('permission:master.category.manage')->controller(ItemCategoryController::class)->group(function (): void {
         Route::post('/item-categories', 'store')->name('api.item-categories.store');
         Route::put('/item-categories/{id}', 'update')->whereNumber('id')->name('api.item-categories.update');
         Route::delete('/item-categories/{id}', 'destroy')->whereNumber('id')->name('api.item-categories.destroy');
     });
     Route::middleware('permission:master.category.view')->group(function () {
         Route::get('/master-data/quality', [MasterDataController::class, 'quality'])
-        ->middleware('permission:item.view|master.unit.view|master.vendor.view|master.employee.view')->name('api.master-data.quality');
-    Route::get('/categories', [MasterDataController::class, 'categories'])->name('api.categories');
+            ->middleware('permission:item.view|master.unit.view|master.vendor.view|master.employee.view')->name('api.master-data.quality');
+        Route::get('/categories', [MasterDataController::class, 'categories'])->name('api.categories');
         Route::get('/categories/tree', [MasterDataController::class, 'categoryTree'])->name('api.categories.tree');
     });
     // Master UOM: categories, their units and ratios; conversions per item
-    Route::get('/uom', [\App\Http\Controllers\Api\UomController::class, 'index'])->middleware('permission:master.unit.view')->name('api.uom.index');
-    Route::get('/uom/preview', [\App\Http\Controllers\Api\UomController::class, 'preview'])->middleware('permission:ri.create|npbg.create|ppb.create|item_request.process|po.create|master.unit.view')->name('api.uom.preview');
-    Route::get('/uom/unmapped', [\App\Http\Controllers\Api\UomController::class, 'unmapped'])->middleware('permission:master.unit.view')->name('api.uom.unmapped');
-    Route::get('/uom/convert', [\App\Http\Controllers\Api\UomController::class, 'convert'])->middleware('permission:master.unit.view')->name('api.uom.convert');
-    Route::get('/items/{item}/unit-conversions', [\App\Http\Controllers\Api\UomController::class, 'itemConversions'])->whereNumber('item')->middleware('permission:master.unit.view')->name('api.items.unit-conversions');
-    Route::middleware('permission:master.unit.manage')->controller(\App\Http\Controllers\Api\UomController::class)->group(function (): void {
+    Route::get('/uom', [UomController::class, 'index'])->middleware('permission:master.unit.view')->name('api.uom.index');
+    Route::get('/uom/preview', [UomController::class, 'preview'])->middleware('permission:ri.create|npbg.create|ppb.create|item_request.process|po.create|master.unit.view')->name('api.uom.preview');
+    Route::get('/uom/unmapped', [UomController::class, 'unmapped'])->middleware('permission:master.unit.view')->name('api.uom.unmapped');
+    Route::get('/uom/convert', [UomController::class, 'convert'])->middleware('permission:master.unit.view')->name('api.uom.convert');
+    Route::get('/items/{item}/unit-conversions', [UomController::class, 'itemConversions'])->whereNumber('item')->middleware('permission:master.unit.view')->name('api.items.unit-conversions');
+    Route::middleware('permission:master.unit.manage')->controller(UomController::class)->group(function (): void {
         Route::put('/items/{item}/base-unit', 'setBaseUnit')->whereNumber('item')->name('api.items.base-unit');
         Route::post('/uom/categories', 'storeCategory')->name('api.uom.categories.store');
         Route::put('/uom/categories/{category}', 'updateCategory')->name('api.uom.categories.update');
@@ -264,7 +311,7 @@ Route::middleware('auth:sanctum')->group(function (): void {
         Route::get('/sync/status', [SyncController::class, 'status'])->name('api.sync.status');
         Route::get('/sync/history', [SyncController::class, 'history'])->name('api.sync.history');
         Route::get('/sync/history/{syncBatch}', [SyncController::class, 'show'])->name('api.sync.history.show');
-        Route::get('/sync/agent-log', [\App\Http\Controllers\Api\AgentLogController::class, 'index'])->name('api.sync.agent-log');
+        Route::get('/sync/agent-log', [AgentLogController::class, 'index'])->name('api.sync.agent-log');
     });
     Route::post('/sync/accurate', [SyncController::class, 'store'])
         ->middleware('permission:sync.accurate.trigger')->name('api.sync.accurate.store');
@@ -305,44 +352,44 @@ Route::middleware('auth:sanctum')->group(function (): void {
     Route::get('/approvals', [ItemRequestController::class, 'approvals'])
         ->middleware('permission:item_request.approve_manager|item_request.approve_director|item_request.handover|ppb.approve_manager|ppb.approve_director|po.approve_director|npbg.approve_manager|npbg.approve_director')->name('api.approvals.index');
     // each menu's Dashboard: basic analytics (permission per module, checked in the controller) and the user's own layout
-    Route::get('/module-stats/{module}', [\App\Http\Controllers\Api\ModuleStatsController::class, 'show'])->name('api.module-stats');
+    Route::get('/module-stats/{module}', [ModuleStatsController::class, 'show'])->name('api.module-stats');
     // Custom dashboards: the layout only; each widget reads an existing API with the viewer's permissions
-    Route::get('/custom-dashboards', [\App\Http\Controllers\Api\CustomDashboardController::class, 'index'])->name('api.custom-dashboards.index');
-    Route::post('/custom-dashboards', [\App\Http\Controllers\Api\CustomDashboardController::class, 'store'])->middleware('throttle:30,1')->name('api.custom-dashboards.store');
-    Route::get('/custom-dashboards/{id}', [\App\Http\Controllers\Api\CustomDashboardController::class, 'show'])->whereNumber('id')->name('api.custom-dashboards.show');
-    Route::put('/custom-dashboards/{id}', [\App\Http\Controllers\Api\CustomDashboardController::class, 'update'])->whereNumber('id')->middleware('throttle:120,1')->name('api.custom-dashboards.update');
-    Route::delete('/custom-dashboards/{id}', [\App\Http\Controllers\Api\CustomDashboardController::class, 'destroy'])->whereNumber('id')->middleware('throttle:30,1')->name('api.custom-dashboards.destroy');
-    Route::get('/preferences/{key}', [\App\Http\Controllers\Api\PreferenceController::class, 'show'])->name('api.preferences.show');
-    Route::put('/preferences/{key}', [\App\Http\Controllers\Api\PreferenceController::class, 'update'])->middleware('throttle:60,1')->name('api.preferences.update');
+    Route::get('/custom-dashboards', [CustomDashboardController::class, 'index'])->name('api.custom-dashboards.index');
+    Route::post('/custom-dashboards', [CustomDashboardController::class, 'store'])->middleware('throttle:30,1')->name('api.custom-dashboards.store');
+    Route::get('/custom-dashboards/{id}', [CustomDashboardController::class, 'show'])->whereNumber('id')->name('api.custom-dashboards.show');
+    Route::put('/custom-dashboards/{id}', [CustomDashboardController::class, 'update'])->whereNumber('id')->middleware('throttle:120,1')->name('api.custom-dashboards.update');
+    Route::delete('/custom-dashboards/{id}', [CustomDashboardController::class, 'destroy'])->whereNumber('id')->middleware('throttle:30,1')->name('api.custom-dashboards.destroy');
+    Route::get('/preferences/{key}', [PreferenceController::class, 'show'])->name('api.preferences.show');
+    Route::put('/preferences/{key}', [PreferenceController::class, 'update'])->middleware('throttle:60,1')->name('api.preferences.update');
     // User Log: pages opened are written by the app; reading the log needs audit_log.view
-    Route::post('/activity/page-view', [\App\Http\Controllers\Api\ActivityLogController::class, 'pageView'])->middleware('throttle:240,1')->name('api.activity.page-view');
-    Route::get('/activity-logs', [\App\Http\Controllers\Api\ActivityLogController::class, 'index'])->middleware('permission:audit_log.view')->name('api.activity-logs.index');
+    Route::post('/activity/page-view', [ActivityLogController::class, 'pageView'])->middleware('throttle:240,1')->name('api.activity.page-view');
+    Route::get('/activity-logs', [ActivityLogController::class, 'index'])->middleware('permission:audit_log.view')->name('api.activity-logs.index');
     // main dashboard sticky notes: the user's own only (scoped in the controller)
-    Route::get('/dashboard-notes', [\App\Http\Controllers\Api\DashboardNoteController::class, 'index'])->name('api.dashboard-notes.index');
-    Route::post('/dashboard-notes', [\App\Http\Controllers\Api\DashboardNoteController::class, 'store'])->middleware('throttle:60,1')->name('api.dashboard-notes.store');
-    Route::put('/dashboard-notes/{note}', [\App\Http\Controllers\Api\DashboardNoteController::class, 'update'])->whereNumber('note')->middleware('throttle:120,1')->name('api.dashboard-notes.update');
-    Route::delete('/dashboard-notes/{note}', [\App\Http\Controllers\Api\DashboardNoteController::class, 'destroy'])->whereNumber('note')->middleware('throttle:60,1')->name('api.dashboard-notes.destroy');
+    Route::get('/dashboard-notes', [DashboardNoteController::class, 'index'])->name('api.dashboard-notes.index');
+    Route::post('/dashboard-notes', [DashboardNoteController::class, 'store'])->middleware('throttle:60,1')->name('api.dashboard-notes.store');
+    Route::put('/dashboard-notes/{note}', [DashboardNoteController::class, 'update'])->whereNumber('note')->middleware('throttle:120,1')->name('api.dashboard-notes.update');
+    Route::delete('/dashboard-notes/{note}', [DashboardNoteController::class, 'destroy'])->whereNumber('note')->middleware('throttle:60,1')->name('api.dashboard-notes.destroy');
     // the work waiting for this user across STOCKWISE (Important Request home: "Perlu dikerjakan")
-    Route::get('/reminders', [\App\Http\Controllers\Api\ReminderController::class, 'index'])->name('api.reminders');
+    Route::get('/reminders', [ReminderController::class, 'index'])->name('api.reminders');
     // Update Alert: the popup for every user (due / seen); managing them is Super Admin only (checked in the controller)
-    Route::get('/update-alerts/due', [\App\Http\Controllers\Api\UpdateAlertController::class, 'due'])->name('api.update-alerts.due');
-    Route::post('/update-alerts/{updateAlert}/seen', [\App\Http\Controllers\Api\UpdateAlertController::class, 'seen'])->whereNumber('updateAlert')->middleware('throttle:60,1')->name('api.update-alerts.seen');
-    Route::post('/update-alerts/{updateAlert}/thumbs-up', [\App\Http\Controllers\Api\UpdateAlertController::class, 'thumbsUp'])->whereNumber('updateAlert')->middleware('throttle:60,1')->name('api.update-alerts.thumbs-up');
-    Route::get('/update-alerts/{updateAlert}/closed-by', [\App\Http\Controllers\Api\UpdateAlertController::class, 'closedBy'])->whereNumber('updateAlert')->name('api.update-alerts.closed-by');
-    Route::get('/update-alerts/{updateAlert}/thumbs-up', [\App\Http\Controllers\Api\UpdateAlertController::class, 'thumbs'])->whereNumber('updateAlert')->name('api.update-alerts.thumbs');
-    Route::get('/update-alerts', [\App\Http\Controllers\Api\UpdateAlertController::class, 'index'])->name('api.update-alerts.index');
-    Route::post('/update-alerts', [\App\Http\Controllers\Api\UpdateAlertController::class, 'store'])->name('api.update-alerts.store');
-    Route::put('/update-alerts/{updateAlert}', [\App\Http\Controllers\Api\UpdateAlertController::class, 'update'])->whereNumber('updateAlert')->name('api.update-alerts.update');
-    Route::delete('/update-alerts/{updateAlert}', [\App\Http\Controllers\Api\UpdateAlertController::class, 'destroy'])->whereNumber('updateAlert')->name('api.update-alerts.destroy');
+    Route::get('/update-alerts/due', [UpdateAlertController::class, 'due'])->name('api.update-alerts.due');
+    Route::post('/update-alerts/{updateAlert}/seen', [UpdateAlertController::class, 'seen'])->whereNumber('updateAlert')->middleware('throttle:60,1')->name('api.update-alerts.seen');
+    Route::post('/update-alerts/{updateAlert}/thumbs-up', [UpdateAlertController::class, 'thumbsUp'])->whereNumber('updateAlert')->middleware('throttle:60,1')->name('api.update-alerts.thumbs-up');
+    Route::get('/update-alerts/{updateAlert}/closed-by', [UpdateAlertController::class, 'closedBy'])->whereNumber('updateAlert')->name('api.update-alerts.closed-by');
+    Route::get('/update-alerts/{updateAlert}/thumbs-up', [UpdateAlertController::class, 'thumbs'])->whereNumber('updateAlert')->name('api.update-alerts.thumbs');
+    Route::get('/update-alerts', [UpdateAlertController::class, 'index'])->name('api.update-alerts.index');
+    Route::post('/update-alerts', [UpdateAlertController::class, 'store'])->name('api.update-alerts.store');
+    Route::put('/update-alerts/{updateAlert}', [UpdateAlertController::class, 'update'])->whereNumber('updateAlert')->name('api.update-alerts.update');
+    Route::delete('/update-alerts/{updateAlert}', [UpdateAlertController::class, 'destroy'])->whereNumber('updateAlert')->name('api.update-alerts.destroy');
     // Settings · Auto Refresh: Super Admin only (checked in the controller)
-    Route::get('/settings/auto-refresh', [\App\Http\Controllers\Api\AutoRefreshController::class, 'show'])->name('api.settings.auto-refresh.show');
-    Route::put('/settings/auto-refresh', [\App\Http\Controllers\Api\AutoRefreshController::class, 'update'])->name('api.settings.auto-refresh.update');
+    Route::get('/settings/auto-refresh', [AutoRefreshController::class, 'show'])->name('api.settings.auto-refresh.show');
+    Route::put('/settings/auto-refresh', [AutoRefreshController::class, 'update'])->name('api.settings.auto-refresh.update');
     // what changed since the last look (the app refetches only that area): updates between accounts in seconds
-    Route::get('/live', [\App\Http\Controllers\Api\LiveController::class, 'index'])->name('api.live');
+    Route::get('/live', [LiveController::class, 'index'])->name('api.live');
     Route::get('/approvals/count', [ItemRequestController::class, 'approvalCount'])
         ->middleware('permission:item_request.approve_manager|item_request.approve_director|item_request.handover|ppb.approve_manager|ppb.approve_director|po.approve_director|npbg.approve_manager|npbg.approve_director')->name('api.approvals.count');
     // STOCKWISE PPB (Manager → Direktur) and PO (Direktur) waiting for this user
-    Route::get('/approvals/purchasing', [\App\Http\Controllers\Api\PurchasingApprovalController::class, 'index'])
+    Route::get('/approvals/purchasing', [PurchasingApprovalController::class, 'index'])
         ->middleware('permission:ppb.approve_manager|ppb.approve_director|po.approve_director|npbg.approve_manager|npbg.approve_director')->name('api.approvals.purchasing');
     Route::post('/item-requests/{itemRequest}/approval', [ItemRequestController::class, 'decide'])
         ->middleware(['permission:item_request.approve_manager|item_request.approve_director|item_request.handover', 'throttle:60,1'])->name('api.item-requests.approval');
@@ -376,12 +423,12 @@ Route::middleware('auth:sanctum')->group(function (): void {
         ->middleware(['permission:item_request.create', 'throttle:20,1'])->name('api.item-requests.proxy-cancel');
     Route::post('/item-requests/{itemRequest}/cancel', [ItemRequestController::class, 'cancel'])
         ->middleware('permission:item_request.create|item_request.process')->name('api.item-requests.cancel');
-    Route::get('/share-base', [\App\Http\Controllers\Api\ItemRequestLinkController::class, 'shareBase'])->name('api.share-base');
+    Route::get('/share-base', [ItemRequestLinkController::class, 'shareBase'])->name('api.share-base');
     Route::middleware('permission:item_request.process')->group(function () {
-        Route::get('/item-request-links', [\App\Http\Controllers\Api\ItemRequestLinkController::class, 'index'])->name('api.item-request-links.index');
-        Route::post('/item-request-links', [\App\Http\Controllers\Api\ItemRequestLinkController::class, 'store'])->name('api.item-request-links.store');
-        Route::put('/item-request-links/{link}', [\App\Http\Controllers\Api\ItemRequestLinkController::class, 'update'])->name('api.item-request-links.update');
-        Route::delete('/item-request-links/{link}', [\App\Http\Controllers\Api\ItemRequestLinkController::class, 'destroy'])->name('api.item-request-links.destroy');
+        Route::get('/item-request-links', [ItemRequestLinkController::class, 'index'])->name('api.item-request-links.index');
+        Route::post('/item-request-links', [ItemRequestLinkController::class, 'store'])->name('api.item-request-links.store');
+        Route::put('/item-request-links/{link}', [ItemRequestLinkController::class, 'update'])->name('api.item-request-links.update');
+        Route::delete('/item-request-links/{link}', [ItemRequestLinkController::class, 'destroy'])->name('api.item-request-links.destroy');
     });
 
     /*
@@ -447,6 +494,51 @@ Route::middleware('auth:sanctum')->group(function (): void {
     | PHASE 6 — Stock Opname
     |--------------------------------------------------------------------------
     */
+    // Stock Opname — controlled workflow (StockOpnameWorkflowController; 503 until its migration ran)
+    Route::get('/stock-opnames/dashboard', [StockOpnameWorkflowController::class, 'dashboard'])
+        ->middleware('permission:opname.view')->name('api.opnames.flow.dashboard');
+    Route::get('/stock-opnames/form-options', [StockOpnameWorkflowController::class, 'formOptions'])
+        ->middleware('permission:opname.view|opname.schedule')->name('api.opnames.flow.form-options');
+    Route::get('/stock-opnames/adjustments', [StockOpnameWorkflowController::class, 'adjustments'])
+        ->middleware('permission:report.opname|opname.view_variance|opname.review')->name('api.opnames.flow.adjustments');
+    Route::post('/stock-opnames/orders', [StockOpnameWorkflowController::class, 'store'])
+        ->middleware('permission:opname.schedule')->name('api.opnames.flow.orders.store');
+    Route::get('/stock-opnames/{stockOpname}/detail', [StockOpnameWorkflowController::class, 'detail'])
+        ->middleware('permission:opname.view')->name('api.opnames.flow.detail');
+    Route::get('/stock-opnames/{stockOpname}/events', [StockOpnameWorkflowController::class, 'events'])
+        ->middleware('permission:opname.view')->name('api.opnames.flow.events');
+    Route::get('/stock-opnames/{stockOpname}/lines/{line}/counts', [StockOpnameWorkflowController::class, 'counts'])->whereNumber('line')
+        ->middleware('permission:opname.view')->name('api.opnames.flow.line-counts');
+    Route::put('/stock-opnames/{stockOpname}/draft', [StockOpnameWorkflowController::class, 'updateDraft'])
+        ->middleware('permission:opname.schedule')->name('api.opnames.flow.draft.update');
+    Route::post('/stock-opnames/{stockOpname}/lines', [StockOpnameWorkflowController::class, 'addLines'])
+        ->middleware('permission:opname.schedule')->name('api.opnames.flow.lines.add');
+    Route::delete('/stock-opnames/{stockOpname}/lines/{line}', [StockOpnameWorkflowController::class, 'removeLine'])->whereNumber('line')
+        ->middleware('permission:opname.schedule')->name('api.opnames.flow.lines.remove');
+    Route::post('/stock-opnames/{stockOpname}/confirm', [StockOpnameWorkflowController::class, 'confirm'])
+        ->middleware('permission:opname.schedule')->name('api.opnames.flow.confirm');
+    Route::post('/stock-opnames/{stockOpname}/start-counting', [StockOpnameWorkflowController::class, 'startCounting'])
+        ->middleware('permission:opname.count')->name('api.opnames.flow.start-counting');
+    Route::post('/stock-opnames/{stockOpname}/lines/{line}/count', [StockOpnameWorkflowController::class, 'count'])->whereNumber('line')
+        ->middleware('permission:opname.count')->name('api.opnames.flow.line-count');
+    Route::post('/stock-opnames/{stockOpname}/finish-counting', [StockOpnameWorkflowController::class, 'finishCounting'])
+        ->middleware('permission:opname.submit')->name('api.opnames.flow.finish-counting');
+    Route::post('/stock-opnames/{stockOpname}/review-decisions', [StockOpnameWorkflowController::class, 'reviewDecisions'])
+        ->middleware('permission:opname.review')->name('api.opnames.flow.review-decisions');
+    Route::post('/stock-opnames/{stockOpname}/recount', [StockOpnameWorkflowController::class, 'recount'])
+        ->middleware('permission:opname.request_recount')->name('api.opnames.flow.recount');
+    Route::post('/stock-opnames/{stockOpname}/request-approval', [StockOpnameWorkflowController::class, 'requestApproval'])
+        ->middleware('permission:opname.review')->name('api.opnames.flow.request-approval');
+    Route::post('/stock-opnames/{stockOpname}/approve', [StockOpnameWorkflowController::class, 'approve'])
+        ->middleware('permission:opname.approve')->name('api.opnames.flow.approve');
+    Route::post('/stock-opnames/{stockOpname}/reject', [StockOpnameWorkflowController::class, 'reject'])
+        ->middleware('permission:opname.reject')->name('api.opnames.flow.reject');
+    Route::post('/stock-opnames/{stockOpname}/close', [StockOpnameWorkflowController::class, 'close'])
+        ->middleware('permission:opname.review')->name('api.opnames.flow.close');
+    Route::post('/stock-opnames/{stockOpname}/cancel', [StockOpnameWorkflowController::class, 'cancel'])
+        ->middleware('permission:opname.schedule')->name('api.opnames.flow.cancel');
+    Route::post('/stock-opnames/{stockOpname}/correction', [StockOpnameWorkflowController::class, 'correction'])
+        ->middleware('permission:opname.schedule')->name('api.opnames.flow.correction');
     Route::get('/stock-opnames', [StockOpnameController::class, 'index'])
         ->middleware('permission:opname.view')->name('api.opnames.index');
     Route::get('/stock-opnames/lines', [StockOpnameController::class, 'lines'])
@@ -474,7 +566,7 @@ Route::middleware('auth:sanctum')->group(function (): void {
     |--------------------------------------------------------------------------
     */
     // Important Request: work instructions from a superior, discussion, results and their review
-    Route::middleware('permission:important_request.access')->prefix('important-requests')->controller(\App\Http\Controllers\Api\ImportantRequestController::class)->group(function (): void {
+    Route::middleware('permission:important_request.access')->prefix('important-requests')->controller(ImportantRequestController::class)->group(function (): void {
         Route::get('/', 'index')->name('api.important-requests.index');
         Route::get('/summary', 'summary')->name('api.important-requests.summary');
         Route::get('/recipients', 'recipients')->middleware('permission:important_request.create')->name('api.important-requests.recipients');
@@ -499,26 +591,26 @@ Route::middleware('auth:sanctum')->group(function (): void {
         Route::get('/{importantRequest}/attachments/{attachment}', 'download')->whereNumber(['importantRequest', 'attachment'])->name('api.important-requests.attachments.show');
     });
     // files go up in chunks (PHP's upload limit here is 2 MB a file)
-    Route::middleware(['permission:important_request.access', 'throttle:600,1'])->controller(\App\Http\Controllers\Api\ImportantRequestController::class)->group(function (): void {
+    Route::middleware(['permission:important_request.access', 'throttle:600,1'])->controller(ImportantRequestController::class)->group(function (): void {
         Route::post('/important-request-uploads', 'uploadStart')->name('api.important-request-uploads.store');
         Route::post('/important-request-uploads/{token}', 'uploadChunk')->name('api.important-request-uploads.chunk');
     });
     // Master Data · Data Pekerja (roster of the company's people)
-    Route::get('/employees', [\App\Http\Controllers\Api\EmployeeController::class, 'index'])
+    Route::get('/employees', [EmployeeController::class, 'index'])
         ->middleware('permission:master.employee.view')->name('api.employees.index');
-    Route::get('/employees/departments', [\App\Http\Controllers\Api\EmployeeController::class, 'departments'])
+    Route::get('/employees/departments', [EmployeeController::class, 'departments'])
         ->middleware('permission:master.employee.view')->name('api.employees.departments');
-    Route::post('/employees/departments', [\App\Http\Controllers\Api\EmployeeController::class, 'storeDepartment'])
+    Route::post('/employees/departments', [EmployeeController::class, 'storeDepartment'])
         ->middleware('permission:master.employee.manage')->name('api.employees.departments.store');
-    Route::get('/employees/users', [\App\Http\Controllers\Api\EmployeeController::class, 'users'])
+    Route::get('/employees/users', [EmployeeController::class, 'users'])
         ->middleware('permission:master.employee.manage')->name('api.employees.users');
-    Route::get('/employees/template', [\App\Http\Controllers\Api\EmployeeController::class, 'template'])
+    Route::get('/employees/template', [EmployeeController::class, 'template'])
         ->middleware('permission:master.employee.manage')->name('api.employees.template');
-    Route::post('/employees/import', [\App\Http\Controllers\Api\EmployeeController::class, 'import'])
+    Route::post('/employees/import', [EmployeeController::class, 'import'])
         ->middleware('permission:master.employee.manage')->name('api.employees.import');
-    Route::post('/employees', [\App\Http\Controllers\Api\EmployeeController::class, 'store'])
+    Route::post('/employees', [EmployeeController::class, 'store'])
         ->middleware('permission:master.employee.manage')->name('api.employees.store');
-    Route::put('/employees/{employee}', [\App\Http\Controllers\Api\EmployeeController::class, 'update'])
+    Route::put('/employees/{employee}', [EmployeeController::class, 'update'])
         ->middleware('permission:master.employee.manage')->name('api.employees.update');
     Route::get('/vendors', [VendorController::class, 'index'])
         ->middleware('permission:master.vendor.view')->name('api.vendors.index');
@@ -541,22 +633,22 @@ Route::middleware('auth:sanctum')->group(function (): void {
     // Draft PPB: Restock (Safety Stock) → review / edit → submit as PPB (PpbDraftService)
     Route::middleware('permission:ppb.create')->group(function () {
         // the Draft PPB list: item lines from Request Barang / Safety Stock, picked into one PPB
-        Route::get('/ppb-draft-lines', [\App\Http\Controllers\Api\PpbDraftController::class, 'lines'])->name('api.ppb-draft-lines.index');
-        Route::post('/ppb-draft-lines/submit', [\App\Http\Controllers\Api\PpbDraftController::class, 'submitLines'])->name('api.ppb-draft-lines.submit');
-        Route::put('/ppb-draft-lines/{line}', [\App\Http\Controllers\Api\PpbDraftController::class, 'updateLine'])->name('api.ppb-draft-lines.update');
-        Route::delete('/ppb-draft-lines/{line}', [\App\Http\Controllers\Api\PpbDraftController::class, 'removeLine'])->name('api.ppb-draft-lines.destroy');
-        Route::get('/ppb-saved-drafts', [\App\Http\Controllers\Api\PpbDraftController::class, 'savedIndex'])->name('api.ppb-saved-drafts.index');
-        Route::post('/ppb-saved-drafts', [\App\Http\Controllers\Api\PpbDraftController::class, 'savedStore'])->name('api.ppb-saved-drafts.store');
-        Route::put('/ppb-saved-drafts/{saved}', [\App\Http\Controllers\Api\PpbDraftController::class, 'savedUpdate'])->name('api.ppb-saved-drafts.update');
-        Route::post('/ppb-saved-drafts/{saved}/submit', [\App\Http\Controllers\Api\PpbDraftController::class, 'savedSubmit'])->name('api.ppb-saved-drafts.submit');
-        Route::delete('/ppb-saved-drafts/{saved}', [\App\Http\Controllers\Api\PpbDraftController::class, 'savedDestroy'])->name('api.ppb-saved-drafts.destroy');
-        Route::delete('/ppb-saved-drafts/{saved}/lines/{line}', [\App\Http\Controllers\Api\PpbDraftController::class, 'savedRelease'])->name('api.ppb-saved-drafts.release');
-        Route::get('/ppb-drafts', [\App\Http\Controllers\Api\PpbDraftController::class, 'index'])->name('api.ppb-drafts.index');
-        Route::post('/ppb-drafts', [\App\Http\Controllers\Api\PpbDraftController::class, 'store'])->name('api.ppb-drafts.store');
-        Route::get('/ppb-drafts/{ppbDraft}', [\App\Http\Controllers\Api\PpbDraftController::class, 'show'])->name('api.ppb-drafts.show');
-        Route::put('/ppb-drafts/{ppbDraft}', [\App\Http\Controllers\Api\PpbDraftController::class, 'update'])->name('api.ppb-drafts.update');
-        Route::post('/ppb-drafts/{ppbDraft}/submit', [\App\Http\Controllers\Api\PpbDraftController::class, 'submit'])->name('api.ppb-drafts.submit');
-        Route::delete('/ppb-drafts/{ppbDraft}', [\App\Http\Controllers\Api\PpbDraftController::class, 'destroy'])->name('api.ppb-drafts.destroy');
+        Route::get('/ppb-draft-lines', [PpbDraftController::class, 'lines'])->name('api.ppb-draft-lines.index');
+        Route::post('/ppb-draft-lines/submit', [PpbDraftController::class, 'submitLines'])->name('api.ppb-draft-lines.submit');
+        Route::put('/ppb-draft-lines/{line}', [PpbDraftController::class, 'updateLine'])->name('api.ppb-draft-lines.update');
+        Route::delete('/ppb-draft-lines/{line}', [PpbDraftController::class, 'removeLine'])->name('api.ppb-draft-lines.destroy');
+        Route::get('/ppb-saved-drafts', [PpbDraftController::class, 'savedIndex'])->name('api.ppb-saved-drafts.index');
+        Route::post('/ppb-saved-drafts', [PpbDraftController::class, 'savedStore'])->name('api.ppb-saved-drafts.store');
+        Route::put('/ppb-saved-drafts/{saved}', [PpbDraftController::class, 'savedUpdate'])->name('api.ppb-saved-drafts.update');
+        Route::post('/ppb-saved-drafts/{saved}/submit', [PpbDraftController::class, 'savedSubmit'])->name('api.ppb-saved-drafts.submit');
+        Route::delete('/ppb-saved-drafts/{saved}', [PpbDraftController::class, 'savedDestroy'])->name('api.ppb-saved-drafts.destroy');
+        Route::delete('/ppb-saved-drafts/{saved}/lines/{line}', [PpbDraftController::class, 'savedRelease'])->name('api.ppb-saved-drafts.release');
+        Route::get('/ppb-drafts', [PpbDraftController::class, 'index'])->name('api.ppb-drafts.index');
+        Route::post('/ppb-drafts', [PpbDraftController::class, 'store'])->name('api.ppb-drafts.store');
+        Route::get('/ppb-drafts/{ppbDraft}', [PpbDraftController::class, 'show'])->name('api.ppb-drafts.show');
+        Route::put('/ppb-drafts/{ppbDraft}', [PpbDraftController::class, 'update'])->name('api.ppb-drafts.update');
+        Route::post('/ppb-drafts/{ppbDraft}/submit', [PpbDraftController::class, 'submit'])->name('api.ppb-drafts.submit');
+        Route::delete('/ppb-drafts/{ppbDraft}', [PpbDraftController::class, 'destroy'])->name('api.ppb-drafts.destroy');
     });
     Route::get('/ppb/{ppb}', [PpbController::class, 'show'])
         ->middleware('permission:ppb.view')->name('api.ppb.show');
@@ -602,73 +694,73 @@ Route::middleware('auth:sanctum')->group(function (): void {
 
     // Retur Pembelian: goods of an RI back to the vendor (PurchaseReturnService)
     Route::middleware('permission:purchase_return.view')->group(function () {
-        Route::get('/purchase-returns', [\App\Http\Controllers\Api\PurchaseReturnController::class, 'index'])->name('api.purchase-returns.index');
-        Route::get('/purchase-returns/{purchaseReturn}', [\App\Http\Controllers\Api\PurchaseReturnController::class, 'show'])->whereNumber('purchaseReturn')->name('api.purchase-returns.show');
-        Route::get('/purchase-returns/{purchaseReturn}/photo/{slot}', [\App\Http\Controllers\Api\PurchaseReturnController::class, 'photo'])
+        Route::get('/purchase-returns', [PurchaseReturnController::class, 'index'])->name('api.purchase-returns.index');
+        Route::get('/purchase-returns/{purchaseReturn}', [PurchaseReturnController::class, 'show'])->whereNumber('purchaseReturn')->name('api.purchase-returns.show');
+        Route::get('/purchase-returns/{purchaseReturn}/photo/{slot}', [PurchaseReturnController::class, 'photo'])
             ->whereNumber('purchaseReturn')->whereIn('slot', ['barang', 'kirim'])->name('api.purchase-returns.photo');
     });
     Route::middleware('permission:purchase_return.manage')->group(function () {
-        Route::get('/purchase-returns/ri-search', [\App\Http\Controllers\Api\PurchaseReturnController::class, 'riSearch'])->name('api.purchase-returns.ri-search');
-        Route::get('/purchase-returns/ri-lines', [\App\Http\Controllers\Api\PurchaseReturnController::class, 'riLines'])->name('api.purchase-returns.ri-lines');
-        Route::post('/purchase-returns', [\App\Http\Controllers\Api\PurchaseReturnController::class, 'store'])->middleware('throttle:30,1')->name('api.purchase-returns.store');
-        Route::post('/purchase-returns/{purchaseReturn}/send', [\App\Http\Controllers\Api\PurchaseReturnController::class, 'send'])->middleware('throttle:30,1')->name('api.purchase-returns.send');
-        Route::post('/purchase-returns/{purchaseReturn}/resolve', [\App\Http\Controllers\Api\PurchaseReturnController::class, 'resolve'])->name('api.purchase-returns.resolve');
-        Route::post('/purchase-returns/{purchaseReturn}/cancel', [\App\Http\Controllers\Api\PurchaseReturnController::class, 'cancel'])->name('api.purchase-returns.cancel');
+        Route::get('/purchase-returns/ri-search', [PurchaseReturnController::class, 'riSearch'])->name('api.purchase-returns.ri-search');
+        Route::get('/purchase-returns/ri-lines', [PurchaseReturnController::class, 'riLines'])->name('api.purchase-returns.ri-lines');
+        Route::post('/purchase-returns', [PurchaseReturnController::class, 'store'])->middleware('throttle:30,1')->name('api.purchase-returns.store');
+        Route::post('/purchase-returns/{purchaseReturn}/send', [PurchaseReturnController::class, 'send'])->middleware('throttle:30,1')->name('api.purchase-returns.send');
+        Route::post('/purchase-returns/{purchaseReturn}/resolve', [PurchaseReturnController::class, 'resolve'])->name('api.purchase-returns.resolve');
+        Route::post('/purchase-returns/{purchaseReturn}/cancel', [PurchaseReturnController::class, 'cancel'])->name('api.purchase-returns.cancel');
     });
 
     // Draft PO: the items of approved STOCKWISE PPBs — vendor prices compared, picked into one PO per vendor
     // PPB Siap PO → Penawaran Harga (purchasing) → the Direktur picks the vendor → Draft PO
-    Route::get('/po-draft-lines', [\App\Http\Controllers\Api\PoDraftController::class, 'lines'])
+    Route::get('/po-draft-lines', [PoDraftController::class, 'lines'])
         ->middleware('permission:po.create|po.approve_director')->name('api.po-draft-lines.index');
     Route::middleware('permission:po.approve_director')->group(function () {
-        Route::post('/po-draft-lines/{item}/choose', [\App\Http\Controllers\Api\PoDraftController::class, 'choose'])->whereNumber('item')->name('api.po-draft-lines.choose');
-        Route::post('/po-draft-lines/{item}/change-pick', [\App\Http\Controllers\Api\PoDraftController::class, 'changePick'])->whereNumber('item')->name('api.po-draft-lines.change-pick');
-        Route::post('/po-draft-lines/{item}/return', [\App\Http\Controllers\Api\PoDraftController::class, 'returnQuotation'])->whereNumber('item')->name('api.po-draft-lines.return');
+        Route::post('/po-draft-lines/{item}/choose', [PoDraftController::class, 'choose'])->whereNumber('item')->name('api.po-draft-lines.choose');
+        Route::post('/po-draft-lines/{item}/change-pick', [PoDraftController::class, 'changePick'])->whereNumber('item')->name('api.po-draft-lines.change-pick');
+        Route::post('/po-draft-lines/{item}/return', [PoDraftController::class, 'returnQuotation'])->whereNumber('item')->name('api.po-draft-lines.return');
     });
     Route::middleware('permission:po.create')->group(function () {
-        Route::put('/po-draft-lines/{item}', [\App\Http\Controllers\Api\PoDraftController::class, 'updateItem'])->whereNumber('item')->name('api.po-draft-lines.update');
-        Route::delete('/po-draft-lines/{item}', [\App\Http\Controllers\Api\PoDraftController::class, 'removeItem'])->whereNumber('item')->name('api.po-draft-lines.destroy');
-        Route::post('/po-draft-lines/vendors', [\App\Http\Controllers\Api\PoDraftController::class, 'addVendors'])->name('api.po-draft-lines.vendors');
-        Route::delete('/po-draft-lines/vendors/{vendor}', [\App\Http\Controllers\Api\PoDraftController::class, 'dropVendor'])->whereNumber('vendor')->name('api.po-draft-lines.vendors.destroy');
-        Route::post('/po-draft-lines/to-quotation', [\App\Http\Controllers\Api\PoDraftController::class, 'toQuotation'])->name('api.po-draft-lines.to-quotation');
-        Route::post('/po-draft-lines/back-to-ready', [\App\Http\Controllers\Api\PoDraftController::class, 'backToReady'])->name('api.po-draft-lines.back-to-ready');
-        Route::post('/po-draft-lines/submit-quotation', [\App\Http\Controllers\Api\PoDraftController::class, 'submitQuotation'])->name('api.po-draft-lines.submit-quotation');
-        Route::post('/po-draft-lines/submit', [\App\Http\Controllers\Api\PoDraftController::class, 'submit'])->name('api.po-draft-lines.submit');
-        Route::get('/po-draft-lines/{item}/units', [\App\Http\Controllers\Api\PoDraftController::class, 'orderUnits'])->whereNumber('item')->name('api.po-draft-lines.units');
-        Route::put('/po-draft-lines/{item}/quotes', [\App\Http\Controllers\Api\PoDraftController::class, 'quote'])->name('api.po-draft-lines.quote');
-        Route::delete('/po-draft-lines/{item}/quotes/{quote}', [\App\Http\Controllers\Api\PoDraftController::class, 'removeQuote'])->name('api.po-draft-lines.quote.destroy');
+        Route::put('/po-draft-lines/{item}', [PoDraftController::class, 'updateItem'])->whereNumber('item')->name('api.po-draft-lines.update');
+        Route::delete('/po-draft-lines/{item}', [PoDraftController::class, 'removeItem'])->whereNumber('item')->name('api.po-draft-lines.destroy');
+        Route::post('/po-draft-lines/vendors', [PoDraftController::class, 'addVendors'])->name('api.po-draft-lines.vendors');
+        Route::delete('/po-draft-lines/vendors/{vendor}', [PoDraftController::class, 'dropVendor'])->whereNumber('vendor')->name('api.po-draft-lines.vendors.destroy');
+        Route::post('/po-draft-lines/to-quotation', [PoDraftController::class, 'toQuotation'])->name('api.po-draft-lines.to-quotation');
+        Route::post('/po-draft-lines/back-to-ready', [PoDraftController::class, 'backToReady'])->name('api.po-draft-lines.back-to-ready');
+        Route::post('/po-draft-lines/submit-quotation', [PoDraftController::class, 'submitQuotation'])->name('api.po-draft-lines.submit-quotation');
+        Route::post('/po-draft-lines/submit', [PoDraftController::class, 'submit'])->name('api.po-draft-lines.submit');
+        Route::get('/po-draft-lines/{item}/units', [PoDraftController::class, 'orderUnits'])->whereNumber('item')->name('api.po-draft-lines.units');
+        Route::put('/po-draft-lines/{item}/quotes', [PoDraftController::class, 'quote'])->name('api.po-draft-lines.quote');
+        Route::delete('/po-draft-lines/{item}/quotes/{quote}', [PoDraftController::class, 'removeQuote'])->name('api.po-draft-lines.quote.destroy');
     });
     // Price List: the standing purchase prices, Item × Vendor (apart from any Purchase Request)
-    Route::get('/price-list/reference', [\App\Http\Controllers\Api\PriceListController::class, 'reference'])
+    Route::get('/price-list/reference', [PriceListController::class, 'reference'])
         ->middleware('permission:rfq.view|po.create|po.approve_director')->name('api.price-list.reference');
     // Draft Price List: items × vendors priced in one draft, then "Set Harga" into the Master Price List
     Route::middleware('permission:rfq.view')->group(function () {
-        Route::get('/price-list/drafts', [\App\Http\Controllers\Api\PriceListDraftController::class, 'index'])->name('api.price-list.drafts.index');
-        Route::get('/price-list/drafts/{id}', [\App\Http\Controllers\Api\PriceListDraftController::class, 'show'])->whereNumber('id')->name('api.price-list.drafts.show');
+        Route::get('/price-list/drafts', [PriceListDraftController::class, 'index'])->name('api.price-list.drafts.index');
+        Route::get('/price-list/drafts/{id}', [PriceListDraftController::class, 'show'])->whereNumber('id')->name('api.price-list.drafts.show');
     });
     Route::middleware('permission:rfq.create')->group(function () {
-        Route::get('/price-list/drafts/available-items', [\App\Http\Controllers\Api\PriceListDraftController::class, 'availableItems'])->name('api.price-list.drafts.available-items');
-        Route::post('/price-list/drafts', [\App\Http\Controllers\Api\PriceListDraftController::class, 'store'])->name('api.price-list.drafts.store');
-        Route::post('/price-list/drafts/{id}/items', [\App\Http\Controllers\Api\PriceListDraftController::class, 'addItems'])->whereNumber('id')->name('api.price-list.drafts.items.store');
-        Route::delete('/price-list/drafts/{id}/items/{item}', [\App\Http\Controllers\Api\PriceListDraftController::class, 'removeItem'])->whereNumber('id')->whereNumber('item')->name('api.price-list.drafts.items.destroy');
-        Route::post('/price-list/drafts/{id}/vendors', [\App\Http\Controllers\Api\PriceListDraftController::class, 'addVendors'])->whereNumber('id')->name('api.price-list.drafts.vendors.store');
-        Route::delete('/price-list/drafts/{id}/vendors/{vendor}', [\App\Http\Controllers\Api\PriceListDraftController::class, 'removeVendor'])->whereNumber('id')->whereNumber('vendor')->name('api.price-list.drafts.vendors.destroy');
-        Route::put('/price-list/drafts/{id}/cells', [\App\Http\Controllers\Api\PriceListDraftController::class, 'setCell'])->whereNumber('id')->name('api.price-list.drafts.cells');
-        Route::post('/price-list/drafts/{id}/finish', [\App\Http\Controllers\Api\PriceListDraftController::class, 'finish'])->whereNumber('id')->name('api.price-list.drafts.finish');
-        Route::delete('/price-list/drafts/{id}', [\App\Http\Controllers\Api\PriceListDraftController::class, 'destroy'])->whereNumber('id')->name('api.price-list.drafts.destroy');
+        Route::get('/price-list/drafts/available-items', [PriceListDraftController::class, 'availableItems'])->name('api.price-list.drafts.available-items');
+        Route::post('/price-list/drafts', [PriceListDraftController::class, 'store'])->name('api.price-list.drafts.store');
+        Route::post('/price-list/drafts/{id}/items', [PriceListDraftController::class, 'addItems'])->whereNumber('id')->name('api.price-list.drafts.items.store');
+        Route::delete('/price-list/drafts/{id}/items/{item}', [PriceListDraftController::class, 'removeItem'])->whereNumber('id')->whereNumber('item')->name('api.price-list.drafts.items.destroy');
+        Route::post('/price-list/drafts/{id}/vendors', [PriceListDraftController::class, 'addVendors'])->whereNumber('id')->name('api.price-list.drafts.vendors.store');
+        Route::delete('/price-list/drafts/{id}/vendors/{vendor}', [PriceListDraftController::class, 'removeVendor'])->whereNumber('id')->whereNumber('vendor')->name('api.price-list.drafts.vendors.destroy');
+        Route::put('/price-list/drafts/{id}/cells', [PriceListDraftController::class, 'setCell'])->whereNumber('id')->name('api.price-list.drafts.cells');
+        Route::post('/price-list/drafts/{id}/finish', [PriceListDraftController::class, 'finish'])->whereNumber('id')->name('api.price-list.drafts.finish');
+        Route::delete('/price-list/drafts/{id}', [PriceListDraftController::class, 'destroy'])->whereNumber('id')->name('api.price-list.drafts.destroy');
     });
     Route::middleware('permission:rfq.view')->group(function () {
-        Route::get('/price-list/matrix', [\App\Http\Controllers\Api\PriceListController::class, 'matrix'])->name('api.price-list.matrix');
-        Route::get('/price-list/items/{item}/units', [\App\Http\Controllers\Api\PriceListController::class, 'units'])->whereNumber('item')->name('api.price-list.units');
-        Route::get('/price-list', [\App\Http\Controllers\Api\PriceListController::class, 'index'])->name('api.price-list.index');
-        Route::get('/price-list/{price}', [\App\Http\Controllers\Api\PriceListController::class, 'show'])->whereNumber('price')->name('api.price-list.show');
-        Route::get('/price-list/{price}/history', [\App\Http\Controllers\Api\PriceListController::class, 'history'])->whereNumber('price')->name('api.price-list.history');
+        Route::get('/price-list/matrix', [PriceListController::class, 'matrix'])->name('api.price-list.matrix');
+        Route::get('/price-list/items/{item}/units', [PriceListController::class, 'units'])->whereNumber('item')->name('api.price-list.units');
+        Route::get('/price-list', [PriceListController::class, 'index'])->name('api.price-list.index');
+        Route::get('/price-list/{price}', [PriceListController::class, 'show'])->whereNumber('price')->name('api.price-list.show');
+        Route::get('/price-list/{price}/history', [PriceListController::class, 'history'])->whereNumber('price')->name('api.price-list.history');
     });
-    Route::post('/price-list', [\App\Http\Controllers\Api\PriceListController::class, 'store'])
+    Route::post('/price-list', [PriceListController::class, 'store'])
         ->middleware('permission:rfq.create')->name('api.price-list.store');
     Route::middleware('permission:rfq.update')->group(function () {
-        Route::put('/price-list/{price}', [\App\Http\Controllers\Api\PriceListController::class, 'update'])->whereNumber('price')->name('api.price-list.update');
-        Route::post('/price-list/{price}/archive', [\App\Http\Controllers\Api\PriceListController::class, 'archive'])->whereNumber('price')->name('api.price-list.archive');
+        Route::put('/price-list/{price}', [PriceListController::class, 'update'])->whereNumber('price')->name('api.price-list.update');
+        Route::post('/price-list/{price}/archive', [PriceListController::class, 'archive'])->whereNumber('price')->name('api.price-list.archive');
     });
     Route::get('/purchase-orders/divisi-options', [PurchaseOrderController::class, 'divisiOptions'])
         ->middleware('permission:po.view')->name('api.po.divisi-options');
@@ -766,27 +858,27 @@ Route::middleware('auth:sanctum')->group(function (): void {
     Route::post('/tyre-changes/{tyreChange}/close', [Tracking\TyreChangeController::class, 'close'])->middleware('permission:tyre.close')->name('api.tyre.close');
 
     // Kartu Stock (paper "KARTU STOCK BARANG": created from Master Barang, lines by hand, print / PDF) — permissions in the controller
-    Route::get('/stock-card-projects', [\App\Http\Controllers\Api\StockCardProjectController::class, 'index'])->name('api.stock-card-projects.index');
-    Route::post('/stock-card-projects', [\App\Http\Controllers\Api\StockCardProjectController::class, 'store'])->name('api.stock-card-projects.store');
-    Route::get('/stock-card-projects/{project}', [\App\Http\Controllers\Api\StockCardProjectController::class, 'show'])->name('api.stock-card-projects.show');
-    Route::put('/stock-card-projects/{project}', [\App\Http\Controllers\Api\StockCardProjectController::class, 'update'])->name('api.stock-card-projects.update');
-    Route::delete('/stock-card-projects/{project}', [\App\Http\Controllers\Api\StockCardProjectController::class, 'destroy'])->name('api.stock-card-projects.destroy');
-    Route::get('/stock-card-projects/{project}/pdf', [\App\Http\Controllers\Api\StockCardProjectController::class, 'pdf'])->name('api.stock-card-projects.pdf');
-    Route::get('/stock-card-projects/{project}/share-links', [\App\Http\Controllers\Api\StockCardShareLinkController::class, 'index'])->name('api.stock-card-projects.share-links.index');
-    Route::post('/stock-card-projects/{project}/share-links', [\App\Http\Controllers\Api\StockCardShareLinkController::class, 'store'])->name('api.stock-card-projects.share-links.store');
-    Route::put('/stock-card-share-links/{link}', [\App\Http\Controllers\Api\StockCardShareLinkController::class, 'update'])->name('api.stock-card-share-links.update');
-    Route::delete('/stock-card-share-links/{link}', [\App\Http\Controllers\Api\StockCardShareLinkController::class, 'destroy'])->name('api.stock-card-share-links.destroy');
-    Route::get('/stock-card/items', [\App\Http\Controllers\Api\StockCardController::class, 'items'])->name('api.stock-card.items');
-    Route::get('/stock-cards', [\App\Http\Controllers\Api\StockCardController::class, 'index'])->name('api.stock-cards.index');
-    Route::get('/stock-cards/next-number', [\App\Http\Controllers\Api\StockCardController::class, 'nextNumber'])->name('api.stock-cards.next-number');
-    Route::post('/stock-cards', [\App\Http\Controllers\Api\StockCardController::class, 'store'])->name('api.stock-cards.store');
-    Route::get('/stock-cards/{stockCard}', [\App\Http\Controllers\Api\StockCardController::class, 'show'])->name('api.stock-cards.show');
-    Route::put('/stock-cards/{stockCard}', [\App\Http\Controllers\Api\StockCardController::class, 'update'])->name('api.stock-cards.update');
-    Route::delete('/stock-cards/{stockCard}', [\App\Http\Controllers\Api\StockCardController::class, 'destroy'])->name('api.stock-cards.destroy');
-    Route::get('/stock-cards/{stockCard}/pdf', [\App\Http\Controllers\Api\StockCardController::class, 'pdf'])->name('api.stock-cards.pdf');
-    Route::post('/stock-cards/{stockCard}/entries', [\App\Http\Controllers\Api\StockCardController::class, 'storeEntry'])->name('api.stock-cards.entries.store');
-    Route::put('/stock-cards/{stockCard}/entries/{entry}', [\App\Http\Controllers\Api\StockCardController::class, 'updateEntry'])->name('api.stock-cards.entries.update');
-    Route::delete('/stock-cards/{stockCard}/entries/{entry}', [\App\Http\Controllers\Api\StockCardController::class, 'destroyEntry'])->name('api.stock-cards.entries.destroy');
+    Route::get('/stock-card-projects', [StockCardProjectController::class, 'index'])->name('api.stock-card-projects.index');
+    Route::post('/stock-card-projects', [StockCardProjectController::class, 'store'])->name('api.stock-card-projects.store');
+    Route::get('/stock-card-projects/{project}', [StockCardProjectController::class, 'show'])->name('api.stock-card-projects.show');
+    Route::put('/stock-card-projects/{project}', [StockCardProjectController::class, 'update'])->name('api.stock-card-projects.update');
+    Route::delete('/stock-card-projects/{project}', [StockCardProjectController::class, 'destroy'])->name('api.stock-card-projects.destroy');
+    Route::get('/stock-card-projects/{project}/pdf', [StockCardProjectController::class, 'pdf'])->name('api.stock-card-projects.pdf');
+    Route::get('/stock-card-projects/{project}/share-links', [StockCardShareLinkController::class, 'index'])->name('api.stock-card-projects.share-links.index');
+    Route::post('/stock-card-projects/{project}/share-links', [StockCardShareLinkController::class, 'store'])->name('api.stock-card-projects.share-links.store');
+    Route::put('/stock-card-share-links/{link}', [StockCardShareLinkController::class, 'update'])->name('api.stock-card-share-links.update');
+    Route::delete('/stock-card-share-links/{link}', [StockCardShareLinkController::class, 'destroy'])->name('api.stock-card-share-links.destroy');
+    Route::get('/stock-card/items', [StockCardController::class, 'items'])->name('api.stock-card.items');
+    Route::get('/stock-cards', [StockCardController::class, 'index'])->name('api.stock-cards.index');
+    Route::get('/stock-cards/next-number', [StockCardController::class, 'nextNumber'])->name('api.stock-cards.next-number');
+    Route::post('/stock-cards', [StockCardController::class, 'store'])->name('api.stock-cards.store');
+    Route::get('/stock-cards/{stockCard}', [StockCardController::class, 'show'])->name('api.stock-cards.show');
+    Route::put('/stock-cards/{stockCard}', [StockCardController::class, 'update'])->name('api.stock-cards.update');
+    Route::delete('/stock-cards/{stockCard}', [StockCardController::class, 'destroy'])->name('api.stock-cards.destroy');
+    Route::get('/stock-cards/{stockCard}/pdf', [StockCardController::class, 'pdf'])->name('api.stock-cards.pdf');
+    Route::post('/stock-cards/{stockCard}/entries', [StockCardController::class, 'storeEntry'])->name('api.stock-cards.entries.store');
+    Route::put('/stock-cards/{stockCard}/entries/{entry}', [StockCardController::class, 'updateEntry'])->name('api.stock-cards.entries.update');
+    Route::delete('/stock-cards/{stockCard}/entries/{entry}', [StockCardController::class, 'destroyEntry'])->name('api.stock-cards.entries.destroy');
     // evidence photos of every tracking module (permission checked per module in the controller)
     Route::get('/tracking-photos/{photo}', [Tracking\TrackingPhotoController::class, 'show'])->name('api.tracking-photos.show');
     Route::post('/tracking-photos', [Tracking\TrackingPhotoController::class, 'store'])->name('api.tracking-photos.store');
@@ -828,9 +920,9 @@ Route::middleware('auth:sanctum')->group(function (): void {
 
     // Manufacturing (BoM + Manufacturing Order) — App\Services\Mrp. Separate from the Tracking sheet above.
     Route::prefix('mrp')->group(function (): void {
-        $bom = \App\Http\Controllers\Api\Mrp\BomController::class;
-        $mo = \App\Http\Controllers\Api\Mrp\ProductionController::class;
-        $rep = \App\Http\Controllers\Api\Mrp\MrpReportController::class;
+        $bom = BomController::class;
+        $mo = ProductionController::class;
+        $rep = MrpReportController::class;
         Route::middleware('permission:mrp.view')->group(function () use ($bom, $mo, $rep): void {
             Route::get('/dashboard', [$rep, 'dashboard'])->name('api.mrp.dashboard');
             Route::get('/reports', [$rep, 'report'])->name('api.mrp.reports');
@@ -872,7 +964,7 @@ Route::middleware('auth:sanctum')->group(function (): void {
     // Odoo-style document collaboration: Smart Buttons, Chatter, Activities, Audit — App\Support\Documents.
     // The document's own view rule is checked in the controller (DocumentRegistry::canView), so no extra permission key.
     Route::prefix('documents')->group(function (): void {
-        $c = \App\Http\Controllers\Api\DocumentController::class;
+        $c = DocumentController::class;
         $types = 'item_request|delivery_order|ppb_draft|purchase_request|purchase_order|receipt|purchase_return';
         Route::get('/activities/mine', [$c, 'myActivities'])->name('api.documents.activities.mine');
         Route::prefix('{type}/{id}')->where(['type' => $types, 'id' => '[0-9]+'])->group(function () use ($c): void {
@@ -893,7 +985,7 @@ Route::middleware('auth:sanctum')->group(function (): void {
 
     // Disassembly (unbuild): one product taken apart into its BoM components — App\Services\Disassembly.
     Route::prefix('disassembly')->group(function (): void {
-        $c = \App\Http\Controllers\Api\Disassembly\DisassemblyController::class;
+        $c = DisassemblyController::class;
         Route::middleware('permission:disassembly.view')->group(function () use ($c): void {
             Route::get('/dashboard', [$c, 'dashboard'])->name('api.disassembly.dashboard');
             Route::get('/history', [$c, 'history'])->name('api.disassembly.history');
@@ -930,9 +1022,9 @@ Route::middleware('auth:sanctum')->group(function (): void {
     Route::get('/dashboard/inventory', InventoryDashboardController::class)->name('api.dashboard.inventory');
     Route::get('/dashboard/inventory/filters', [InventoryDashboardController::class, 'filters'])->name('api.dashboard.inventory.filters');
     // Tracking & Pembelian: aggregates for every role, the document lists per view permission.
-    Route::get('/dashboard/operations', \App\Http\Controllers\Api\OperationsDashboardController::class)->name('api.dashboard.operations');
+    Route::get('/dashboard/operations', OperationsDashboardController::class)->name('api.dashboard.operations');
     // Kartu Stock: barang masuk / keluar per hari, minggu, bulan (who may open Kartu Stock).
-    Route::get('/dashboard/stock-cards', \App\Http\Controllers\Api\StockCardDashboardController::class)->name('api.dashboard.stock-cards');
+    Route::get('/dashboard/stock-cards', StockCardDashboardController::class)->name('api.dashboard.stock-cards');
 
     // PHASE 10 — Laporan & export (xlsx / csv / pdf-print).
     Route::get('/export/{dataset}', ExportController::class)->name('api.export');

@@ -9,12 +9,13 @@ class DashboardNote extends Model
 {
     public const COLORS = ['yellow', 'pink', 'green', 'blue', 'purple', 'orange'];
 
-    protected $fillable = ['user_id', 'title', 'body', 'checklist', 'color', 'pinned', 'done_at', 'remind_at'];
+    protected $fillable = ['user_id', 'anchor', 'layout', 'title', 'body', 'checklist', 'color', 'pinned', 'done_at', 'remind_at'];
 
     protected function casts(): array
     {
         return [
             'checklist' => 'array',
+            'layout' => 'array',
             'pinned' => 'boolean',
             'done_at' => 'datetime',
             'remind_at' => 'datetime',
