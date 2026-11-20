@@ -109,6 +109,9 @@ const LAUNCHER: LauncherDef[] = [
 
 export const COMING_SOON_PATH = '/coming-soon'
 
+/** Coming Soon tiles (Sales, Accounting, …) are hidden for now; true shows them on the launcher again. */
+export const SHOW_COMING_SOON = false
+
 export interface LauncherApp {
   key: string
   category: CategoryKey
@@ -146,6 +149,7 @@ export function launcherApps(groups: NavGroup[], hasPermission: (p: string) => b
   for (const def of LAUNCHER) {
     const base = { key: def.key, category: def.category, label: def.label, icon: def.icon, color: def.color, description: def.description }
     if (def.comingSoon) {
+      if (!SHOW_COMING_SOON) continue
       apps.push({ ...base, to: `${COMING_SOON_PATH}/${def.key}`, comingSoon: true, items: [], keywords: def.description })
       continue
     }

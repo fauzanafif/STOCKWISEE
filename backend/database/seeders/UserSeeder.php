@@ -29,17 +29,17 @@ class UserSeeder extends Seeder
         $accounts = [
             ['username' => 'superadmin', 'email' => 'superadmin@gmail.com', 'name' => 'Super Admin', 'roles' => ['super_admin'], 'site' => $sda],
             ['username' => 'admingudang', 'email' => 'admingudang@gmail.com', 'name' => 'Admin Gudang', 'roles' => ['admin_gudang'], 'site' => $sda],
-            ['username' => 'adminlapangan', 'email' => 'adminlapangan@gmail.com', 'name' => 'Admin Lapangan', 'roles' => ['lapangan_gudang'], 'site' => $sda],
+            ['username' => 'adminlapangan', 'email' => 'adminlapangan@gmail.com', 'name' => 'Admin Lapangan', 'roles' => ['admin_gudang'], 'site' => $sda],
             ['username' => 'purchasing', 'email' => 'purchasing@gmail.com', 'name' => 'Purchasing', 'roles' => ['purchasing'], 'site' => $sda],
-            ['username' => 'bos', 'email' => 'bos@gmail.com', 'name' => 'BOS / Management', 'roles' => ['bos'], 'site' => $sda],
+            ['username' => 'bos', 'email' => 'bos@gmail.com', 'name' => 'BOS / Management', 'roles' => ['direktur'], 'site' => $sda],
             ['username' => 'kariawan', 'email' => 'kariawan@gmail.com', 'name' => 'Karyawan', 'roles' => ['karyawan'], 'site' => $sda],
             // Staff PT Surya Inti Gas (2026-09-09) — semua role karyawan.
             ['username' => 'fauzan', 'email' => 'fauzan@gmail.com', 'name' => 'Fauzan', 'phone' => '087715769615', 'position' => 'IT Engineer', 'department' => 'IT', 'roles' => ['karyawan'], 'site' => $sda],
             ['username' => 'rosul', 'email' => 'rosul@gmail.com', 'name' => 'Rosul', 'phone' => '+62 895-3274-08813', 'position' => 'Gudang', 'department' => 'Gudang', 'roles' => ['karyawan'], 'site' => $sda],
             ['username' => 'misse', 'email' => 'misse@gmail.com', 'name' => 'Misse', 'phone' => '+62 858-9520-2576', 'position' => 'Admin Tabung', 'department' => 'Distribusi Tabung', 'roles' => ['karyawan'], 'site' => $sda],
             // extra roles not named by the client, kept for testing
-            ['username' => 'anakgudang1', 'email' => 'anakgudang1@gmail.com', 'name' => 'Anak Gudang 1', 'roles' => ['anak_gudang'], 'site' => $sda],
-            ['username' => 'anakgudang2', 'email' => 'anakgudang2@gmail.com', 'name' => 'Anak Gudang 2', 'roles' => ['anak_gudang'], 'site' => $sda],
+            ['username' => 'anakgudang1', 'email' => 'anakgudang1@gmail.com', 'name' => 'Anak Gudang 1', 'roles' => ['admin_gudang'], 'site' => $sda],
+            ['username' => 'anakgudang2', 'email' => 'anakgudang2@gmail.com', 'name' => 'Anak Gudang 2', 'roles' => ['admin_gudang'], 'site' => $sda],
             ['username' => 'karyawanbpn', 'email' => 'karyawanbpn@gmail.com', 'name' => 'Karyawan Balikpapan', 'roles' => ['karyawan'], 'site' => $bpn],
         ];
 

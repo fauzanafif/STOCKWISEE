@@ -18,12 +18,8 @@ class StoreItemRequest extends FormRequest
             'code' => ['required', 'string', 'max:40', Rule::unique('items', 'code')],
             'description' => ['required', 'string', 'max:400'],
             'category_id' => ['nullable', 'integer', Rule::exists('categories', 'id')],
-            'unit_id' => ['nullable', 'integer', Rule::exists('units', 'id'), function (string $attr, mixed $value, \Closure $fail) {
-                // UOM: one of the fixed list (App\Support\ItemOptions::UOM)
-                if ($value !== null && ! in_array(\App\Models\Unit::whereKey($value)->value('code'), \App\Support\ItemOptions::UOM, true)) {
-                    $fail('Pilih UOM dari daftar yang tersedia.');
-                }
-            }],
+            'unit_id' => ['nullable', 'integer', Rule::exists('units', 'id'), // UOM: one its category allows (Master UOM › Parent Category; none set: the fixed list ItemOptions::UOM)
+                \App\Services\Uom\CategoryUomRules::itemUnitRule($this, null)],
             'item_type' => ['sometimes', Rule::in(['CONSUMABLE', 'SERIALIZED', 'ASSET_PART', 'TYRE', 'MANUFACTURED'])],
             'product_kind' => ['sometimes', Rule::in(['BARANG', 'JASA'])],
             'needs_blueprint' => ['sometimes', 'boolean'],

@@ -252,7 +252,10 @@ Route::middleware('auth:sanctum')->group(function (): void {
     Route::get('/uom/preview', [UomController::class, 'preview'])->middleware('permission:ri.create|npbg.create|ppb.create|item_request.process|po.create|master.unit.view')->name('api.uom.preview');
     Route::get('/uom/unmapped', [UomController::class, 'unmapped'])->middleware('permission:master.unit.view')->name('api.uom.unmapped');
     Route::get('/uom/convert', [UomController::class, 'convert'])->middleware('permission:master.unit.view')->name('api.uom.convert');
+    Route::get('/uom/category-rules', [UomController::class, 'categoryRules'])->middleware('permission:master.unit.view')->name('api.uom.category-rules');
     Route::get('/items/{item}/unit-conversions', [UomController::class, 'itemConversions'])->whereNumber('item')->middleware('permission:master.unit.view')->name('api.items.unit-conversions');
+    // an item's own ratio (1 BOX = 12 PCS of this item): who manages units, or who may edit the item from its form
+    Route::post('/items/{item}/unit-conversions', [UomController::class, 'saveItemConversion'])->whereNumber('item')->middleware('permission:master.unit.manage|item.update|item.create')->name('api.items.unit-conversions.store');
     Route::middleware('permission:master.unit.manage')->controller(UomController::class)->group(function (): void {
         Route::put('/items/{item}/base-unit', 'setBaseUnit')->whereNumber('item')->name('api.items.base-unit');
         Route::post('/uom/categories', 'storeCategory')->name('api.uom.categories.store');
@@ -260,7 +263,7 @@ Route::middleware('auth:sanctum')->group(function (): void {
         Route::delete('/uom/categories/{category}', 'destroyCategory')->name('api.uom.categories.destroy');
         Route::post('/uom/units', 'storeUnit')->name('api.uom.units.store');
         Route::put('/uom/units/{unit}', 'updateUnit')->name('api.uom.units.update');
-        Route::post('/items/{item}/unit-conversions', 'saveItemConversion')->whereNumber('item')->name('api.items.unit-conversions.store');
+        Route::put('/uom/category-rules/{category}', 'saveCategoryRules')->whereNumber('category')->name('api.uom.category-rules.save');
         Route::post('/items/{item}/unit-conversions/{conversion}/confirm', 'confirmItemConversion')->whereNumber(['item', 'conversion'])->name('api.items.unit-conversions.confirm');
         Route::delete('/items/{item}/unit-conversions/{conversion}', 'destroyItemConversion')->whereNumber('item')->name('api.items.unit-conversions.destroy');
     });

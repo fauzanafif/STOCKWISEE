@@ -14,7 +14,6 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { EVENT_LABELS, VarianceValue, fmtDateTime, fmtQty } from './OpnameWorkspacePage'
-import { OpnameOrderForm } from './OpnameOrderForm'
 
 const ACCURACY = '#2563eb'
 const DONE = '#10b981'
@@ -49,7 +48,6 @@ export function OpnameDashboardPage() {
   const { hasPermission } = useAuth()
   const navigate = useNavigate()
   const [f, setF] = useState<DashboardFilters>({})
-  const [creating, setCreating] = useState(false)
   const { data, isLoading, error } = useOpnameDashboard(f)
   const { data: opt } = useFormOptions()
   const set = (p: Partial<DashboardFilters>) => setF((v) => ({ ...v, ...p }))
@@ -60,7 +58,7 @@ export function OpnameDashboardPage() {
     <div className="space-y-4">
       <PageHeader title="Stock Opname" actions={<>
         <Button size="sm" variant="outline" onClick={() => navigate('/stock-opnames')}><FileText className="size-4" /> Documents</Button>
-        {hasPermission('opname.schedule') && <Button size="sm" onClick={() => setCreating(true)}><Plus className="size-4" /> New Stock Opname</Button>}
+        {hasPermission('opname.schedule') && <Button size="sm" onClick={() => navigate('/stock-opnames/new')}><Plus className="size-4" /> New Stock Opname</Button>}
       </>} />
 
       {/* filters: one row above everything */}
@@ -197,7 +195,6 @@ export function OpnameDashboardPage() {
           )}
         </>
       )}
-      {creating && <OpnameOrderForm onClose={() => setCreating(false)} />}
     </div>
   )
 }

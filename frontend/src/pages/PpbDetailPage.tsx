@@ -28,6 +28,7 @@ export function PpbDetailPage() {
   // the whole PPB document (all its lines); this page's line is highlighted
   const items = (ppb.document_items?.length ?? 0) > 1 ? ppb.document_items! : null
   const activity = ppbActivity(ppb)
+  const fromAccurate = !!ppb.accurate_synced_at
 
   return (
     <DocPage
@@ -45,9 +46,10 @@ export function PpbDetailPage() {
             { label: 'Division', value: ppbDivisi(ppb.divisi) },
             { label: 'Requester', value: ppb.peminta },
             { label: 'Item status', value: [ppb.is_amend ? 'Amend' : null, ppb.line_status ? PPB_LINE_STATUS[ppb.line_status]?.label ?? ppb.line_status : null].filter(Boolean).join(' + ') || null },
-            { label: 'Documents in Accurate', value: ppb.status ? PPB_STATUS[ppb.status]?.label ?? ppb.status : null },
+            // a STOCKWISE Purchase Request has no Accurate document status
+            ...(fromAccurate ? [{ label: 'Documents in Accurate', value: ppb.status ? PPB_STATUS[ppb.status]?.label ?? ppb.status : null }] : []),
+            ...(ppb.keterangan ? [{ label: 'Remarks', value: <span className="whitespace-pre-wrap"><DocText text={ppb.keterangan} /></span> }] : []),
           ]} />
-          <div className="mt-3 border-t pt-3"><PpbStatusBadges ppb={ppb} withHint /></div>
         </DocSection>
         {activity.length > 0 && <DocSection title="Activity"><Activity items={activity} /></DocSection>}
         <SyncNote at={ppb.accurate_synced_at} />
@@ -56,51 +58,56 @@ export function PpbDetailPage() {
       <SmartButtons type="purchase_request" id={ppbId} />
       <PpbApprovalCard ppb={ppb} />
 
-      <DocSection title="Item">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div className="min-w-0">
-            <div className="text-base font-medium leading-snug">{ppb.deskripsi_barang ?? '—'}</div>
-            <div className="mt-0.5 text-[13px] text-muted-foreground">{ppb.kode_barang ?? '—'}</div>
+      {items ? (
+        // the approval covers every line of the document: one list of all of them, this one marked
+        <DocSection title="Items" count={items.length} flush>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="whitespace-nowrap border-b bg-muted/40 text-left text-xs text-muted-foreground">
+                <tr>
+                  <th className="w-8 px-4 py-2 text-right font-medium">#</th><th className="px-3 py-2 font-medium">Item</th>
+                  <th className="hidden px-3 py-2 font-medium md:table-cell">Source</th><th className="px-4 py-2 text-right font-medium">Qty</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {items.map((it, i) => {
+                  const here = it.id === ppb.id
+                  return (
+                    <tr key={it.id ?? i} className={cn(here && 'bg-primary/5')}>
+                      <td className="px-4 py-2.5 text-right align-top text-xs text-muted-foreground">{i + 1}</td>
+                      <td className="px-3 py-2.5">
+                        {here || !it.id ? <span className={cn('block', here && 'font-medium')}>{it.deskripsi_barang ?? '-'}</span>
+                          : <Link to={`/ppb/${it.id}`} className="block hover:text-primary hover:underline">{it.deskripsi_barang ?? '-'}</Link>}
+                        <span className="block text-xs text-muted-foreground">{it.kode_barang ?? '-'}{it.catatan_baris ? ` · ${it.catatan_baris}` : ''}</span>
+                        {here && (
+                          <span className="mt-1 block text-xs text-muted-foreground">Ordered {ppb.qty_dipesan ?? 0} · Received {ppb.qty_diterima ?? 0}</span>
+                        )}
+                      </td>
+                      <td className="hidden px-3 py-2.5 align-top md:table-cell">{it.reference ? <PpbReference r={it.reference} /> : <span className="text-xs text-muted-foreground">—</span>}</td>
+                      <td className="whitespace-nowrap px-4 py-2.5 text-right align-top font-medium tabular-nums">
+                        {it.kuantitas ?? '-'} <span className="text-xs font-normal text-muted-foreground">{it.satuan ?? ''}</span>
+                        {here && <InBaseUom qty={ppb.kuantitas} ratio={ppb.unit_ratio} base={ppb.base_satuan} />}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
           </div>
-          <dl className="grid shrink-0 grid-cols-3 gap-4 text-right sm:gap-6">
-            <div><dt className="text-xs text-muted-foreground">Requested</dt><dd className="text-lg font-semibold tabular-nums">{ppb.kuantitas ?? '—'} <span className="text-xs font-normal text-muted-foreground">{ppb.satuan ?? ''}</span><InBaseUom qty={ppb.kuantitas} ratio={ppb.unit_ratio} base={ppb.base_satuan} /></dd></div>
-            <div><dt className="text-xs text-muted-foreground">Ordered</dt><dd className="text-lg font-semibold tabular-nums">{ppb.qty_dipesan ?? 0}</dd></div>
-            <div><dt className="text-xs text-muted-foreground">Received</dt><dd className="text-lg font-semibold tabular-nums">{ppb.qty_diterima ?? 0}</dd></div>
-          </dl>
-        </div>
-        <div className="mt-4 space-y-3 border-t pt-3">
-          <div>
-            <div className="text-xs text-muted-foreground">Remarks</div>
-            <div className="mt-0.5 whitespace-pre-wrap"><DocText text={ppb.keterangan} /></div>
-          </div>
-          {ppb.catatan_baris && (
-            <div>
-              <div className="text-xs text-muted-foreground">Row notes</div>
-              <div className="mt-0.5 whitespace-pre-wrap">{ppb.catatan_baris}</div>
+        </DocSection>
+      ) : (
+        <DocSection title="Item">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
+              <div className="text-base font-medium leading-snug">{ppb.deskripsi_barang ?? '—'}</div>
+              <div className="mt-0.5 text-[13px] text-muted-foreground">{ppb.kode_barang ?? '—'}{ppb.catatan_baris ? ` · ${ppb.catatan_baris}` : ''}</div>
             </div>
-          )}
-        </div>
-      </DocSection>
-
-      {/* the approval covers every line of the document: all of them, this one marked */}
-      {items && (
-        <DocSection title="Purchase Request document content" count={items.length} flush>
-          <ul className="divide-y">
-            {items.map((it, i) => (
-              <li key={it.id} className={cn('flex items-start gap-3 px-4 py-2.5', it.id === ppb.id && 'bg-primary/5')}>
-                <span className="w-5 shrink-0 pt-0.5 text-right text-xs text-muted-foreground">{i + 1}</span>
-                <span className="min-w-0 flex-1">
-                  {it.id === ppb.id || !it.id ? <span className="block">{it.deskripsi_barang ?? '-'}</span>
-                    : <Link to={`/ppb/${it.id}`} className="block hover:text-primary hover:underline">{it.deskripsi_barang ?? '-'}</Link>}
-                  <span className="block text-xs text-muted-foreground">
-                    <span className="">{it.kode_barang ?? '-'}</span>{it.peminta ? ` · ${it.peminta}` : ''}{it.catatan_baris ? ` · ${it.catatan_baris}` : ''}
-                  </span>
-                </span>
-                <span className="hidden shrink-0 sm:block"><PpbReference r={it.reference} /></span>
-                <span className="shrink-0 whitespace-nowrap font-medium tabular-nums">{it.kuantitas ?? '-'} {it.satuan ?? ''}</span>
-              </li>
-            ))}
-          </ul>
+            <dl className="grid shrink-0 grid-cols-3 gap-4 text-right sm:gap-6">
+              <div><dt className="text-xs text-muted-foreground">Requested</dt><dd className="text-lg font-semibold tabular-nums">{ppb.kuantitas ?? '—'} <span className="text-xs font-normal text-muted-foreground">{ppb.satuan ?? ''}</span><InBaseUom qty={ppb.kuantitas} ratio={ppb.unit_ratio} base={ppb.base_satuan} /></dd></div>
+              <div><dt className="text-xs text-muted-foreground">Ordered</dt><dd className="text-lg font-semibold tabular-nums">{ppb.qty_dipesan ?? 0}</dd></div>
+              <div><dt className="text-xs text-muted-foreground">Received</dt><dd className="text-lg font-semibold tabular-nums">{ppb.qty_diterima ?? 0}</dd></div>
+            </dl>
+          </div>
         </DocSection>
       )}
 

@@ -71,6 +71,8 @@ export function RiFormModal({ open, onClose }: Props) {
   const [satuan, setSatuan] = useState('')
   const [hargaSatuan, setHargaSatuan] = useState<number | ''>('')
   const [noSeri, setNoSeri] = useState<string[]>([])
+  // a manual Receipt: does this item have serial numbers? (not every item does)
+  const [manualHasSn, setManualHasSn] = useState(false)
   const [pemeriksa, setPemeriksa] = useState('')
   const [tglRi, setTglRi] = useState('')
   const [keterangan, setKeterangan] = useState('')
@@ -86,6 +88,8 @@ export function RiFormModal({ open, onClose }: Props) {
   const [poOrder, setPoOrder] = useState<RiPoOrder | null>(null)
   const [poQty, setPoQty] = useState<Record<number, string>>({})
   const [poSeri, setPoSeri] = useState<Record<number, string[]>>({})
+  // per PO line: "Has SN" ticked (default: the items Master Barang tracks by serial number)
+  const [poHasSn, setPoHasSn] = useState<Record<number, boolean>>({})
   const [serialsOpen, setSerialsOpen] = useState<number | null>(null)
   // RI dari PO: the proof per item (1 to 3 photos of each item received)
   const [poPhotos, setPoPhotos] = useState<Record<number, string[]>>({})
@@ -110,17 +114,17 @@ export function RiFormModal({ open, onClose }: Props) {
     if (!open) return
     setDivisi('NV'); setVendor(''); setNoPo(''); setNoSuratJalan('')
     setKodeBarang(''); setDeskripsiBarang(''); setActiveField(null)
-    setKuantitas(''); setSatuan(''); setHargaSatuan(''); setNoSeri([]); setSerialsOpen(null); setPemeriksa('')
+    setKuantitas(''); setSatuan(''); setHargaSatuan(''); setNoSeri([]); setManualHasSn(false); setSerialsOpen(null); setPemeriksa('')
     setTglRi(new Date().toISOString().slice(0, 10)); setKeterangan(''); setErr(null); setCreatedDoc(null); setPrinting(false)
     setPoSearch(''); setPhotos([]); setSource('PO'); setUsedLine(null); setUsedSearch('')
-    setPoOrder(null); setPoQty({}); setPoSeri({}); setDocs([]); setPoPhotos({})
+    setPoOrder(null); setPoQty({}); setPoSeri({}); setPoHasSn({}); setDocs([]); setPoPhotos({})
   }, [open])
 
   function pickSource(s: RiSource) {
     if (s === source) return
     setSource(s); setErr(null)
     // what a picked PO line / used goods filled in goes with it
-    setPoOrder(null); setPoQty({}); setPoSeri({})
+    setPoOrder(null); setPoQty({}); setPoSeri({}); setPoHasSn({})
     if (usedLine) {
       setUsedLine(null)
       setNoPo(''); setVendor(''); setKodeBarang(''); setDeskripsiBarang(''); setSatuan(''); setHargaSatuan(''); setKuantitas(''); setKeterangan('')
@@ -154,11 +158,13 @@ export function RiFormModal({ open, onClose }: Props) {
     setKodeBarang(item.code)
     setDeskripsiBarang(item.description)
     if (item.unit && !satuan) setSatuan(item.unit)
+    // an item Master Barang tracks by serial number starts with "has serial numbers" ticked
+    if (item.manage_sn) setManualHasSn(true)
     setActiveField(null)
   }
 
   function pickPoOrder(o: RiPoOrder) {
-    setPoOrder(o); setPoQty({}); setPoSeri({}); setPoPhotos({}); setDivisi('NA')
+    setPoOrder(o); setPoQty({}); setPoSeri({}); setPoHasSn({}); setPoPhotos({}); setDivisi('NA')
   }
 
   // photos of one PO item (the camera / gallery opened from its row)
@@ -223,6 +229,7 @@ export function RiFormModal({ open, onClose }: Props) {
       const open = new Set(poOrder.lines.filter((l) => l.remaining > 0).map((l) => l.id))
       if (read.some((l) => !open.has(l.key))) return invalidTo(setErr, `This file does not match PO ${poOrder.number}. Export it from this PO.`)
       setPoSeri((m) => ({ ...m, ...Object.fromEntries(read.map((l) => [l.key, l.serials])) }))
+      setPoHasSn((m) => ({ ...m, ...Object.fromEntries(read.filter((l) => l.serials.length > 0).map((l) => [l.key, true])) }))
       // nothing typed yet: what the file holds is what arrived
       setPoQty((q) => ({ ...q, ...Object.fromEntries(read.filter((l) => !q[l.key]?.trim()).map((l) => [l.key, String(l.serials.length)])) }))
       const off = read.find((l) => poQty[l.key]?.trim() && typedQty(l.key) !== l.serials.length)
@@ -247,6 +254,7 @@ export function RiFormModal({ open, onClose }: Props) {
       const read = await importRiSerials(file)
       if (read.length !== 1 || read[0].key !== MANUAL_KEY) return invalidTo(setErr, 'This file does not match this Receipt. Export it from this form.')
       setNoSeri(read[0].serials)
+      if (read[0].serials.length > 0) setManualHasSn(true)
       if (!kuantitas) setKuantitas(read[0].serials.length)
       toast.success(`${read[0].serials.length} serial numbers imported.`)
     } catch (e) {
@@ -258,14 +266,14 @@ export function RiFormModal({ open, onClose }: Props) {
     if (!poOrder) return invalidTo(setErr, 'Find and select the PO first, or change the source to Manual.')
     const lines = poOrder.lines.flatMap((l) => {
       const n = typedQty(l.id)
-      return poQty[l.id] && n > 0 ? [{ purchase_order_item_id: l.id, qty: n, serials: filledSerials(poSeri[l.id]), photos: poPhotos[l.id] ?? [] }] : []
+      return poQty[l.id] && n > 0 ? [{ purchase_order_item_id: l.id, qty: n, serials: hasSn(l) ? filledSerials(poSeri[l.id]) : [], photos: poPhotos[l.id] ?? [] }] : []
     })
     if (Object.values(poQty).some((v) => v.trim() !== '' && !(Number(v.replace(',', '.')) >= 0))) return invalidTo(setErr, 'The received quantity must be a number.')
     if (lines.length === 0) return invalidTo(setErr, 'Fill in the received quantity for at least one item.')
     const noRatio = poOrder.lines.find((l) => typedQty(l.id) > 0 && l.unit_problem)
     if (noRatio) return invalidTo(setErr, `${noRatio.deskripsi}: ${noRatio.unit_problem} Set it in UOM, Per item tab.`)
     for (const l of poOrder.lines) {
-      const problem = typedQty(l.id) > 0 ? serialProblem(poSeri[l.id], typedQty(l.id)) : null
+      const problem = typedQty(l.id) > 0 && hasSn(l) ? serialProblem(poSeri[l.id], typedQty(l.id), true) : null
       if (problem) { setSerialsOpen(l.id); return invalidTo(setErr, `${l.deskripsi}: ${problem}.`) }
     }
     // the proof is per item
@@ -290,7 +298,7 @@ export function RiFormModal({ open, onClose }: Props) {
       invalidTo(setErr, 'Item Description and Quantity are required.')
       return
     }
-    const serialIssue = serialProblem(noSeri, Number(kuantitas))
+    const serialIssue = manualHasSn ? serialProblem(noSeri, Number(kuantitas), true) : null
     if (serialIssue) {
       invalidTo(setErr, `Serial numbers: ${serialIssue}.`)
       return
@@ -309,7 +317,7 @@ export function RiFormModal({ open, onClose }: Props) {
       kuantitas: Number(kuantitas),
       satuan: satuan.trim() || null,
       harga_satuan: hargaSatuan === '' ? null : Number(hargaSatuan),
-      serials: filledSerials(noSeri),
+      serials: manualHasSn ? filledSerials(noSeri) : [],
       pemeriksa: pemeriksa.trim() || null,
       tgl_ri: tglRi || null,
       keterangan: keterangan.trim() || null,
@@ -355,6 +363,7 @@ export function RiFormModal({ open, onClose }: Props) {
   const proofNo = 3
 
   /** the inputs of one PO line: how many came now, its serials, its proof photos (table row and phone card alike) */
+  const hasSn = (l: RiPoOrder['lines'][number]) => poHasSn[l.id] ?? !!l.manage_sn
   const lineState = (l: RiPoOrder['lines'][number]) => {
     const typed = poQty[l.id] ?? ''
     const n = Number(typed.replace(',', '.'))
@@ -363,7 +372,7 @@ export function RiFormModal({ open, onClose }: Props) {
       partial: typed !== '' && n > 0 && n + 0.0001 < l.remaining,
       over: typed !== '' && n > l.remaining + 0.0001,
       serialCount: filledSerials(poSeri[l.id]).length,
-      serialIssue: typed !== '' && n > 0 ? serialProblem(poSeri[l.id], n) : null,
+      serialIssue: typed !== '' && n > 0 && hasSn(l) ? serialProblem(poSeri[l.id], n, true) : null,
       needsPhoto: typed !== '' && n > 0 && !(poPhotos[l.id]?.length),
     }
   }
@@ -380,6 +389,25 @@ export function RiFormModal({ open, onClose }: Props) {
         {l.unit_problem && <div className="max-w-[16rem] text-[11px] text-red-600">{l.unit_problem}</div>}
         {s.partial && <div className="text-[11px] text-amber-700">Partial · {fmtQty(Math.round((l.remaining - s.n) * 100) / 100)} still to come</div>}
         {s.over && <div className="text-[11px] text-amber-700">{fmtQty(Math.round((s.n - l.remaining) * 100) / 100)} more than ordered, still goes into stock</div>}
+      </div>
+    )
+  }
+  /** "Has SN": only a ticked item asks for serial numbers (one per unit); unticking drops what was typed */
+  const serialCell = (l: RiPoOrder['lines'][number]) => {
+    const on = hasSn(l)
+    return (
+      <div className="flex flex-col items-start gap-1.5">
+        <label className="flex h-9 cursor-pointer items-center gap-2 whitespace-nowrap text-xs font-medium">
+          <input type="checkbox" className="size-4 accent-primary" checked={on} aria-label={`${l.deskripsi} has serial numbers`}
+            onChange={(e) => {
+              const v = e.target.checked
+              setPoHasSn((m) => ({ ...m, [l.id]: v }))
+              if (v) setSerialsOpen(l.id)
+              else { setPoSeri((m) => ({ ...m, [l.id]: [] })); if (serialsOpen === l.id) setSerialsOpen(null) }
+            }} />
+          Has SN
+        </label>
+        {on && serialButton(l)}
       </div>
     )
   }
@@ -476,7 +504,7 @@ export function RiFormModal({ open, onClose }: Props) {
                   <div className="min-w-0"><div className="text-xs text-muted-foreground">Vendor</div><div className="truncate">{poOrder.vendor ?? '—'}</div></div>
                   <div><div className="text-xs text-muted-foreground">PO date</div><div>{poOrder.date ? new Date(poOrder.date).toLocaleDateString('en-GB') : '—'}</div></div>
                   <div><div className="text-xs text-muted-foreground">Waiting</div><div className="tabular-nums">{waitingLines.length} item{waitingLines.length === 1 ? '' : 's'}</div></div>
-                  <Button size="sm" variant="ghost" className="ml-auto h-8" onClick={() => { setPoOrder(null); setPoQty({}); setPoSeri({}); setPoPhotos({}) }}>Change PO</Button>
+                  <Button size="sm" variant="ghost" className="ml-auto h-8" onClick={() => { setPoOrder(null); setPoQty({}); setPoSeri({}); setPoHasSn({}); setPoPhotos({}) }}>Change PO</Button>
                 </div>
 
                 {/* wide screen: one table, nothing to scroll sideways */}
@@ -489,7 +517,7 @@ export function RiFormModal({ open, onClose }: Props) {
                         <th className="w-40 px-3 py-2.5 text-right font-medium">Ordered · Received</th>
                         <th className="w-24 px-3 py-2.5 text-right font-medium">Balance</th>
                         <th className="w-52 bg-primary/5 px-3 py-2.5 font-semibold text-primary">Received now</th>
-                        <th className="w-28 px-3 py-2.5 font-medium">Serial No.</th>
+                        <th className="w-32 px-3 py-2.5 font-medium">Serial Number</th>
                         <th className="w-40 px-3 py-2.5 font-medium">Proof photo *</th>
                       </tr>
                     </thead>
@@ -505,10 +533,10 @@ export function RiFormModal({ open, onClose }: Props) {
                             <td className="whitespace-nowrap px-3 py-3 text-right tabular-nums text-muted-foreground">{fmtQty(l.qty)} · {fmtQty(l.received)}</td>
                             <td className="whitespace-nowrap px-3 py-3 text-right font-semibold tabular-nums">{fmtQty(l.remaining)} <span className="text-xs font-normal text-muted-foreground">{l.satuan ?? ''}</span></td>
                             <td className="bg-primary/5 px-3 py-2">{qtyInput(l)}</td>
-                            <td className="px-3 py-2">{serialButton(l)}</td>
+                            <td className="px-3 py-2">{serialCell(l)}</td>
                             <td className="px-3 py-2">{photoCell(l)}</td>
                           </tr>
-                          {serialsOpen === l.id && (
+                          {serialsOpen === l.id && hasSn(l) && (
                             <tr><td colSpan={7} className="px-3 pb-3">{serialPanel(l)}</td></tr>
                           )}
                         </Fragment>
@@ -531,10 +559,10 @@ export function RiFormModal({ open, onClose }: Props) {
                       </div>
                       <div className="flex flex-wrap items-start gap-3 pl-7">
                         {qtyInput(l)}
-                        {serialButton(l)}
+                        {serialCell(l)}
                         {photoCell(l)}
                       </div>
-                      {serialsOpen === l.id && serialPanel(l)}
+                      {serialsOpen === l.id && hasSn(l) && serialPanel(l)}
                     </div>
                   ))}
                 </div>
@@ -638,8 +666,16 @@ export function RiFormModal({ open, onClose }: Props) {
               </Field>
             </div>
             <div className="mt-4 space-y-2">
-              <div className="text-sm font-medium">Serial No. <span className="font-normal tabular-nums text-muted-foreground">{filledSerials(noSeri).length}{Number.isInteger(Number(kuantitas)) && Number(kuantitas) > 0 ? ` of ${Number(kuantitas)}` : ''} · only for items with serial numbers</span></div>
-              <RiSerialEntry qty={Number(kuantitas)} value={noSeri} onChange={setNoSeri} label="Item" />
+              <label className="flex w-fit cursor-pointer items-center gap-2 text-sm font-medium">
+                <input type="checkbox" className="size-4 accent-primary" checked={manualHasSn} onChange={(e) => { setManualHasSn(e.target.checked); if (!e.target.checked) setNoSeri([]) }} />
+                This item has serial numbers
+              </label>
+              {manualHasSn && (
+                <>
+                  <div className="text-sm font-medium">Serial Number <span className="font-normal tabular-nums text-muted-foreground">{filledSerials(noSeri).length}{Number.isInteger(Number(kuantitas)) && Number(kuantitas) > 0 ? ` of ${Number(kuantitas)}` : ''} · one per unit</span></div>
+                  <RiSerialEntry qty={Number(kuantitas)} value={noSeri} onChange={setNoSeri} label="Item" />
+                </>
+              )}
             </div>
           </Section>
         )}

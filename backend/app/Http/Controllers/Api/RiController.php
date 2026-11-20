@@ -142,6 +142,8 @@ class RiController extends Controller
                 'no_ppb' => $l->approvedPpb?->no_ppb ?? $l->accuratePpb?->no_ppb,
                 'qty' => (float) $l->qty, 'received' => (float) $l->qty_received, 'remaining' => max(0, round((float) $l->qty - (float) $l->qty_received, 2)),
                 'unit_price' => (float) $l->unit_price,
+                // the item is tracked by serial number: the form ticks "Has SN" for it
+                'manage_sn' => (bool) $l->item?->manage_sn,
             ] + $this->lineConversion($l)),
         ])]);
     }

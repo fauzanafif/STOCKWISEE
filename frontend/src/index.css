@@ -166,5 +166,14 @@
 .dark .sw-aurora > i:nth-child(3) { background: #0f766e; }
 .dark .sw-aurora > i:nth-child(4) { background: #0369a1; }
 .dark .sw-aurora::after { background-image: radial-gradient(rgb(255 255 255 / .05) 1px, transparent 1px); }
+/* App Launcher greeting: words rise in one after another (once), the sun / moon floats softly */
+@keyframes sw-rise { from { opacity: 0; transform: translateY(12px); filter: blur(6px) } to { opacity: 1; transform: none; filter: none } }
+@keyframes sw-float { 0%, 100% { transform: translateY(0) } 50% { transform: translateY(-5px) } }
+@keyframes sw-turn { to { transform: rotate(360deg) } }
+@keyframes sw-halo { 0%, 100% { transform: scale(.85); opacity: .35 } 50% { transform: scale(1.15); opacity: .7 } }
+.sw-rise { animation: sw-rise .8s cubic-bezier(.2, .7, .2, 1) both; animation-delay: var(--d, 0ms); }
+.sw-float { animation: sw-float 4.5s ease-in-out infinite; }
+.sw-turn { animation: sw-turn 36s linear infinite; }
+.sw-halo { animation: sw-halo 4.5s ease-in-out infinite; }
 /* no motion for who asked the system for less */
-@media (prefers-reduced-motion: reduce) { .sw-aurora > i { animation: none !important; } }
+@media (prefers-reduced-motion: reduce) { .sw-aurora > i, .sw-rise, .sw-float, .sw-turn, .sw-halo { animation: none !important; } }

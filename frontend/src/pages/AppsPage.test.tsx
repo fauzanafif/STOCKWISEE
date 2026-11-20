@@ -50,14 +50,15 @@ describe('AppsPage (App Launcher)', () => {
     }
   })
 
-  it('sends the apps without a module to Coming Soon, not to an empty page', async () => {
+  it('hides the apps without a module (Coming Soon) for now', async () => {
     mockApi(['item.view'])
     renderWithProviders(<AppsPage />)
     const grid = await launcher()
 
-    for (const [name, key] of [['Sales', 'sales'], ['Accounting', 'accounting'], ['Assets', 'assets'], ['Documents', 'documents'], ['Projects', 'projects']]) {
-      expect(within(grid).getByRole('link', { name: new RegExp(`^${name}`) })).toHaveAttribute('href', `/coming-soon/${key}`)
+    for (const name of ['Sales', 'Accounting', 'Assets', 'Documents', 'Projects']) {
+      expect(within(grid).queryByRole('link', { name: new RegExp(`^${name}`) })).not.toBeInTheDocument()
     }
+    expect(within(grid).queryByText('Coming Soon')).not.toBeInTheDocument()
   })
 
   it('puts every module in an app: nothing is left under "Modul lainnya"', async () => {
@@ -82,7 +83,8 @@ describe('AppsPage (App Launcher)', () => {
     const grid = await launcher()
     await waitFor(() => expect(within(grid).getAllByRole('link')[0]).toHaveAccessibleName('Inventory'))
     const names = within(grid).getAllByRole('link').map((l) => l.textContent)
-    expect(names.slice(0, 3)).toEqual(['Inventory', 'SalesComing Soon', 'Purchase'])
+    expect(names[0]).toBe('Inventory')
+    expect(names).not.toContain('SalesComing Soon')
   })
 
   it('every NAV menu belongs to an app', async () => {

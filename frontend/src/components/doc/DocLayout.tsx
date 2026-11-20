@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { cn } from '@/lib/utils'
+import { useSetCrumbTitle } from '@/lib/crumbTitle'
 import { BackLink } from '@/components/BackLink'
 
 /**
@@ -24,6 +25,8 @@ export function DocPage({ back, kind, number, status, subtitle, actions, childre
   /** the document's Chatter: a panel on the right (desktop), under the document on a small screen */
   chatter?: ReactNode
 }) {
+  // the breadcrumb names the record, as in Odoo ("Purchase Request / PPB-001")
+  useSetCrumbTitle(typeof number === 'string' && number !== '—' ? number : null)
   return (
     <div className="space-y-4">
       <BackLink to={back.to} label={back.label} />

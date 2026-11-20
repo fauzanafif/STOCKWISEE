@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { FileText, LayoutDashboard, PackageCheck, Plus, Rows3, Search, X } from 'lucide-react'
 import { useOpnameLines, useOpnames, type Opname, type OpnameLineRow, type UsagePeriod } from '@/features/opname/api'
@@ -10,7 +10,6 @@ import { PageHeader } from '@/components/PageHeader'
 import { ColumnMenu, useHiddenColumns, visibleColumns } from '@/components/ColumnVisibility'
 import { DataTable, type Column } from '@/components/DataTable'
 import { useInfiniteRows } from '@/components/InfiniteRows'
-import { OpnameOrderForm } from '@/pages/opname/OpnameOrderForm'
 import { ItemUsageCount } from '@/components/ItemUsageCount'
 import { usagePeriodPresets } from '@/components/UsagePeriodFilter'
 import { Badge } from '@/components/ui/badge'
@@ -112,7 +111,6 @@ export function OpnameListPage() {
   const [dateTo, setDateTo] = useRemembered('stock-opnames', 'dateTo', '')
   const [onlyDiff, setOnlyDiff] = useRemembered('stock-opnames', 'onlyDiff', false)
   const [page, setPage] = useRemembered('stock-opnames', 'page', 1)
-  const [scheduleOpen, setScheduleOpen] = useState(false)
   // the dashboard's KPI tiles open the list on a status (?source=internal&status=REVIEW&view=docs)
   const [params, setParams] = useSearchParams()
   useEffect(() => {
@@ -259,7 +257,7 @@ export function OpnameListPage() {
               <LayoutDashboard className="size-4" /> Dashboard
             </Button>
             {hasPermission('opname.schedule') && (
-              <Button size="sm" onClick={() => setScheduleOpen(true)}>
+              <Button size="sm" onClick={() => navigate('/stock-opnames/new')}>
                 <Plus className="size-4" /> New Stock Opname
               </Button>
             )}
@@ -407,7 +405,6 @@ export function OpnameListPage() {
       )}
 
 
-      {scheduleOpen && <OpnameOrderForm onClose={() => setScheduleOpen(false)} />}
     </div>
   )
 }

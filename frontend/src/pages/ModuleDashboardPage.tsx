@@ -1,25 +1,19 @@
 import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
-import { Loader2 } from 'lucide-react'
+import { ChevronRight, Loader2 } from 'lucide-react'
 import { PageHeader } from '@/components/PageHeader'
-import { useAuth } from '@/auth/AuthContext'
 import { type ReminderModule } from '@/features/reminders/api'
-import { useIrSummary } from '@/features/importantRequests/api'
+import { IR_SCOPES, useIrList, useIrSummary, type IrRow } from '@/features/importantRequests/api'
 import { useModuleStats, type ModuleStats, type Tone } from '@/features/moduleStats/api'
+import { IrItem } from '@/pages/importantRequests/IrListPages'
 import { cn } from '@/lib/utils'
-
-/** The "Perlu dikerjakan" reminder center (shared with the main dashboard). */
-export { ReminderList } from '@/components/reminders/ReminderCenter'
-import { ReminderList } from '@/components/reminders/ReminderCenter'
-import { DraftLinesList } from '@/pages/PpbDraftPage'
-import { PoTodoList } from '@/pages/PoFlowPages'
 
 const MODULES: Record<ReminderModule, { title: string; subtitle: string }> = {
   request: { title: 'Item Request', subtitle: 'What needs to be done on item requests.' },
   ppb: { title: 'Purchase Request', subtitle: 'What needs to be done on purchase requests.' },
   po: { title: 'Purchase Order', subtitle: 'What needs to be done on purchase orders.' },
   ri: { title: 'Receipt', subtitle: 'What needs to be done on receipts.' },
-  important: { title: 'Important Request', subtitle: 'Tasks that need to be done.' },
+  important: { title: 'Important Request', subtitle: 'Overview of tasks and requests, the nearest deadline first.' },
   opname: { title: 'Stock Opname', subtitle: 'Stock opnames waiting for your step.' },
 }
 
@@ -60,29 +54,48 @@ export function TodoSection({ title, children, className }: { title: ReactNode; 
   )
 }
 
-/** Important Request: the next due dates. */
-function Upcoming() {
-  const { data: s } = useIrSummary()
-  const list = s ? [...s.near_deadline, ...s.urgent].filter((r, i, all) => all.findIndex((x) => x.id === r.id) === i && !['SELESAI', 'DIBATALKAN', 'DRAFT'].includes(r.status)).slice(0, 6) : []
-  if (!s) return <Loader2 className="mx-auto size-5 animate-spin text-muted-foreground" />
-  if (list.length === 0) return <p className="text-[13px] text-muted-foreground">No deadlines coming up.</p>
+/** Nearest deadline on top: late ones first, then by date; no deadline at the bottom (never by title). */
+export function byDeadline(rows: IrRow[]): IrRow[] {
+  const at = (r: IrRow) => (r.deadline ? new Date(r.deadline).getTime() : Infinity)
+  return [...rows].sort((a, b) => at(a) - at(b) || b.id - a.id)
+}
+
+/** One list of open Important Requests, the nearest deadline first, with a link to the whole list. */
+function DeadlineList({ title, to, rows, loading, empty, scope }: { title: string; to: string; rows: IrRow[]; loading: boolean; empty: string; scope: 'tasks' | 'mine' }) {
   return (
-    <ul className="space-y-3">
-      {list.map((r) => (
-        <li key={r.id} className="text-sm">
-          <Link to={`/important-requests/${r.id}`} className="line-clamp-2 font-medium hover:text-primary hover:underline">{r.title}</Link>
-          <div className={cn('text-xs', r.overdue ? 'font-medium text-red-600' : 'text-muted-foreground')}>
-            {r.deadline ? `${r.overdue ? 'Late · ' : 'Deadline '}${new Date(r.deadline).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}` : 'No deadline'}
-          </div>
-        </li>
-      ))}
-    </ul>
+    <section className="min-w-0 overflow-hidden rounded-lg border bg-card">
+      <div className="flex items-center justify-between gap-2 border-b px-4 py-2.5">
+        <h2 className="text-sm font-semibold">{title} <span className="ml-1 font-normal text-muted-foreground">{rows.length}</span></h2>
+        <Link to={to} className="inline-flex items-center gap-0.5 text-xs font-medium text-primary hover:underline">See all <ChevronRight className="size-3.5" /></Link>
+      </div>
+      {loading ? <div className="flex justify-center py-8"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>
+        : rows.length === 0 ? <p className="px-4 py-8 text-center text-[13px] text-muted-foreground">{empty}</p>
+        : <div className="divide-y">{rows.map((r) => <IrItem key={r.id} r={r} scope={scope} />)}</div>}
+    </section>
+  )
+}
+
+/** Important Request overview: my open tasks and my open requests, each sorted by the nearest deadline. */
+function IrDeadlines() {
+  const summary = useIrSummary()
+  const tasks = useIrList({ scope: 'tasks', part: 'open', sort: 'deadline' })
+  const mine = useIrList({ scope: 'mine', status: 'DITUGASKAN,MENUNGGU_REVIEW', sort: 'deadline' }, !!summary.data?.can_create)
+  const canCreate = !!summary.data?.can_create
+  return (
+    <div className={cn('grid items-start gap-4', canCreate && 'xl:grid-cols-2')}>
+      <DeadlineList title={IR_SCOPES.tasks.label} to={IR_SCOPES.tasks.path} scope="tasks" loading={tasks.isLoading}
+        rows={byDeadline(tasks.data?.data ?? []).slice(0, 10)} empty="No open tasks for you." />
+      {canCreate && (
+        <DeadlineList title={IR_SCOPES.mine.label} to={IR_SCOPES.mine.path} scope="mine" loading={mine.isLoading}
+          rows={byDeadline(mine.data?.data ?? []).slice(0, 10)} empty="No open requests from you." />
+      )}
+    </div>
   )
 }
 
 /**
- * A menu's Dashboard: only what has to be done now (a to-do list of the documents waiting for this user),
- * no charts. Each row opens the document or list where it is done.
+ * A menu's Dashboard: its overview (the key figures, each a link to its list). Important Request also lists
+ * the open work with the nearest deadline on top. No to-do lists.
  */
 export function ModuleDashboardPage({ module }: { module: ReminderModule }) {
   const m = MODULES[module]
@@ -94,31 +107,15 @@ export function ModuleDashboardPage({ module }: { module: ReminderModule }) {
   )
 }
 
-/** A module's key figures and to-do, without a page title: its page, or a section of an app dashboard. */
+/** A module's overview, without a page title: its key figures (and, for Important Request, the work by deadline). */
 export function ModuleDashboardBody({ module, counts = true }: { module: ReminderModule; counts?: boolean }) {
-  const { hasPermission } = useAuth()
   const stats = useModuleStats(module)
-
-  // Purchase Request / Purchase Order: the items ready to process first, the other reminders under them
-  const todo = module === 'po' && hasPermission('po.create')
-    ? <div className="space-y-4"><PoTodoList /><ReminderList module={module} exclude={['po_draft']} /></div>
-    : module === 'ppb' && hasPermission('ppb.create')
-      ? <div className="space-y-4"><DraftLinesList /><ReminderList module={module} exclude={['ppb_draft']} /></div>
-      : <ReminderList module={module} />
-
   return (
     <div className="space-y-4">
       {counts && (stats.data
         ? <Counts s={stats.data} />
         : !stats.isError && <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">{[0, 1, 2, 3].map((i) => <div key={i} className="h-[62px] animate-pulse rounded-lg border bg-muted/40" />)}</div>)}
-      {module === 'important' ? (
-        <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-          <TodoSection title="To do">{todo}</TodoSection>
-          <TodoSection title="Upcoming deadlines"><Upcoming /></TodoSection>
-        </div>
-      ) : (
-        <TodoSection title="To do">{todo}</TodoSection>
-      )}
+      {module === 'important' && <IrDeadlines />}
     </div>
   )
 }

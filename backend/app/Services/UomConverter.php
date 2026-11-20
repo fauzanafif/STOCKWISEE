@@ -102,7 +102,53 @@ class UomConverter
             throw ValidationException::withMessages(['to' => "Isi {$varies} berbeda per barang. ".($item ? 'Tetapkan rasionya untuk barang ini.' : 'Pilih barangnya.')]);
         }
 
-        return bcdiv(self::dec($from->ratio), self::dec($to->ratio), self::SCALE);
+        return self::ratioBetween($from, $to);
+    }
+
+    /**
+     * How many references one unit is, as an exact fraction [numerator, denominator]: a Smaller unit typed as
+     * "60 in one reference" is 1/60, not 0.016667 (which made 59.9988 MIN per HOUR).
+     *
+     * @return array{0:string, 1:string}
+     */
+    public static function fraction(Unit $unit): array
+    {
+        if ($unit->is_reference) {
+            return ['1', '1'];
+        }
+        $factor = $unit->getAttribute('factor');
+        if ($factor !== null && bccomp(self::dec($factor), '0', 12) > 0 && $unit->ratio !== null) {
+            return bccomp(self::dec($unit->ratio), '1', 12) < 0 ? ['1', self::dec($factor)] : [self::dec($factor), '1'];
+        }
+
+        return [self::dec($unit->ratio ?? '1'), '1'];
+    }
+
+    /** One $from in $to, both fixed units of one category. */
+    public static function ratioBetween(Unit $from, Unit $to): string
+    {
+        [$fn, $fd] = self::fraction($from);
+        [$tn, $td] = self::fraction($to);
+
+        return bcdiv(bcmul($fn, $td, self::SCALE), bcmul($fd, $tn, self::SCALE), self::SCALE);
+    }
+
+    /**
+     * Can an item have its own ratio between these two units? A pack (a unit whose size varies per item: BOX,
+     * SET, ROL…) or a count (PCS) against anything is fine (1 ROL = 100 MTR of this cable); two different
+     * measures (KG and LTR, MTR and KG) are not, without a rule of their own.
+     */
+    public static function perItemAllowed(Unit $alt, Unit $base): bool
+    {
+        if (! $alt->uom_category_id || ! $base->uom_category_id || $alt->uom_category_id === $base->uom_category_id) {
+            return true;
+        }
+        if ($alt->ratio === null || $base->ratio === null) {
+            return true;
+        }
+        $count = Unit::where('code', 'PCS')->value('uom_category_id');
+
+        return (int) $alt->uom_category_id === (int) $count || (int) $base->uom_category_id === (int) $count;
     }
 
     /** How many of the item's own unit one of this document unit is; 1 when there is nothing to convert. */
@@ -177,7 +223,7 @@ class UomConverter
             return $own[$unit->code]['ratio_decimal'];
         }
         if ($base && $base->uom_category_id && $unit->uom_category_id === $base->uom_category_id && $unit->ratio !== null && $base->ratio !== null) {
-            return bcdiv(self::dec($unit->ratio), self::dec($base->ratio), self::SCALE);
+            return self::ratioBetween($unit, $base);
         }
 
         return null;

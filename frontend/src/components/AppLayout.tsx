@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
-import { Link, Outlet, ScrollRestoration, useLocation, useSearchParams } from 'react-router-dom'
-import { Camera, ChevronDown, ChevronRight, KeyRound, LayoutGrid, LogOut, PenLine, Search, X } from 'lucide-react'
+import { Link, Outlet, ScrollRestoration, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
+import { ArrowLeft, Camera, ChevronDown, KeyRound, LayoutGrid, LogOut, PenLine, Search, X } from 'lucide-react'
 import { useAuth } from '@/auth/AuthContext'
 import { ChangePasswordModal } from '@/components/ChangePasswordModal'
 import { CommandMenu } from '@/components/CommandMenu'
@@ -17,6 +17,8 @@ import { APPS_HOME, crumbsFor, visibleNav, type NavChild, type NavItem } from '@
 import { useNavCounts } from '@/lib/navCounts'
 import { usePageViewLog } from '@/lib/pageViewLog'
 import { cn } from '@/lib/utils'
+import { useCrumbTitle } from '@/lib/crumbTitle'
+import { previousLocation } from '@/lib/navHistory'
 
 /** The account: who is signed in, photo and password in its menu, and Logout beside it. */
 function UserMenu({ onChangePassword }: { onChangePassword: () => void }) {
@@ -80,20 +82,46 @@ function UserMenu({ onChangePassword }: { onChangePassword: () => void }) {
   )
 }
 
-/** Where a detail page sits, with the way back. */
+/**
+ * Where a sub page sits, with the way back, as in Odoo: an arrow, then "Purchase Request / testtt" where every
+ * part before the last is a link back, and the last is the record itself (the page names it, else "Detail").
+ * Came from that list: back steps through history (its filters and scroll come back); else it opens the list.
+ */
 function Breadcrumb({ pathname }: { pathname: string }) {
+  const navigate = useNavigate()
+  const named = useCrumbTitle(pathname)
   const crumbs = crumbsFor(pathname)
   if (crumbs.length < 2) return null
+  const shown = named ? [...crumbs.slice(0, -1), { label: named }] : crumbs
+  const parent = [...shown].reverse().find((c) => c.to)
+  const goBack = (to: string) => (e: React.MouseEvent) => {
+    if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+    e.preventDefault()
+    const canStepBack = (window.history.state?.idx ?? 0) > 0
+    if (canStepBack && previousLocation()?.split('?')[0] === to.split('?')[0]) navigate(-1)
+    else navigate(to)
+  }
   return (
-    <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-1 text-[13px] print:hidden">
-      {crumbs.map((c, i) => (
-        <Fragment key={i}>
-          {i > 0 && <ChevronRight className="size-3 shrink-0 text-muted-foreground/60" />}
-          {c.to
-            ? <Link to={c.to} className="truncate text-muted-foreground hover:text-foreground hover:underline">{c.label}</Link>
-            : <span className={cn('truncate', i === crumbs.length - 1 ? 'font-medium text-foreground' : 'text-muted-foreground')}>{c.label}</span>}
-        </Fragment>
-      ))}
+    <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-2 print:hidden">
+      {parent?.to && (
+        <a href={parent.to} onClick={goBack(parent.to)} title={`Back to ${parent.label}`} aria-label={`Back to ${parent.label}`}
+          className="flex size-8 shrink-0 items-center justify-center rounded-md border bg-card text-muted-foreground shadow-sm transition-colors hover:bg-muted hover:text-foreground">
+          <ArrowLeft className="size-4" />
+        </a>
+      )}
+      <ol className="flex min-w-0 items-center gap-1.5 text-sm">
+        {shown.map((c, i) => (
+          <Fragment key={i}>
+            {/* a phone shows the parent and the record only */}
+            {i > 0 && <li aria-hidden className={cn('text-muted-foreground/50', i < shown.length - 1 && 'max-sm:hidden')}>/</li>}
+            <li className={cn('min-w-0', i < shown.length - 1 && 'shrink-0', i < shown.length - 2 && 'max-sm:hidden')}>
+              {c.to
+                ? <a href={c.to} onClick={goBack(c.to)} className="block truncate font-medium text-primary hover:underline">{c.label}</a>
+                : <span className={cn('block truncate', i === shown.length - 1 ? 'font-semibold text-foreground' : 'text-muted-foreground')} aria-current={i === shown.length - 1 ? 'page' : undefined}>{c.label}</span>}
+            </li>
+          </Fragment>
+        ))}
+      </ol>
     </nav>
   )
 }

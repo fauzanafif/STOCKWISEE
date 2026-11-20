@@ -48,7 +48,7 @@ class StockOpnameWorkflowTest extends TestCase
         $this->wh = Warehouse::factory()->create(['site_id' => $site->id]);
         foreach (['admin' => 'admin_gudang', 'counter' => 'anak_gudang', 'field' => 'lapangan_gudang', 'boss' => 'bos', 'buyer' => 'purchasing', 'super' => 'super_admin'] as $k => $role) {
             $this->u[$k] = User::factory()->create(['name' => ucfirst($k)]);
-            $this->u[$k]->roles()->attach(Role::where('slug', $role)->firstOrFail());
+            $this->u[$k]->roles()->attach($this->role($role));
         }
     }
 

@@ -17,9 +17,6 @@ import { APPS_HOME, visibleNav } from '@/lib/navigation'
 import { cn } from '@/lib/utils'
 import { useCustomDashboards } from '@/features/customDashboards/api'
 import { DashboardIcon } from '@/pages/CustomDashboardPages'
-import { ModuleDashboardBody } from '@/pages/ModuleDashboardPage'
-import { MrpDashboardBody } from '@/pages/mrp/MrpDashboardPage'
-import { DisassemblyDashboardBody } from '@/pages/disassembly/DisassemblyDashboardPage'
 
 /** A part of an app dashboard: shown to who holds one of its permissions (none: everyone in the app). */
 interface Part { id: string; title: string; permissions?: string[]; body: ReactNode }
@@ -30,36 +27,12 @@ function Procurement() {
   return <ProcurementDashboard poStatus={data?.charts?.po_status} />
 }
 
-/**
- * What each app dashboard holds besides its cards. `todo`: the to-do lists of the module dashboards it
- * replaced (Item Request, Purchase Request, Receipt, Purchase Order, Manufacturing, Disassembly), their
- * counts are on the cards. `analysis`: the sections of the former Analytics page that belong to the app.
- */
-const PARTS: Record<string, { todo: Part[]; analysis: Part[] }> = {
-  inventory: {
-    todo: [
-      { id: 'request', title: 'Item Request', permissions: ['item_request.create', 'item_request.view'], body: <ModuleDashboardBody module="request" counts={false} /> },
-      { id: 'ppb', title: 'Purchase Request', permissions: ['ppb.view', 'ppb.create'], body: <ModuleDashboardBody module="ppb" counts={false} /> },
-      { id: 'ri', title: 'Receipt', permissions: ['ri.view'], body: <ModuleDashboardBody module="ri" counts={false} /> },
-      { id: 'opname', title: 'Stock Opname', permissions: ['opname.view'], body: <ModuleDashboardBody module="opname" counts={false} /> },
-    ],
-    analysis: [],
-  },
-  purchase: {
-    todo: [
-      { id: 'po', title: 'Purchase Order', permissions: ['po.view'], body: <ModuleDashboardBody module="po" counts={false} /> },
-    ],
-    analysis: [{ id: 'pengadaan', title: 'Procurement', body: <Procurement /> }],
-  },
-  manufacturing: {
-    todo: [
-      { id: 'mrp', title: 'Manufacturing Orders', permissions: ['mrp.view'], body: <MrpDashboardBody counts={false} /> },
-      { id: 'disassembly', title: 'Disassembly', permissions: ['disassembly.view'], body: <DisassemblyDashboardBody counts={false} /> },
-    ],
-    analysis: [],
-  },
-  // Tracking has no to-do of its own: its charts are its analysis
-  tracking: { todo: [], analysis: [{ id: 'tracking', title: 'Tracking', body: <TrackingDashboard /> }] },
+/** What each app dashboard holds besides its overview cards: the sections of the former Analytics page. */
+const PARTS: Record<string, { analysis: Part[] }> = {
+  inventory: { analysis: [] },
+  purchase: { analysis: [{ id: 'pengadaan', title: 'Procurement', body: <Procurement /> }] },
+  manufacturing: { analysis: [] },
+  tracking: { analysis: [{ id: 'tracking', title: 'Tracking', body: <TrackingDashboard /> }] },
 }
 
 /** a page of the app: one card of the overview */
@@ -184,11 +157,11 @@ function CustomDashboardsMenu({ appKey }: { appKey: string }) {
   )
 }
 
-type View = 'overview' | 'todo' | 'analysis'
+type View = 'overview' | 'analysis'
 
 /**
  * An app's one dashboard: a control panel (the app and its views) over simple cards, one per feature of the
- * app in the order of its menu bar, each leading to its work. The to-do lists and the analysis are views of their own.
+ * app in the order of its menu bar, each leading to its work. The analysis is a view of its own.
  */
 export function AppDashboardPage({ appKey }: { appKey: keyof typeof PARTS }) {
   const { hasPermission, hasRole } = useAuth()
@@ -199,10 +172,9 @@ export function AppDashboardPage({ appKey }: { appKey: keyof typeof PARTS }) {
 
   const app = launcherApps(visibleNav(hasPermission, hasRole('super_admin')), hasPermission).apps.find((a) => a.key === appKey)
   const can = (p: Part) => !p.permissions || p.permissions.some(hasPermission)
-  const todo = PARTS[appKey].todo.filter(can)
   const analysis = PARTS[appKey].analysis.filter(can)
-  const views = ([['overview', 'Overview'], ['todo', 'To do'], ['analysis', 'Analysis']] as const)
-    .filter(([k]) => k === 'overview' || (k === 'todo' ? todo.length > 0 : analysis.length > 0))
+  const views = ([['overview', 'Overview'], ['analysis', 'Analysis']] as const)
+    .filter(([k]) => k === 'overview' || analysis.length > 0)
   const asked = params.get('tab')
   const view: View = views.some(([k]) => k === asked) ? (asked as View) : 'overview'
 
@@ -268,7 +240,6 @@ export function AppDashboardPage({ appKey }: { appKey: keyof typeof PARTS }) {
           </div>
         </Board.Provider>
       )}
-      {view === 'todo' && <div className="space-y-8">{todo.map((p) => <Section key={p.id} part={p} />)}</div>}
       {view === 'analysis' && <div ref={exportRef} className="space-y-10">{analysis.map((p) => <Section key={p.id} part={p} />)}</div>}
     </div>
   )

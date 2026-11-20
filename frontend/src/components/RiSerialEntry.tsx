@@ -14,10 +14,13 @@ const MAX_INPUTS = 300
 export const filledSerials = (value: string[] | undefined) => (value ?? []).map((s) => s.trim()).filter(Boolean)
 export const splitSerials = (text: string | null | undefined) => (text ?? '').split(';').map((s) => s.trim()).filter(Boolean)
 
-/** A problem with the serials of a line, or null: none at all is fine, otherwise one per unit, no repeats. */
-export function serialProblem(value: string[] | undefined, qty: number): string | null {
+/**
+ * A problem with the serials of a line, or null: one per unit, no repeats. None at all is fine unless the line
+ * is ticked "Has SN" (required): then every unit needs its serial number.
+ */
+export function serialProblem(value: string[] | undefined, qty: number, required = false): string | null {
   const list = filledSerials(value)
-  if (list.length === 0) return null
+  if (list.length === 0) return required ? `"Has SN" is ticked: fill in ${Number.isInteger(qty) && qty > 0 ? qty : 'the'} serial number${qty === 1 ? '' : 's'}, or untick it` : null
   if (!Number.isInteger(qty)) return 'serial numbers need a whole quantity'
   if (list.length !== qty) return `${qty} units received but ${list.length} serial numbers`
   const seen = new Set<string>()

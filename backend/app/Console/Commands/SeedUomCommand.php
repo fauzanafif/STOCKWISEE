@@ -44,7 +44,10 @@ class SeedUomCommand extends Command
                 foreach ($units as $i => [$code, $label, $ratio]) {
                     $unit = Unit::firstOrCreate(['code' => $code], ['name' => $label, 'is_active' => true]);
                     if (! $unit->uom_category_id) {
-                        $unit->update(['uom_category_id' => $category->id, 'is_reference' => $i === 0, 'ratio' => $ratio, 'rounding' => self::ROUNDING[$name] ?? 0.01]);
+                        // factor keeps a Smaller unit exact: 0.016667 is 1/60 (60 MIN in one HOUR), not 59.9988
+                        $factor = $i === 0 || $ratio === null ? null : ($ratio >= 1 ? $ratio : round(1 / $ratio));
+                        $unit->update(['uom_category_id' => $category->id, 'is_reference' => $i === 0, 'ratio' => $ratio, 'rounding' => self::ROUNDING[$name] ?? 0.01]
+                            + (\App\Support\SchemaCache::hasColumn('units', 'factor') ? ['factor' => $factor] : []));
                     }
                 }
             }

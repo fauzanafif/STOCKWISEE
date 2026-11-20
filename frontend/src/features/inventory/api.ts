@@ -126,6 +126,8 @@ export interface ItemLookupResult {
   default_warehouse_id: number | null
   available: number | null
   stock_known: boolean
+  /** tracked by serial number (Master Barang) */
+  manage_sn?: boolean
 }
 
 export function useItemLookup(search: string) {

@@ -150,6 +150,8 @@ class ItemController extends Controller
                 'default_warehouse_id' => $i->default_warehouse_id,
                 'available' => $i->snapshot?->available,
                 'stock_known' => (bool) ($i->snapshot?->stock_known ?? false),
+                // tracked by serial number: a Receipt form ticks "has serial numbers" for it
+                'manage_sn' => (bool) $i->manage_sn,
             ]);
 
         return response()->json(['data' => $items]);
@@ -323,13 +325,22 @@ class ItemController extends Controller
     public function options(): \Illuminate\Http\JsonResponse
     {
         $c = \App\Support\ItemOptions::categories();
-        $units = \App\Models\Unit::whereIn('code', \App\Support\ItemOptions::UOM)->get(['id', 'code', 'name'])->keyBy('code');
+        $rules = app(\App\Services\Uom\CategoryUomRules::class)->byParentName();
+        $ruleUnitIds = collect($rules)->pluck('unit_ids')->flatten()->unique();
+        $units = \App\Models\Unit::where(fn ($q) => $q->whereIn('code', \App\Support\ItemOptions::UOM)->orWhereIn('id', $ruleUnitIds))
+            ->get(['id', 'code', 'name', 'uom_category_id', 'is_reference', 'ratio'])->keyBy('code');
+        // the fixed list first, in its order, then the other units a category allows
+        $ordered = collect(\App\Support\ItemOptions::UOM)->map(fn ($code) => $units->get($code))->filter()
+            ->values()->merge($units->except(\App\Support\ItemOptions::UOM)->sortKeys()->values())->unique('id');
 
         return response()->json(['data' => [
             'induk' => $c['accurate_category_induk'], 'anak_1' => $c['accurate_category_anak_1'],
             'anak_2' => $c['accurate_category_anak_2'], 'anak_3' => $c['accurate_category_anak_3'],
-            // in the given order
-            'uom' => collect(\App\Support\ItemOptions::UOM)->map(fn ($code) => $units->get($code))->filter()->values(),
+            'uom' => $ordered->map(fn ($u) => ['id' => $u->id, 'code' => $u->code, 'name' => $u->name,
+                'kind' => \App\Http\Controllers\Api\UomController::kind($u)])->values(),
+            // Main Category => {unit_ids, default_unit_id}: the form lists only these; a category not here keeps the fixed list
+            'uom_rules' => (object) $rules,
+            'uom_fixed' => collect(\App\Support\ItemOptions::UOM)->map(fn ($code) => $units->get($code)?->id)->filter()->values(),
         ]]);
     }
 

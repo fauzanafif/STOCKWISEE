@@ -16,6 +16,7 @@ import { convertUom, useItemConversions, useUom, useUomActions, useUomUnmapped, 
 import { apiErrorMessage } from '@/lib/api'
 import { invalidTo, toast } from '@/lib/notify'
 import { cn } from '@/lib/utils'
+import { ParentCategoryTab } from '@/pages/uom/ParentCategoryTab'
 
 const fmt = (n: number) => n.toLocaleString('id-ID', { maximumFractionDigits: 6 })
 /** "1,5" / "1.5" → a number */
@@ -28,11 +29,12 @@ export function kindOf(u: Pick<UomUnit, 'is_reference' | 'ratio'>): UomKind {
 }
 
 /** The size in words: bigger units against the reference, smaller ones the other way round ("1 MTR = 100 CMS"). */
-export function sizeText(u: Pick<UomUnit, 'code' | 'is_reference' | 'ratio'>, reference: string | undefined): string {
+export function sizeText(u: Pick<UomUnit, 'code' | 'is_reference' | 'ratio' | 'factor'>, reference: string | undefined): string {
   if (u.is_reference) return '1'
   if (u.ratio === null) return 'Differs per item'
   if (!reference) return '—'
-  return u.ratio >= 1 ? `1 ${u.code} = ${fmt(u.ratio)} ${reference}` : `1 ${reference} = ${fmt(Math.round((1 / u.ratio) * 1e6) / 1e6)} ${u.code}`
+  // the typed factor is exact (60 MIN in one HOUR); 1/ratio is not (0.016667 → 59.9988)
+  return u.ratio >= 1 ? `1 ${u.code} = ${fmt(u.factor ?? u.ratio)} ${reference}` : `1 ${reference} = ${fmt(u.factor ?? Math.round((1 / u.ratio) * 1e6) / 1e6)} ${u.code}`
 }
 
 const KIND_LABEL: Record<UomKind, string> = { REFERENCE: 'Reference', BIGGER: 'Bigger', SMALLER: 'Smaller', VARIES: 'Per item' }
@@ -64,7 +66,7 @@ function UnitModal({ unit, categoryId, categories, onClose }: { unit: UomUnit | 
   const [name, setName] = useState(unit?.name ?? '')
   const [category, setCategory] = useState<number | ''>(unit?.uom_category_id ?? categoryId ?? '')
   const [kind, setKind] = useState<UomKind>(unit ? kindOf(unit) : 'VARIES')
-  const [factor, setFactor] = useState(unit?.ratio ? String(unit.ratio >= 1 ? unit.ratio : Math.round((1 / unit.ratio) * 1e6) / 1e6) : '')
+  const [factor, setFactor] = useState(unit?.ratio ? String(unit.factor ?? (unit.ratio >= 1 ? unit.ratio : Math.round((1 / unit.ratio) * 1e6) / 1e6)) : '')
   const [rounding, setRounding] = useState(String(unit?.rounding ?? 0.01))
   const [active, setActive] = useState(unit?.is_active ?? true)
   const [err, setErr] = useState<string | null>(null)
@@ -362,13 +364,45 @@ function MappingTab({ units, canManage }: { units: UomUnit[]; canManage: boolean
   )
 }
 
+/** The fixed conversions of each measurement category (read only) and a converter; per-item ones live on the item. */
+function ConversionRules({ categories, units }: { categories: UomCategory[]; units: UomUnit[] }) {
+  return (
+    <div className="space-y-4">
+      <Card className="p-4"><Converter units={units} /></Card>
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {categories.map((c) => {
+          const reference = c.units.find((u) => u.is_reference)
+          const fixed = c.units.filter((u) => u.is_active && !u.is_reference && u.ratio !== null)
+          const perItem = c.units.filter((u) => u.is_active && u.ratio === null)
+          return (
+            <Card key={c.id} className="overflow-hidden">
+              <div className="flex items-center justify-between gap-2 border-b px-4 py-2.5">
+                <h2 className="text-sm font-semibold">{c.name}</h2>
+                {reference && <Badge variant="success">{reference.code}</Badge>}
+              </div>
+              <ul className="divide-y text-sm">
+                {fixed.map((u) => <li key={u.id} className="px-4 py-1.5 tabular-nums">{sizeText(u, reference?.code)}</li>)}
+                {fixed.length === 0 && <li className="px-4 py-2 text-xs text-muted-foreground">No fixed conversions.</li>}
+              </ul>
+              {perItem.length > 0 && <p className="border-t bg-muted/30 px-4 py-2 text-xs text-muted-foreground">Per item: {perItem.map((u) => u.code).join(', ')}</p>}
+            </Card>
+          )
+        })}
+      </div>
+      <p className="text-xs text-muted-foreground">Units of different categories never convert (KG ↔ LTR, MTR ↔ KG). A per-item unit (BOX, SET, ROL…) converts with the ratio set on each item.</p>
+    </div>
+  )
+}
+
 /** Master UOM: units in categories (one reference each), and what a pack or box holds for one item. */
 export function UomPage() {
   const { hasPermission } = useAuth()
   const canManage = hasPermission('master.unit.manage')
   const { data, isLoading } = useUom()
   const [params, setParams] = useSearchParams()
-  const tab = params.get('tab') === 'item' ? 'item' : params.get('tab') === 'convert' ? 'convert' : params.get('tab') === 'mapping' ? 'mapping' : 'units'
+  const TABS = ['units', 'parent', 'item', 'convert', 'mapping'] as const
+  const asked = params.get('tab') as (typeof TABS)[number] | null
+  const tab = asked && TABS.includes(asked) ? asked : 'units'
   const categories = data?.categories ?? []
   const uncategorized = data?.uncategorized ?? []
   const units = [...categories.flatMap((c) => c.units), ...uncategorized].sort((a, b) => a.code.localeCompare(b.code))
@@ -376,16 +410,17 @@ export function UomPage() {
     <div className="space-y-4">
       <PageHeader title="UOM" subtitle="Units of measure, their categories and conversions." icon={<Ruler className="size-5" />} />
       <div className="-mb-px flex overflow-x-auto border-b" role="tablist">
-        {([['units', 'Units & categories'], ['item', 'Per item'], ['convert', 'Converter'], ['mapping', 'Needs mapping']] as const).map(([k, label]) => (
+        {([['units', 'Units & categories'], ['parent', 'Parent Category'], ['item', 'Per item'], ['convert', 'Conversion rules'], ['mapping', 'Needs mapping']] as const).map(([k, label]) => (
           <button key={k} type="button" role="tab" aria-selected={tab === k} onClick={() => setParams({ tab: k })}
             className={cn('whitespace-nowrap border-b-2 px-4 pb-2.5 pt-1 text-sm font-medium', tab === k ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground')}>{label}</button>
         ))}
       </div>
       {isLoading ? <p className="py-12 text-center text-sm text-muted-foreground">Loading…</p>
         : tab === 'units' ? <UnitsTab categories={categories} uncategorized={uncategorized} canManage={canManage} />
+          : tab === 'parent' ? <ParentCategoryTab units={units} canManage={canManage} />
           : tab === 'item' ? <ItemTab units={units} canManage={canManage} />
             : tab === 'mapping' ? <MappingTab units={units} canManage={canManage} />
-              : <Card className="p-4"><Converter units={units} /></Card>}
+              : <ConversionRules categories={categories} units={units} />}
     </div>
   )
 }

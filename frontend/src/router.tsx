@@ -23,6 +23,7 @@ import { LoginPage } from '@/pages/LoginPage'
 import { NpbgDetailPage } from '@/pages/NpbgDetailPage'
 import { NpbgListPage } from '@/pages/NpbgListPage'
 import { OpnameRoute } from '@/pages/opname/OpnameRoute'
+import { OpnameOrderPage } from '@/pages/opname/OpnameOrderPage'
 import { OpnameDashboardPage } from '@/pages/opname/OpnameDashboardPage'
 import { OpnameListPage } from '@/pages/OpnameListPage'
 import { StockCardPage } from '@/pages/StockCardPage'
@@ -288,6 +289,7 @@ export const router = createBrowserRouter([
             children: [
               { path: '/stock-opnames', element: <OpnameListPage /> },
               { path: '/stock-opnames/dashboard', element: <OpnameDashboardPage /> },
+              { path: '/stock-opnames/new', element: <OpnameOrderPage /> },
               { path: '/stock-opnames/:id', element: <OpnameRoute /> },
             ],
           },

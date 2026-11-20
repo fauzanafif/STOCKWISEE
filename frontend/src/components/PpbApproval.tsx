@@ -83,7 +83,7 @@ export function PpbApprovalCard({ ppb }: { ppb: Ppb }) {
             <div className="text-xs text-muted-foreground">
               {approval.status === 'TIDAK_PERLU'
                 ? 'This Purchase Request was made before the approval rule applied.'
-                : `Applies to the whole Purchase Request ${ppb.no_ppb}${ppb.document_lines && ppb.document_lines > 1 ? ` (${ppb.document_lines} items)` : ''}.${approval.stockwise ? ' STOCKWISE Purchase Request: approved by Manager, then Director.' : ''}`}
+                : [ppb.document_lines && ppb.document_lines > 1 ? `All ${ppb.document_lines} items` : 'The whole document', approval.stockwise ? 'Manager → Director' : null].filter(Boolean).join(' · ')}
               {approval.status === 'DISETUJUI' && ppb.approval_po && (
                 <> Goes to the PO table as <Link to={`/purchase-orders/${ppb.approval_po.id}`} className=" text-primary hover:underline">{ppb.approval_po.number}</Link>{approval.stockwise ? ' — complete the vendor & price there, then the Director approves.' : ' (Waiting for PO, until the PO is made in Accurate).'}</>
               )}

@@ -10,7 +10,7 @@ class Unit extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['code', 'name', 'is_active', 'uom_category_id', 'is_reference', 'ratio', 'rounding'];
+    protected $fillable = ['code', 'name', 'is_active', 'uom_category_id', 'is_reference', 'ratio', 'factor', 'rounding'];
 
     protected function casts(): array
     {

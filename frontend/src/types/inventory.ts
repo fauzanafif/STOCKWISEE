@@ -92,7 +92,11 @@ export interface ItemOptions {
   anak_1: string[]
   anak_2: string[]
   anak_3: string[]
-  uom: { id: number; code: string; name: string }[]
+  uom: { id: number; code: string; name: string; kind?: 'REFERENCE' | 'BIGGER' | 'SMALLER' | 'PER_ITEM' | null }[]
+  /** Main Category => the units its items may use (in order) and the one a new item starts with */
+  uom_rules?: Record<string, { unit_ids: number[]; default_unit_id?: number }>
+  /** a Main Category without rules: the fixed list of before */
+  uom_fixed?: number[]
 }
 
 export interface AnalysisRow {

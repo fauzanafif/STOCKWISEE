@@ -13,6 +13,9 @@ export interface UomUnit {
   /** a converted quantity lands on a multiple of this */
   rounding: number
   items_count: number
+  /** what an admin typed for a Bigger / Smaller unit (60 for MIN: 60 in one HOUR), kept exactly */
+  factor?: number | null
+  kind?: 'REFERENCE' | 'BIGGER' | 'SMALLER' | 'PER_ITEM' | null
 }
 
 export interface UomCategory { id: number; name: string; units: UomUnit[] }
@@ -112,4 +115,53 @@ export function useUomActions() {
       onSuccess: done,
     }),
   }
+}
+
+export type RuleStatus = 'NOT_SET' | 'PARTIAL' | 'COMPLETE'
+
+export interface CategoryRuleUnit {
+  unit_id: number
+  code: string
+  name: string
+  is_default: boolean
+  kind: 'REFERENCE' | 'BIGGER' | 'SMALLER' | 'PER_ITEM' | null
+  factor: number | null
+  /** the reference of the unit's measurement category (PCS, MTR, KG …) */
+  reference: string | null
+  /** per-item units only: pre-fills an item's own ratio */
+  suggested_ratio: number | null
+  items_count: number
+  is_active: boolean
+}
+
+export interface CategoryRule {
+  id: number
+  name: string
+  path: string
+  parent_id: number | null
+  level: number
+  items_count: number
+  status: RuleStatus
+  units: CategoryRuleUnit[]
+  /** units the category's items use that the rules do not list (those items are shown, not blocked) */
+  outside: { unit_id: number; code: string; items_count: number }[]
+}
+
+/** Master UOM › Parent Category: every parent category with its allowed units. */
+export function useCategoryRules(enabled = true) {
+  return useQuery({
+    queryKey: ['uom', 'category-rules'],
+    enabled,
+    queryFn: async () => (await api.get<{ data: CategoryRule[] }>('/api/uom/category-rules')).data.data,
+  })
+}
+
+export function useSaveCategoryRules() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ categoryId, units }: { categoryId: number; units: { unit_id: number; is_default: boolean; suggested_ratio: number | null }[] }) =>
+      api.put(`/api/uom/category-rules/${categoryId}`, { units }),
+    meta: { successMessage: 'Category units saved.' },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['uom'] }); qc.invalidateQueries({ queryKey: ['items', 'options'] }) },
+  })
 }

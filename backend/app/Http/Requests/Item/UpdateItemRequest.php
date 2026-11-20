@@ -20,12 +20,9 @@ class UpdateItemRequest extends FormRequest
             'code' => ['sometimes', 'string', 'max:40', Rule::unique('items', 'code')->ignore($id)],
             'description' => ['sometimes', 'string', 'max:400'],
             'category_id' => ['sometimes', 'nullable', 'integer', Rule::exists('categories', 'id')],
-            'unit_id' => ['sometimes', 'nullable', 'integer', Rule::exists('units', 'id'), function (string $attr, mixed $value, \Closure $fail) {
-                // UOM: one of the fixed list (App\Support\ItemOptions::UOM)
-                if ($value !== null && ! in_array(\App\Models\Unit::whereKey($value)->value('code'), \App\Support\ItemOptions::UOM, true) && (int) $value !== (int) $this->route('item')->unit_id) {
-                    $fail('Pilih UOM dari daftar yang tersedia.');
-                }
-            }],
+            'unit_id' => ['sometimes', 'nullable', 'integer', Rule::exists('units', 'id'), // UOM: one its category allows (Master UOM › Parent Category; none set: the fixed list ItemOptions::UOM).
+                // An existing item is only checked when its unit or category changes.
+                \App\Services\Uom\CategoryUomRules::itemUnitRule($this, $this->route('item'))],
             'item_type' => ['sometimes', Rule::in(['CONSUMABLE', 'SERIALIZED', 'ASSET_PART', 'TYRE', 'MANUFACTURED'])],
             'product_kind' => ['sometimes', Rule::in(['BARANG', 'JASA'])],
             'needs_blueprint' => ['sometimes', 'boolean'],

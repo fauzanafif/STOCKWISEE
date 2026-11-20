@@ -10,16 +10,30 @@ namespace App\Support\Rbac;
 final class Rbac
 {
     /** roleSlug => [name, description]; the description lists its tasks, one per line (≤ 255 characters) */
+    /**
+     * The six roles, one per job. Each description lists what the role can do, one feature per line.
+     * Merged on 2026-11-20 (migration simplify_roles): Anak Gudang + Lapangan Gudang -> Gudang, BOS -> Direktur.
+     */
     public const ROLES = [
-        'super_admin' => ['Super Admin', "Akses penuh ke semua fitur\nKelola user, role & hak akses\nPengaturan, sync Accurate & audit log"],
-        'admin_gudang' => ['Admin Gudang', "Verifikasi Request Barang (cocokkan ke Master Produk)\nMaster Produk, stok, Kartu Stock, Analisis & Restock\nDraft PPB ke PPB, RI dari PO, Retur Pembelian\nStock opname, tracking, sync Accurate & laporan"],
-        'anak_gudang' => ['Anak Gudang / Stock Opname', "Hitung fisik & input hasil stock opname\nLihat stok, Master Produk & riwayat opname"],
-        'lapangan_gudang' => ['Lapangan Gudang', "Siapkan & serah terima Request Barang (tetapkan jumlah, foto, tanda tangan)\nHitung fisik stock opname\nTracking: Lend, Borrow, STPP, Ban Luar, Maintenance, Manufaktur, Bekas"],
-        'purchasing' => ['Purchasing', "Lengkapi PO dari PPB yang disetujui (vendor & harga), ajukan ke Direktur\nUpload bukti pembelian (status Sudah dibeli)\nVendor, Price List, Retur Pembelian & laporan pengadaan"],
-        'bos' => ['BOS / Management', "Dashboard executive & semua laporan (hanya lihat)\nKeputusan akhir klarifikasi barang NPBG"],
-        'karyawan' => ['Karyawan / Requester', "Buat Request Barang / Jasa & pantau statusnya\nDapat notifikasi saat barang siap diambil"],
-        'manager' => ['Manager', "Approval tahap 1: Request Barang, PPB & NPBG manual\nUbah jumlah disetujui & beri catatan\nSemua tugas di menu Approval"],
-        'direktur' => ['Direktur', "Approval akhir: Request Barang, PPB, NPBG manual & PO STOCKWISE\nBisa approve langsung tanpa menunggu Manager\nUbah jumlah disetujui & beri catatan"],
+        'super_admin' => ['Super Admin', "Akses penuh ke semua fitur
+Kelola user, role & hak akses
+Pengaturan, sync Accurate & audit log"],
+        'direktur' => ['Direktur', "Approval akhir: Request Barang, PPB, NPBG & PO
+Dashboard executive & semua laporan
+Keputusan akhir klarifikasi NPBG
+Important Request: buat & pantau"],
+        'admin_gudang' => ['Gudang', "Master Produk, stok & Kartu Stock
+Request Barang: verifikasi & serah terima
+PPB, RI, Retur Pembelian
+Stock opname: jadwal, hitung, review & approve
+Tracking, Manufaktur & sync Accurate"],
+        'purchasing' => ['Purchasing', "Lengkapi PO dari PPB yang disetujui (vendor & harga), ajukan ke Direktur
+Upload bukti pembelian (status Sudah dibeli)
+Vendor, Price List, Retur Pembelian & laporan pengadaan"],
+        'manager' => ['Manager', "Approval tahap 1: Request Barang, PPB & NPBG manual
+Ubah jumlah disetujui & beri catatan"],
+        'karyawan' => ['Karyawan', "Buat Request Barang / Jasa & pantau statusnya
+Dapat notifikasi saat barang siap diambil"],
     ];
 
     /** group => [slug => human name] */
@@ -234,37 +248,6 @@ final class Rbac
             'export.excel', 'export.csv', 'export.pdf',
         ],
 
-        'lapangan_gudang' => [
-            'profile.view_own', 'profile.update_own', 'notification.view_own',
-            'important_request.access',
-            'inventory.view', 'stock_movement.view',
-            'npbg.view', 'item_request.handover',
-            'npbg.verification.view', 'npbg.verification.manage', 'npbg.verification.respond',
-            // Stock opname: admin gudang menjadwalkan, admin lapangan yang turun hitung fisik & input hasilnya.
-            'opname.view', 'opname.count', 'opname.submit',
-            'lend.view', 'lend.create', 'lend.update', 'lend.return',
-            'borrow.view', 'borrow.create', 'borrow.update', 'borrow.return',
-            'stpp.view', 'stpp.create', 'stpp.update', 'stpp.return',
-            'tyre.view', 'tyre.create', 'tyre.update', 'tyre.close',
-            'maintenance.view', 'maintenance.create', 'maintenance.update', 'maintenance.complete',
-            'manufacturing.view', 'manufacturing.create', 'manufacturing.update', 'manufacturing.complete',
-            'used_return.view', 'used_return.create', 'used_return.update', 'used_return.close',
-            'mrp.view', 'mrp.record',
-            'disassembly.view', 'disassembly.record',
-            'dashboard.gudang', 'dashboard.lapangan', 'dashboard.opname',
-            'report.npbg', 'report.opname', 'export.excel', 'export.csv', 'export.pdf',
-        ],
-
-        'anak_gudang' => [
-            'profile.view_own', 'profile.update_own', 'notification.view_own',
-            'important_request.access',
-            'inventory.view', 'stock_movement.view', 'item.view', 'item.alias.view',
-            'opname.view', 'opname.count', 'opname.submit',
-            'stpp.view',
-            'dashboard.gudang', 'dashboard.opname',
-            'report.opname', 'export.excel', 'export.csv', 'export.pdf',
-        ],
-
         'admin_gudang' => [
             'profile.view_own', 'profile.update_own', 'notification.view_own',
             'important_request.access',
@@ -277,7 +260,7 @@ final class Rbac
             'inventory.view', 'inventory.view_analysis', 'inventory.transfer', 'stock_movement.view',
             'sync.accurate.view', 'sync.accurate.trigger',
             'npbg.view', 'npbg.create', 'npbg.update',
-            'item_request.create', 'item_request.view', 'item_request.process',
+            'item_request.create', 'item_request.view', 'item_request.process', 'item_request.handover',
             'npbg.verification.view', 'npbg.verification.manage', 'npbg.verification.respond',
             'opname.view', 'opname.schedule', 'opname.count', 'opname.submit',
             'opname.review', 'opname.approve', 'opname.reject', 'opname.request_recount', 'opname.view_variance',
@@ -314,12 +297,22 @@ final class Rbac
             'report.procurement', 'report.ppb', 'report.ri', 'export.excel', 'export.csv', 'export.pdf',
         ],
 
-        'bos' => [
+        'manager' => [
+            'profile.view_own', 'profile.update_own', 'notification.view_own',
+            'important_request.access', 'important_request.create',
+            'item_request.approve_manager',
+            'ppb.view', 'ppb.approve_manager', 'npbg.view', 'npbg.approve_manager',
+        ],
+
+        // Direktur: approval akhir + everything BOS / Management used to see (read only)
+        'direktur' => [
             'profile.view_own', 'profile.update_own', 'notification.view_own',
             'important_request.access', 'important_request.create', 'important_request.view_all', 'important_request.analytics',
+            'item_request.approve_director',
+            'ppb.view', 'ppb.approve_director', 'po.view', 'po.approve_director', 'npbg.view', 'npbg.approve_director',
             'inventory.view', 'inventory.view_analysis', 'stock_movement.view', 'item.view',
-            'npbg.view', 'npbg.verification.view', 'npbg.verification.bos_decide',
-            'ppb.view', 'ri.view', 'po.view', 'purchase_return.view',
+            'npbg.verification.view', 'npbg.verification.bos_decide',
+            'ri.view', 'purchase_return.view',
             'opname.view', 'opname.view_variance',
             'lend.view', 'borrow.view', 'stpp.view', 'tyre.view', 'maintenance.view',
             'manufacturing.view', 'used_return.view', 'mrp.view', 'disassembly.view',
@@ -328,20 +321,6 @@ final class Rbac
             'report.stock_movement', 'report.procurement',
             'export.excel', 'export.csv', 'export.pdf',
             'audit_log.view',
-        ],
-
-        'manager' => [
-            'profile.view_own', 'profile.update_own', 'notification.view_own',
-            'important_request.access', 'important_request.create',
-            'item_request.approve_manager',
-            'ppb.view', 'ppb.approve_manager', 'npbg.view', 'npbg.approve_manager',
-        ],
-
-        'direktur' => [
-            'profile.view_own', 'profile.update_own', 'notification.view_own',
-            'important_request.access', 'important_request.create', 'important_request.view_all', 'important_request.analytics',
-            'item_request.approve_director',
-            'ppb.view', 'ppb.approve_director', 'po.view', 'po.approve_director', 'npbg.view', 'npbg.approve_director',
         ],
     ];
 

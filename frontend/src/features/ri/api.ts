@@ -201,7 +201,9 @@ export interface RiPoOrder {
     /** one of this line's unit makes this many of the item's own unit in stock */
     unit_ratio: number; base_unit: string | null
     /** no ratio to the item's own unit yet: it cannot be received until there is one */
-    unit_problem: string | null }[]
+    unit_problem: string | null
+    /** the item is tracked by serial number (Master Barang): "Has SN" starts ticked */
+    manage_sn?: boolean }[]
 }
 
 export function useRiPoOrders(search: string, enabled: boolean) {

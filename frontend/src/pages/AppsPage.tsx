@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { LayoutGrid, RotateCcw, SearchX } from 'lucide-react'
+import { LayoutGrid, Moon, RotateCcw, SearchX, Sun, Sunrise, Sunset } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import {
   closestCenter, DndContext, type DragEndEvent, KeyboardSensor, PointerSensor, TouchSensor, useSensor, useSensors,
@@ -29,28 +29,63 @@ export function greeting(d = new Date()) {
   return 'Selamat malam'
 }
 
-/** One app: a coloured rounded square with its icon, its name under it, and the work waiting in it. */
-function Tile({ to, label, icon: Icon, color, count = 0, comingSoon, dragging, title }: { to: string; label: string; icon: LucideIcon; color: string; count?: number; comingSoon?: boolean; dragging?: boolean; title?: string }) {
+/** The time of day's icon and colours for the greeting. */
+function dayPart(d = new Date()) {
+  const h = d.getHours()
+  if (h >= 4 && h < 11) return { icon: Sunrise, chip: 'from-amber-300 to-orange-400', halo: 'bg-amber-300', spin: false }
+  if (h >= 11 && h < 15) return { icon: Sun, chip: 'from-yellow-300 to-amber-500', halo: 'bg-yellow-300', spin: true }
+  if (h >= 15 && h < 18) return { icon: Sunset, chip: 'from-orange-400 to-rose-500', halo: 'bg-orange-300', spin: false }
+  return { icon: Moon, chip: 'from-indigo-400 to-violet-600', halo: 'bg-indigo-400', spin: false }
+}
+
+/** "Selamat pagi, Budi" on top of the launcher: the words rise in once, only the small sun / moon keeps moving. */
+function Greeting({ name }: { name: string }) {
+  const now = new Date()
+  const part = dayPart(now)
+  const Icon = part.icon
+  const date = now.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
   return (
-    <Link to={to} draggable={false} title={title}
-      className="group flex flex-col items-center gap-2 rounded-xl px-1 py-2 text-center outline-none focus-visible:ring-2 focus-visible:ring-ring">
-      <span className={cn('relative flex size-16 items-center justify-center rounded-2xl bg-gradient-to-br text-white shadow-[0_2px_6px_rgb(15_23_42/0.18)] transition duration-150 ease-out group-hover:-translate-y-0.5 group-hover:shadow-[0_8px_18px_rgb(15_23_42/0.22)] sm:size-[72px] lg:size-20',
+    <div className="mx-auto mb-10 flex max-w-3xl flex-col items-center text-center sm:mb-14">
+      <span className="sw-rise relative mb-4 flex size-12 items-center justify-center sm:size-14" style={{ '--d': '0ms' } as React.CSSProperties}>
+        <span aria-hidden className={cn('sw-halo absolute inset-0 rounded-full blur-xl', part.halo)} />
+        <span className={cn('sw-float relative flex size-full items-center justify-center rounded-full bg-gradient-to-br text-white shadow-[0_6px_16px_rgb(15_23_42/0.15)]', part.chip)}>
+          <Icon className={cn('size-6 sm:size-7', part.spin && 'sw-turn')} strokeWidth={1.8} aria-hidden />
+        </span>
+      </span>
+      <h1 className="text-2xl font-semibold tracking-tight text-slate-800 sm:text-3xl lg:text-4xl dark:text-slate-100">
+        <span className="sw-rise inline-block" style={{ '--d': '120ms' } as React.CSSProperties}>{greeting(now)},</span>{' '}
+        {name && (
+          <span className="sw-rise inline-block bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600 bg-clip-text text-transparent dark:from-sky-300 dark:via-indigo-300 dark:to-violet-300"
+            style={{ '--d': '280ms' } as React.CSSProperties}>{name}</span>
+        )}
+      </h1>
+      <p className="sw-rise mt-2 text-sm text-slate-500 sm:text-[15px] dark:text-slate-400" style={{ '--d': '440ms' } as React.CSSProperties}>{date}</p>
+    </div>
+  )
+}
+
+/** One app: a coloured rounded square with its icon, its name under it, and the work waiting in it. */
+function Tile({ to, label, icon: Icon, color, count = 0, comingSoon, dragging, title, delay = 0 }: { to: string; label: string; icon: LucideIcon; color: string; count?: number; comingSoon?: boolean; dragging?: boolean; title?: string; delay?: number }) {
+  return (
+    <Link to={to} draggable={false} title={title} style={{ '--d': `${delay}ms` } as React.CSSProperties}
+      className="sw-rise group flex flex-col items-center gap-2.5 rounded-xl px-1 py-2 text-center outline-none focus-visible:ring-2 focus-visible:ring-ring">
+      <span className={cn('relative flex size-16 items-center justify-center rounded-2xl bg-gradient-to-br text-white shadow-[0_2px_6px_rgb(15_23_42/0.18)] transition duration-150 ease-out group-hover:-translate-y-0.5 group-hover:shadow-[0_8px_18px_rgb(15_23_42/0.22)] sm:size-24 lg:size-28',
         color, comingSoon && 'opacity-55 saturate-[.35] group-hover:translate-y-0 group-hover:shadow-[0_2px_6px_rgb(15_23_42/0.18)]', dragging && '-translate-y-1 scale-105 shadow-[0_10px_24px_rgb(15_23_42/0.25)]')}>
-        <Icon className="size-8 sm:size-9 lg:size-10" strokeWidth={1.7} aria-hidden />
+        <Icon className="size-10 sm:size-12 lg:size-14" strokeWidth={1.6} aria-hidden />
         {count > 0 && (
-          <span className="absolute -right-1.5 -top-1.5 min-w-[20px] rounded-full bg-red-600 px-1.5 text-[11px] font-semibold leading-5 text-white ring-2 ring-white tabular-nums dark:ring-slate-900" aria-label={`${count} to do`}>
+          <span className="absolute -right-2 -top-2 min-w-[22px] rounded-full bg-red-600 px-1.5 text-xs font-semibold leading-[22px] text-white ring-2 ring-white tabular-nums dark:ring-slate-900" aria-label={`${count} to do`}>
             {count > 99 ? '99+' : count}
           </span>
         )}
       </span>
-      <span className={cn('line-clamp-2 max-w-[8rem] text-[13px] leading-tight sm:text-sm', comingSoon ? 'text-slate-500 dark:text-slate-400' : 'text-slate-800 dark:text-slate-100')}>{label}</span>
+      <span className={cn('line-clamp-2 max-w-[9rem] text-sm font-medium leading-tight sm:text-[15px]', comingSoon ? 'text-slate-500 dark:text-slate-400' : 'text-slate-800 dark:text-slate-100')}>{label}</span>
       {comingSoon && <span className="-mt-1 text-[10.5px] text-slate-500 dark:text-slate-400">Coming Soon</span>}
     </Link>
   )
 }
 
 /** A tile that can be dragged to another place in its group; a plain click still opens the app. */
-function SortableTile({ app, count, disabled, justDragged }: { app: LauncherApp; count: number; disabled: boolean; justDragged: React.RefObject<boolean> }) {
+function SortableTile({ app, count, disabled, justDragged, delay }: { app: LauncherApp; count: number; disabled: boolean; justDragged: React.RefObject<boolean>; delay: number }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: app.key, disabled })
   return (
     <div ref={setNodeRef} {...attributes} {...listeners} aria-roledescription="ikon yang bisa digeser"
@@ -58,13 +93,13 @@ function SortableTile({ app, count, disabled, justDragged }: { app: LauncherApp;
       className={cn('relative rounded-xl', isDragging && 'cursor-grabbing')}
       // the click that ends a drag does not open the app
       onClickCapture={(e) => { if (justDragged.current) { e.preventDefault(); e.stopPropagation(); justDragged.current = false } }}>
-      <Tile to={app.to} label={app.label} icon={app.icon} color={app.color} comingSoon={app.comingSoon} count={count} dragging={isDragging} title={app.description} />
+      <Tile to={app.to} label={app.label} icon={app.icon} color={app.color} comingSoon={app.comingSoon} count={count} dragging={isDragging} title={app.description} delay={delay} />
     </div>
   )
 }
 
-// a centred grid of medium icons: 3 on a phone, 4 on a tablet, 6 on a monitor
-const GRID = 'mx-auto grid w-full max-w-4xl grid-cols-3 gap-x-2 gap-y-6 min-[560px]:grid-cols-4 md:gap-x-6 md:gap-y-9 lg:grid-cols-6'
+// large icons in centred rows: a short last row (or only a few apps) stays in the middle, not on the left
+const GRID = 'mx-auto flex w-full max-w-6xl flex-wrap justify-center gap-x-2 gap-y-7 md:gap-x-8 md:gap-y-10 [&>*]:w-[30%] min-[560px]:[&>*]:w-32 lg:[&>*]:w-40'
 
 /** The apps in the user's order: the ones they placed first, a new app at the end in its own order. */
 export function orderApps(apps: LauncherApp[], order: string[] | null | undefined): LauncherApp[] {
@@ -124,10 +159,10 @@ export function AppsPage() {
   const nothing = !apps.some((a) => !a.comingSoon) && others.length === 0
 
   return (
-    <div className="relative w-full py-6 sm:py-12 lg:py-16">
+    <div className="relative w-full py-8 sm:py-12 lg:py-16">
       {/* the launcher's backdrop: soft colours drifting slowly behind the icons (index.css .sw-aurora) */}
       <div aria-hidden className="sw-aurora"><i /><i /><i /><i /></div>
-      <h1 className="sr-only">{greeting()}, {user?.name ?? ''}</h1>
+      <Greeting name={user?.name ?? ''} />
 
       {nothing && (
         <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed bg-card px-6 py-14 text-center">
@@ -152,8 +187,8 @@ export function AppsPage() {
           {/* while searching only part of the apps shows: no dragging then */}
           <SortableContext items={shownApps.map((a) => a.key)} strategy={rectSortingStrategy} disabled={!!needle}>
             <section role="region" aria-label="Aplikasi" className={GRID}>
-              {shownApps.map((a) => (
-                <SortableTile key={a.key} app={a} disabled={!!needle} justDragged={justDragged}
+              {shownApps.map((a, i) => (
+                <SortableTile key={a.key} app={a} disabled={!!needle} justDragged={justDragged} delay={560 + i * 60}
                   count={a.items.reduce((n, i) => n + countOf(i), 0)} />
               ))}
               {/* a menu no app covers yet (a safety net) sits after the apps */}

@@ -1,14 +1,11 @@
 import { useEffect, useState } from 'react'
-import { PageHeader } from '@/components/PageHeader'
 import { Link, useNavigate } from 'react-router-dom'
 import { ChevronDown, ChevronRight, MessageSquare, Plus, Search, SlidersHorizontal, X } from 'lucide-react'
 import { IR_SCOPES, IR_STATUS, useIrList, useIrSummary, type IrRow, type IrScope } from '@/features/importantRequests/api'
 import { IrPriorityBadge } from '@/components/importantRequests/IrParts'
 import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
-import { ReminderList } from '@/pages/ModuleDashboardPage'
 import { useRemembered } from '@/lib/listMemory'
 import { cn } from '@/lib/utils'
 
@@ -30,7 +27,7 @@ function dueGroup(r: IrRow): string {
 const GROUP_ORDER = ['Terlambat', 'Today', 'Minggu ini', 'Minggu depan', 'Nanti', 'Tanpa tenggat', 'Done & others']
 
 /** One request as a Classroom to-do row: icon, title, who, the due date and its state on the right. */
-function IrItem({ r, scope }: { r: IrRow; scope?: IrScope }) {
+export function IrItem({ r, scope }: { r: IrRow; scope?: IrScope }) {
   const mine = scope === 'tasks' && r.my_status
   const state = mine ? r.my_status_label : r.status_label
   const stateTone = (mine ? r.my_status : r.status) === 'SELESAI' ? 'text-emerald-700' : r.overdue && !CLOSED.includes(r.status) ? 'text-red-600'
@@ -55,63 +52,6 @@ function IrItem({ r, scope }: { r: IrRow; scope?: IrScope }) {
       </div>
       <ChevronRight className="hidden size-4 shrink-0 text-muted-foreground sm:block" />
     </Link>
-  )
-}
-
-/** The page header: the title and the create button. */
-function Banner({ title, subtitle, canCreate }: { title: string; subtitle: string; canCreate?: boolean }) {
-  const navigate = useNavigate()
-  return (
-    <PageHeader title={title} subtitle={subtitle}
-      actions={canCreate ? <Button size="sm" onClick={() => navigate('/important-requests/baru')}><Plus className="size-4" /> Create request</Button> : undefined} />
-  )
-}
-
-/** Important Request home, like a Classroom class: the banner, "Mendatang" on the left, the stream on the right. */
-export function IrDashboardPage() {
-  const { data: s, isLoading, isError } = useIrSummary()
-  if (isError) return <p className="text-sm text-destructive">Failed to load the Important Request summary.</p>
-  if (isLoading || !s) return <p className="py-16 text-center text-sm text-muted-foreground">Loading…</p>
-  const upcoming = [...s.near_deadline, ...s.urgent].filter((r, i, all) => all.findIndex((x) => x.id === r.id) === i && !CLOSED.includes(r.status)).slice(0, 5)
-
-  return (
-    <div className="space-y-4">
-      <Banner title="Important Request" subtitle="Work instructions and tasks: assigned, submitted, then approved." canCreate={s.can_create} />
-
-      <section className="space-y-3">
-        <h2 className="text-base font-semibold">To do</h2>
-        <ReminderList module="important" emptyText="No tasks waiting for you." />
-      </section>
-
-      <div className="grid gap-5 lg:grid-cols-[18rem_minmax(0,1fr)]">
-        {/* like Classroom's "Mendatang" */}
-        <Card className="h-fit min-w-0 rounded-lg p-4">
-          <h2 className="text-sm font-semibold">Upcoming</h2>
-          {upcoming.length === 0 ? <p className="mt-2 text-sm text-muted-foreground">No deadlines coming up.</p> : (
-            <ul className="mt-3 space-y-3">
-              {upcoming.map((r) => (
-                <li key={r.id} className="text-sm">
-                  <Link to={`/important-requests/${r.id}`} className="line-clamp-2 font-medium hover:text-primary hover:underline">{r.title}</Link>
-                  <div className={cn('text-xs', r.overdue ? 'font-medium text-red-600' : 'text-muted-foreground')}>{r.deadline ? `${r.overdue ? 'Late · ' : 'Deadline '}${fmtDue(r.deadline)}` : 'No deadline'}</div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Card>
-
-        {/* the latest requests, as stream posts */}
-        <section className="min-w-0 space-y-3">
-          <h2 className="text-sm font-semibold">Latest</h2>
-          {s.latest.length === 0 ? (
-            <Card className="rounded-lg px-6 py-12 text-center text-sm text-muted-foreground">No requests yet.</Card>
-          ) : (
-            <div className="divide-y overflow-hidden rounded-lg border bg-card">
-              {s.latest.map((r) => <IrItem key={r.id} r={r} />)}
-            </div>
-          )}
-        </section>
-      </div>
-    </div>
   )
 }
 

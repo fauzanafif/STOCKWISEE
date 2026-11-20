@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useCreateItem, useItemOptions, useUpdateItem, useWarehouses, useWarehouseLocations } from '@/features/inventory/api'
+import { useUomActions } from '@/features/uom/api'
 import { apiErrorMessage } from '@/lib/api'
 import { invalidTo } from '@/lib/notify'
 import { Modal } from '@/components/ui/modal'
@@ -48,6 +49,21 @@ export function ItemFormModal({ open, onClose, item, initial, onCreated }: Props
   const [isActive, setIsActive] = useState(true)
   const [kind, setKind] = useState<'BARANG' | 'JASA'>('BARANG')
   const [err, setErr] = useState<string | null>(null)
+  // optional: one alternative unit with this item's own ratio (1 BOX = 12 PCS of this item)
+  const [altUnitId, setAltUnitId] = useState<number | ''>('')
+  const [altRatio, setAltRatio] = useState('')
+  const uomAct = useUomActions()
+
+  // the units its Main Category allows (Master UOM › Parent Category), in that order; none set: the fixed list
+  const rule = cats.induk ? options?.uom_rules?.[cats.induk] : undefined
+  const allowed = useMemo(() => {
+    const all = options?.uom ?? []
+    if (rule) return rule.unit_ids.map((id) => all.find((u) => u.id === id)).filter((u): u is NonNullable<typeof u> => !!u)
+    const fixed = options?.uom_fixed
+    return fixed ? all.filter((u) => fixed.includes(u.id)) : all
+  }, [options, rule])
+  const altChoices = allowed.filter((u) => u.id !== unitId && u.kind === 'PER_ITEM')
+  const unitCode = (id: number | '') => options?.uom?.find((u) => u.id === id)?.code ?? item?.unit?.code ?? ''
 
   const { data: locations } = useWarehouseLocations(warehouseId || null)
 
@@ -66,15 +82,40 @@ export function ItemFormModal({ open, onClose, item, initial, onCreated }: Props
     setIsActive(item?.is_active ?? true)
     setKind(item?.product_kind ?? initial?.kind ?? 'BARANG')
     setErr(null)
+    setAltUnitId('')
+    setAltRatio('')
   }, [open, item]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const pending = create.isPending || update.isPending
+  // a new item starts with its category's default unit; a unit the new category does not allow is cleared
+  function chooseCategory(field: CatField, value: string) {
+    setCats((c) => ({ ...c, [field]: value }))
+    if (field !== 'induk') return
+    const next = value ? options?.uom_rules?.[value] : undefined
+    if (!next) return
+    if (!isEdit && (unitId === '' || !next.unit_ids.includes(unitId as number)) && next.default_unit_id) setUnitId(next.default_unit_id)
+    else if (unitId !== '' && !next.unit_ids.includes(unitId as number) && unitId !== item?.unit?.id) setUnitId('')
+  }
+
+  const pending = create.isPending || update.isPending || uomAct.saveItemConversion.isPending
 
   function submit() {
     setErr(null)
     if (!code.trim() || !description.trim()) {
       invalidTo(setErr, 'Product Code and Description are required.')
       return
+    }
+    const ratio = Number(altRatio.trim().replace(',', '.'))
+    if (altUnitId && !(ratio > 0)) {
+      invalidTo(setErr, 'Fill in how many of the main unit one alternative unit holds.')
+      return
+    }
+    // after the item is saved: its own ratio for the alternative unit (validated on the server)
+    const withAlt = (saved: Item, done: () => void) => {
+      if (!altUnitId) return done()
+      uomAct.saveItemConversion.mutate({ itemId: saved.id, unit_id: altUnitId, ratio }, {
+        onSuccess: done,
+        onError: (e) => setErr(`Item saved, but the alternative unit was not: ${apiErrorMessage(e)}`),
+      })
     }
     const payload = {
       code: code.trim(),
@@ -92,8 +133,8 @@ export function ItemFormModal({ open, onClose, item, initial, onCreated }: Props
       is_active: isActive,
       product_kind: kind,
     }
-    const mutation = isEdit ? update.mutate(payload, { onSuccess: onClose, onError: (e) => setErr(apiErrorMessage(e)) })
-      : create.mutate(payload, { onSuccess: (made) => { onCreated?.(made); onClose() }, onError: (e) => setErr(apiErrorMessage(e)) })
+    const mutation = isEdit ? update.mutate(payload, { onSuccess: (saved) => withAlt(saved ?? item!, onClose), onError: (e) => setErr(apiErrorMessage(e)) })
+      : create.mutate(payload, { onSuccess: (made) => withAlt(made, () => { onCreated?.(made); onClose() }), onError: (e) => setErr(apiErrorMessage(e)) })
     return mutation
   }
 
@@ -139,15 +180,36 @@ export function ItemFormModal({ open, onClose, item, initial, onCreated }: Props
             <Select value={unitId} onChange={(e) => setUnitId(e.target.value ? Number(e.target.value) : '')}>
               <option value="">— select —</option>
               {/* an Accurate item may have a UOM outside the list: it stays selectable for that item */}
-              {item?.unit && !options?.uom?.some((u) => u.id === item.unit!.id) && <option value={item.unit.id}>{item.unit.code}</option>}
-              {options?.uom?.map((u) => (
+              {item?.unit && !allowed.some((u) => u.id === item.unit!.id) && <option value={item.unit.id}>{item.unit.code} (current)</option>}
+              {allowed.map((u) => (
                 <option key={u.id} value={u.id}>
                   {u.code} — {u.name}
                 </option>
               ))}
             </Select>
+            <p className="text-xs text-muted-foreground">{rule ? `Units of ${cats.induk}` : 'Standard list'} · set in Master UOM</p>
+            {isEdit && item?.unit && unitId === item.unit.id && rule && !rule.unit_ids.includes(item.unit.id) && (
+              <p className="text-xs text-amber-700">{item.unit.code} is not a unit of {cats.induk}; it stays, but a new unit must be one of the list.</p>
+            )}
           </div>
         </div>
+
+        {kind === 'BARANG' && unitId !== '' && altChoices.length > 0 && (
+          <div className="space-y-1.5 rounded-lg border bg-muted/30 p-3">
+            <Label>Alternative unit <span className="font-normal text-muted-foreground">(optional, this item only)</span></Label>
+            <div className="flex flex-wrap items-center gap-2 text-sm">
+              <span>1</span>
+              <Select aria-label="Alternative unit" className="h-9 w-32" value={altUnitId} onChange={(e) => setAltUnitId(e.target.value ? Number(e.target.value) : '')}>
+                <option value="">—</option>
+                {altChoices.map((u) => <option key={u.id} value={u.id}>{u.code}</option>)}
+              </Select>
+              <span>=</span>
+              <Input aria-label="Alternative unit ratio" className="h-9 w-24 text-right tabular-nums" inputMode="decimal" disabled={!altUnitId} value={altRatio} onChange={(e) => setAltRatio(e.target.value)} placeholder="12" />
+              <span>{unitCode(unitId)}</span>
+            </div>
+            <p className="text-xs text-muted-foreground">The size of a {altUnitId ? unitCode(altUnitId) : 'BOX / SET / ROL'} differs per item, so it is set here for this item. Fixed units (KG ↔ GR) need nothing.</p>
+          </div>
+        )}
 
         <div className="space-y-1.5">
           <Label>Product Description</Label>
@@ -161,7 +223,7 @@ export function ItemFormModal({ open, onClose, item, initial, onCreated }: Props
             return (
               <div key={field} className="space-y-1.5">
                 <Label>{label}</Label>
-                <Select value={current} onChange={(e) => setCats((c) => ({ ...c, [field]: e.target.value }))}>
+                <Select value={current} onChange={(e) => chooseCategory(field, e.target.value)}>
                   <option value="">— select —</option>
                   {current && !choices.includes(current) && <option value={current}>{current}</option>}
                   {choices.map((o) => <option key={o} value={o}>{o}</option>)}

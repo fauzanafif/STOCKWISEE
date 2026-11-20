@@ -36,7 +36,7 @@ class UomTest extends TestCase
         $this->actingAsRole('super_admin');
 
         $tree = collect($this->getJson('/api/uom')->assertOk()->json('data.categories'))->keyBy('name');
-        $this->assertSame(['Area', 'Length', 'Sheet', 'Unit', 'Volume', 'Weight'], $tree->keys()->sort()->values()->all());
+        $this->assertSame(['Area', 'Length', 'Sheet', 'Time', 'Unit', 'Volume', 'Weight'], $tree->keys()->sort()->values()->all());
         foreach ($tree as $name => $c) {
             $this->assertCount(1, array_filter($c['units'], fn ($u) => $u['is_reference']), "{$name}: one reference");
         }
@@ -114,7 +114,7 @@ class UomTest extends TestCase
         $this->postJson('/api/uom/units', ['code' => 'X2', 'name' => 'X', 'uom_category_id' => $weight->id, 'kind' => 'BIGGER'])->assertStatus(422)->assertJsonValidationErrors('factor');
 
         // a new category needs its reference before ratios mean anything
-        $new = $this->postJson('/api/uom/categories', ['name' => 'Time'])->assertCreated()->json('data.id');
+        $new = $this->postJson('/api/uom/categories', ['name' => 'Shift'])->assertCreated()->json('data.id');
         $this->postJson('/api/uom/units', ['code' => 'JAM', 'name' => 'Jam', 'uom_category_id' => $new, 'kind' => 'BIGGER', 'factor' => 60])->assertStatus(422)->assertJsonValidationErrors('kind');
         $this->postJson('/api/uom/units', ['code' => 'MNT', 'name' => 'Menit', 'uom_category_id' => $new, 'kind' => 'REFERENCE'])->assertCreated();
         $this->deleteJson("/api/uom/categories/{$new}")->assertStatus(422);

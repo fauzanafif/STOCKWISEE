@@ -6,9 +6,6 @@ import { renderWithProviders } from '@/test/utils'
 import { AppDashboardPage } from './AppDashboardPage'
 
 // the parts come from the module dashboards and the old Analytics page, tested on their own
-vi.mock('@/pages/ModuleDashboardPage', () => ({ ModuleDashboardBody: ({ module }: { module: string }) => <div>todo:{module}</div> }))
-vi.mock('@/pages/mrp/MrpDashboardPage', () => ({ MrpDashboardBody: () => <div>todo:mrp</div> }))
-vi.mock('@/pages/disassembly/DisassemblyDashboardPage', () => ({ DisassemblyDashboardBody: () => <div>todo:disassembly</div> }))
 vi.mock('@/components/dashboard/ProcurementDashboard', () => ({ ProcurementDashboard: () => <div>chart:procurement</div> }))
 vi.mock('@/components/dashboard/OperationsDashboard', () => ({ TrackingDashboard: () => <div>chart:tracking</div> }))
 
@@ -94,12 +91,11 @@ describe('AppDashboardPage', () => {
     expect(screen.queryByRole('button', { name: /note/i })).not.toBeInTheDocument()
   })
 
-  it('lists the to-do of each module the role may open in the To do view', async () => {
+  it('has no To do view any more: ?tab=todo opens the overview', async () => {
     mockApi(['item_request.view', 'item.view'])
     renderWithProviders(<AppDashboardPage appKey="inventory" />, { route: '/inventory?tab=todo' })
-    expect(await screen.findByText('todo:request')).toBeInTheDocument()
-    // no ri.view: no Receipt to-do
-    expect(screen.queryByText('todo:ri')).not.toBeInTheDocument()
+    expect(await screen.findByRole('navigation', { name: 'Menu Inventory' })).toBeInTheDocument()
+    expect(screen.queryByRole('tab', { name: 'To do' })).not.toBeInTheDocument()
   })
 
   it('shows the analysis of the app on its own tab (Purchase); Inventory has none, it is on Dashboard › Analytics', async () => {
@@ -117,11 +113,11 @@ describe('AppDashboardPage', () => {
     expect(screen.queryByRole('tab', { name: 'Analysis' })).not.toBeInTheDocument()
   })
 
-  it('puts Manufacturing Orders and Disassembly on one dashboard', async () => {
+  it('puts Manufacturing Orders and Disassembly on one overview', async () => {
     mockApi(['mrp.view', 'disassembly.view'])
-    renderWithProviders(<AppDashboardPage appKey="manufacturing" />, { route: '/mrp?tab=todo' })
-    expect(await screen.findByText('todo:mrp')).toBeInTheDocument()
-    expect(screen.getByText('todo:disassembly')).toBeInTheDocument()
+    renderWithProviders(<AppDashboardPage appKey="manufacturing" />, { route: '/mrp' })
+    expect(await screen.findByRole('article', { name: 'Manufacturing Orders' })).toBeInTheDocument()
+    expect(screen.getByRole('article', { name: 'Disassembly Orders' })).toBeInTheDocument()
   })
 
   it('says so when the role may open nothing of the app', async () => {

@@ -76,7 +76,7 @@ class RoleManagementTest extends TestCase
     public function test_validation(): void
     {
         Sanctum::actingAs($this->superAdmin());
-        $this->postJson('/api/roles', ['name' => 'Admin Gudang', 'permissions' => []])
+        $this->postJson('/api/roles', ['name' => 'Gudang', 'permissions' => []])
             ->assertUnprocessable()->assertJsonValidationErrors('name');
         $this->postJson('/api/roles', ['name' => 'Baru', 'permissions' => ['bukan.permission']])
             ->assertUnprocessable()->assertJsonValidationErrors('permissions.0');

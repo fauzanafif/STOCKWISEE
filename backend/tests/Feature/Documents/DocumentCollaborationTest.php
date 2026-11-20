@@ -174,7 +174,7 @@ class DocumentCollaborationTest extends TestCase
     {
         [$id, $karyawan] = $this->approvedRequest();
         $field = User::factory()->create(['name' => 'PETUGAS']);
-        $field->roles()->attach(\App\Models\Role::where('slug', 'lapangan_gudang')->sole());
+        $field->roles()->attach($this->role('lapangan_gudang'));
         $admin = $this->actingAsRole('admin_gudang', ['name' => 'ADMIN']);
 
         // the status says what is next: the warehouse prepares and hands over

@@ -11,20 +11,22 @@ import { Modal } from '@/components/ui/modal'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 
-const today = () => new Date().toISOString().slice(0, 10)
+const today = () => { const d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset() * 60_000).toISOString().slice(0, 10) }
 
-function Row({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
+/** One field: label on the left (stacked on a phone), the control and its hint on the right. A div, not a
+ * <label>: a label around buttons would press the first one whenever its text is clicked. */
+function Row({ label, hint, wide, children }: { label: string; hint?: string; wide?: boolean; children: ReactNode }) {
   return (
-    <label className="grid gap-1 sm:grid-cols-[10rem_1fr] sm:items-start sm:gap-3">
-      <span className="pt-2 text-sm font-medium">{label}</span>
-      <span className="space-y-1">{children}{hint && <span className="block text-xs text-muted-foreground">{hint}</span>}</span>
-    </label>
+    <div className={cn('grid min-w-0 gap-1 sm:grid-cols-[9rem_minmax(0,1fr)] sm:items-start sm:gap-3', wide && 'xl:col-span-2')}>
+      <span className="text-sm font-medium sm:pt-2">{label}</span>
+      <div className="min-w-0 space-y-1">{children}{hint && <span className="block text-xs text-muted-foreground">{hint}</span>}</div>
+    </div>
   )
 }
 
 function Segment<T extends string>({ value, options, onChange }: { value: T; options: Array<[T, string]>; onChange: (v: T) => void }) {
   return (
-    <div className="inline-flex rounded-lg border bg-muted/40 p-1 text-sm" role="radiogroup">
+    <div className="inline-flex max-w-full flex-wrap rounded-lg border bg-muted/40 p-1 text-sm" role="radiogroup">
       {options.map(([v, label]) => (
         <button key={v} type="button" role="radio" aria-checked={value === v} onClick={() => onChange(v)}
           className={cn('rounded-md px-3 py-1.5 font-medium', value === v ? 'bg-card shadow-sm' : 'text-muted-foreground hover:text-foreground')}>{label}</button>
@@ -91,8 +93,8 @@ export function OpnameOrderForm({ existing, onClose }: { existing?: FlowOpname; 
         <Button size="sm" variant="outline" onClick={onClose}>Discard</Button>
         <Button size="sm" onClick={submit} disabled={busy}>{busy ? 'Saving…' : existing ? 'Save' : 'Create Draft'}</Button>
       </>}>
-      <div className="mx-auto max-w-3xl space-y-4">
-        <Row label="Date"><Input type="date" className="w-48" value={f.scheduled_date} onChange={(e) => set({ scheduled_date: e.target.value })} /></Row>
+      <div className="grid w-full gap-x-10 gap-y-4 xl:grid-cols-2">
+        <Row label="Date"><Input type="date" className="w-full sm:w-48" value={f.scheduled_date} onChange={(e) => set({ scheduled_date: e.target.value })} /></Row>
         <Row label="Warehouse">
           {existing ? <span className="block pt-2 text-sm">{existing.warehouse?.code} — {existing.warehouse?.name}</span> : (
             <Select aria-label="Warehouse" value={f.warehouse_id ?? ''} onChange={(e) => set({ warehouse_id: e.target.value ? Number(e.target.value) : undefined, warehouse_location_id: null })}>
@@ -114,14 +116,14 @@ export function OpnameOrderForm({ existing, onClose }: { existing?: FlowOpname; 
           </Select>
         </Row>
         {!existing && (
-          <Row label="Items">
+          <Row label="Items" wide>
             <Segment value={f.scope ?? 'ALL'} options={[['ALL', 'All items'], ['SELECTED', 'Selected items']]} onChange={(v) => set({ scope: v })} />
             {f.scope === 'SELECTED' && (
               <div className="space-y-2 pt-2">
                 <ItemPicker onPick={(it) => setItems((m) => new Map(m).set(it.id, `${it.code} — ${it.description}`))} />
                 <div className="flex max-h-40 flex-wrap gap-1 overflow-y-auto">
                   {[...items].map(([id, label]) => (
-                    <span key={id} className="inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-xs">{label}
+                    <span key={id} className="inline-flex max-w-full items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-xs"><span className="truncate">{label}</span>
                       <button type="button" aria-label={`Remove ${label}`} onClick={() => setItems((m) => { const n = new Map(m); n.delete(id); return n })}><X className="size-3" /></button>
                     </span>
                   ))}
@@ -146,7 +148,7 @@ export function OpnameOrderForm({ existing, onClose }: { existing?: FlowOpname; 
             {opt?.users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
           </Select>
         </Row>
-        <Row label="Counting team" hint="Empty: anyone with counting access may count. Set: only the team (and the person in charge / reviewers).">
+        <Row label="Counting team" wide hint="Empty: anyone with counting access may count. Set: only the team (and the person in charge / reviewers).">
           <div className="flex flex-wrap gap-1.5">
             {counters.map((u) => {
               const on = f.team_ids?.includes(u.id)
@@ -158,7 +160,7 @@ export function OpnameOrderForm({ existing, onClose }: { existing?: FlowOpname; 
             {counters.length === 0 && <span className="pt-2 text-xs text-muted-foreground">No counting users.</span>}
           </div>
         </Row>
-        <Row label="Notes"><Textarea rows={3} maxLength={2000} value={f.notes ?? ''} onChange={(e) => set({ notes: e.target.value })} /></Row>
+        <Row label="Notes" wide><Textarea rows={3} maxLength={2000} value={f.notes ?? ''} onChange={(e) => set({ notes: e.target.value })} /></Row>
       </div>
     </Modal>
   )
