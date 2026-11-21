@@ -49,7 +49,7 @@ function VsLast({ price, last }: { price: number; last?: number }) {
 }
 
 /**
- * The prices of one item at every vendor, in a popup: its Master Price List prices (each with its change
+ * The prices of one item at every vendor, in a popup: its Purchase Information prices (each with its change
  * history) and the last prices it was bought at.
  */
 function PriceHistoryModal({ line, onClose }: { line: PoDraftLine; onClose: () => void }) {
@@ -62,10 +62,10 @@ function PriceHistoryModal({ line, onClose }: { line: PoDraftLine; onClose: () =
       footer={<Button variant="outline" onClick={onClose}>Close</Button>}>
       <div className="space-y-5">
         <section className="space-y-2">
-          <h3 className="text-sm font-semibold">Price List per vendor</h3>
-          {!line.item_id && <p className="text-sm text-muted-foreground">An item outside the Master Item has no Price List.</p>}
+          <h3 className="text-sm font-semibold">Purchase Information per vendor</h3>
+          {!line.item_id && <p className="text-sm text-muted-foreground">An item outside the Master Item has no Purchase Information.</p>}
           {line.item_id && ref.isLoading && <Loader2 className="size-4 animate-spin text-muted-foreground" />}
-          {line.item_id && !ref.isLoading && prices.length === 0 && <p className="text-sm text-muted-foreground">No vendor has a price for this item in the Price List yet.</p>}
+          {line.item_id && !ref.isLoading && prices.length === 0 && <p className="text-sm text-muted-foreground">No vendor has a price for this item in the Purchase Information yet.</p>}
           {prices.length > 0 && (
             <ul className="divide-y rounded-md border text-sm">
               {prices.map((p) => (
@@ -462,7 +462,7 @@ function PickLog({ l }: { l: PoDraftLine }) {
   )
 }
 
-/** the note of a price the matrix took from the Master Price List */
+/** the note of a price the matrix took from the Purchase Information */
 const PRICE_LIST_NOTE = 'Dari Price List'
 
 /** The note of a crossing: a paper icon, filled when it holds a note. */
@@ -646,7 +646,7 @@ export function PoDraftPage() {
   }
   const toggleLog = (id: number) => setLogOpen((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n })
 
-  // a price of the Master Price List is taken in by the server itself (note "Dari Price List"): no button for it here
+  // a price of the Purchase Information is taken in by the server itself (note "Dari Purchase Information"): no button for it here
   const [historyOf, setHistoryOf] = useState<PoDraftLine | null>(null)
 
   const cell = (l: PoDraftLine, v: { id: number; name: string }, low: number | null) => {
@@ -662,7 +662,7 @@ export function PoDraftPage() {
             <NoteIcon note={q?.note} label={`Note ${v.name} for ${l.description}`} onClick={() => setNoting({ line: l, vendor: v })} />
           </div>
           {q && low === q.unit_price && <div className="mt-0.5 text-[11px] text-emerald-700">Cheapest</div>}
-          {q?.note === PRICE_LIST_NOTE && <div className="mt-0.5 text-[11px] text-sky-700 dark:text-sky-300" title="Taken from the Master Price List">From Price List</div>}
+          {q?.note === PRICE_LIST_NOTE && <div className="mt-0.5 text-[11px] text-sky-700 dark:text-sky-300" title="Taken from the Purchase Information">From Purchase Information</div>}
           {q && <div className="mt-0.5"><PriceUpdates q={q} item={l.description} /></div>}
         </td>
       )

@@ -26,15 +26,25 @@ class VendorPrice extends Model
     /** what can be stored (EXPIRED is read from the dates) */
     public const STORED = [self::DRAFT, self::ACTIVE, self::ARCHIVED];
 
+    /** the price is before PPN (DPP: PPN comes on top) or nett (no PPN on top) */
+    public const EXCL = 'EXCL';
+
+    public const NETT = 'NETT';
+
+    public const PRICE_TYPES = [self::EXCL, self::NETT];
+
+    /** the PPN rates a price before PPN may carry (a choice, not typed: the Excel had 1.11 / 2.11 typos) */
+    public const PPN_RATES = [11, 12];
+
     protected $fillable = [
-        'item_id', 'vendor_id', 'unit_id', 'unit_ratio', 'base_unit_id', 'price', 'min_qty', 'lead_time_days',
-        'valid_from', 'valid_until', 'status', 'notes', 'created_by', 'updated_by',
+        'item_id', 'vendor_id', 'unit_id', 'unit_ratio', 'base_unit_id', 'price', 'price_type', 'ppn_rate', 'vendor_ref', 'price_list_draft_id',
+        'min_qty', 'lead_time_days', 'valid_from', 'valid_until', 'status', 'notes', 'created_by', 'updated_by',
     ];
 
     protected function casts(): array
     {
         return [
-            'price' => 'decimal:2', 'min_qty' => 'decimal:2', 'unit_ratio' => 'decimal:6',
+            'price' => 'decimal:2', 'min_qty' => 'decimal:2', 'unit_ratio' => 'decimal:6', 'ppn_rate' => 'decimal:2',
             'lead_time_days' => 'integer', 'valid_from' => 'date', 'valid_until' => 'date',
         ];
     }
@@ -62,6 +72,42 @@ class VendorPrice extends Model
     public function histories(): HasMany
     {
         return $this->hasMany(VendorPriceHistory::class)->orderByDesc('id');
+    }
+
+    public function draft(): BelongsTo
+    {
+        return $this->belongsTo(PriceListDraft::class, 'price_list_draft_id');
+    }
+
+    /** What is paid per purchase unit: before PPN plus its PPN, or the nett price; null when the type was not recorded. */
+    public function finalPrice(): ?float
+    {
+        return match ($this->price_type) {
+            self::EXCL => round((float) $this->price * (1 + (float) $this->ppn_rate / 100), 2),
+            self::NETT => (float) $this->price,
+            default => null,
+        };
+    }
+
+    /**
+     * What a complete price still lacks, as the Excel Purchase Information has it: whether PPN is included,
+     * and where it came from (a PI document or the vendor's quotation number).
+     *
+     * @return list<string>
+     */
+    public function missing(): array
+    {
+        return array_values(array_filter([
+            $this->price_type === null ? 'tax' : null,
+            $this->price_list_draft_id === null && blank($this->vendor_ref) ? 'source' : null,
+        ]));
+    }
+
+    /** Prices that still lack something (see missing()). */
+    public function scopeIncomplete(Builder $q): Builder
+    {
+        return $q->where(fn ($w) => $w->whereNull('vendor_prices.price_type')
+            ->orWhere(fn ($s) => $s->whereNull('vendor_prices.price_list_draft_id')->where(fn ($r) => $r->whereNull('vendor_prices.vendor_ref')->orWhere('vendor_prices.vendor_ref', ''))));
     }
 
     /** What the user sees: ACTIVE past its valid_until is EXPIRED. */

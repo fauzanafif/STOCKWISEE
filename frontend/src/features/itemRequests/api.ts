@@ -315,7 +315,7 @@ export const isBypass = (r: { status: ItemRequestStatus; approve_as?: string | n
 
 /** Whoever holds one of these sees the Approval page (Manager, Direktur, Lapangan Gudang). */
 export const APPROVAL_PERMISSIONS = ['item_request.approve_manager', 'item_request.approve_director', 'item_request.handover',
-  'ppb.approve_manager', 'ppb.approve_director', 'po.approve_director', 'npbg.approve_manager', 'npbg.approve_director']
+  'ppb.approve_manager', 'ppb.approve_director', 'po.approve_director', 'npbg.approve_manager', 'npbg.approve_director', 'opname.approve']
 
 /** STOCKWISE PPB (Manager → Direktur) and PO (Direktur) waiting for this user. */
 export interface PurchasingApprovals {

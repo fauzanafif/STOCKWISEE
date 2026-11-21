@@ -26,6 +26,8 @@ final class DocumentRegistry
         'purchase_order' => ['label' => 'Purchase Order', 'plural' => 'Purchase Orders', 'view' => ['po.view']],
         'receipt' => ['label' => 'Receipt', 'plural' => 'Receipts', 'view' => ['ri.view']],
         'purchase_return' => ['label' => 'Return', 'plural' => 'Returns', 'view' => ['purchase_return.view']],
+        // a PI document: its Chatter keeps the vendor's quotation (files) and the talk about it
+        'price_list_draft' => ['label' => 'Draft Purchase Information', 'plural' => 'Draft Purchase Information', 'view' => ['rfq.view']],
     ];
 
     public static function label(string $type, bool $plural = false): string
@@ -45,6 +47,7 @@ final class DocumentRegistry
             'ppb_draft' => ($r = DB::table('ppb_drafts')->where('id', $id)->first(['id', 'number'])) ? new DocRef($type, (string) $r->id, (int) $r->id, (string) $r->number) : null,
             'purchase_order' => ($r = DB::table('purchase_orders')->where('id', $id)->first(['id', 'number'])) ? new DocRef($type, (string) $r->id, (int) $r->id, (string) ($r->number ?? "PO #{$r->id}")) : null,
             'purchase_return' => ($r = DB::table('purchase_returns')->where('id', $id)->first(['id', 'number'])) ? new DocRef($type, (string) $r->id, (int) $r->id, (string) $r->number) : null,
+            'price_list_draft' => ($r = DB::table('price_list_drafts')->where('id', $id)->first(['id', 'number'])) ? new DocRef($type, (string) $r->id, (int) $r->id, (string) $r->number) : null,
             default => null,
         };
         abort_if($ref === null, 404, 'Dokumen tidak ditemukan.');
@@ -122,6 +125,7 @@ final class DocumentRegistry
             'purchase_order' => DB::table('purchase_orders as p')->leftJoin('vendors as v', 'v.id', '=', 'p.vendor_id')->whereIn('p.id', $keys)
                 ->get(['p.id', 'p.number', 'p.status', 'p.date', 'v.name as party']),
             'purchase_return' => DB::table('purchase_returns')->whereIn('id', $keys)->get(['id', 'number', 'status', 'tgl_retur as date', 'vendor as party']),
+            'price_list_draft' => DB::table('price_list_drafts')->whereIn('id', $keys)->get(['id', 'number', 'status', 'created_at as date', 'note as party']),
             default => collect(),
         };
 

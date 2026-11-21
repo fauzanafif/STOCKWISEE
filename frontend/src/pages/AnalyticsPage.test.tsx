@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, screen, within } from '@testing-library/react'
+import { screen } from '@testing-library/react'
 import { api } from '@/lib/api'
 import { renderWithProviders } from '@/test/utils'
-import { AnalyticsPage } from './AnalyticsPage'
+import { AnalyticsBody } from './AnalyticsPage'
 
 const summary = {
   cards: [
@@ -23,7 +23,7 @@ function mockApi(permissions: string[]) {
   })
 }
 
-describe('AnalyticsPage', () => {
+describe('AnalyticsBody (part of the one Dashboard)', () => {
   beforeEach(() => {
     localStorage.setItem('stockwise_token', 't')
     Element.prototype.scrollIntoView = vi.fn()
@@ -33,27 +33,22 @@ describe('AnalyticsPage', () => {
     localStorage.clear()
   })
 
-  it('shows every analysis on one page, with a bar to jump between the sections', async () => {
+  it("shows every analysis under All, and only the chosen app's under its button", async () => {
     mockApi(['item.view'])
-    renderWithProviders(<AnalyticsPage />)
-
-    expect(await screen.findByRole('heading', { level: 1, name: 'Analytics' })).toBeInTheDocument()
+    const { unmount } = renderWithProviders(<AnalyticsBody module="all" />)
     for (const title of ['Stock Condition', 'Procurement', 'Tracking', 'Stock Card']) {
-      expect(screen.getByRole('heading', { level: 2, name: title })).toBeInTheDocument()
+      expect(await screen.findByRole('heading', { level: 3, name: title })).toBeInTheDocument()
     }
-    const nav = screen.getByRole('navigation', { name: 'Analytics sections' })
-    fireEvent.click(within(nav).getByRole('button', { name: 'Procurement' }))
-    expect(within(nav).getByRole('button', { name: 'Procurement' })).toHaveAttribute('aria-current', 'true')
-    // jumping scrolls; every other section stays on the page
-    expect(screen.getByRole('heading', { level: 2, name: 'Stock Condition' })).toBeInTheDocument()
+    unmount()
+    renderWithProviders(<AnalyticsBody module="purchase" />)
+    expect(await screen.findByRole('heading', { level: 3, name: 'Procurement' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { level: 3, name: 'Stock Condition' })).not.toBeInTheDocument()
   })
 
-  it('has no to-do board, quick access or key figures', async () => {
+  it('has no Stock Card without the right to see items', async () => {
     mockApi([])
-    renderWithProviders(<AnalyticsPage />)
-
-    expect(await screen.findByRole('heading', { level: 2, name: 'Stock Condition' })).toBeInTheDocument()
-    for (const gone of ['Quick access', 'Key figures', 'Running POs', 'Status AMAN', 'My Notes']) expect(screen.queryByText(gone)).not.toBeInTheDocument()
-    expect(screen.queryByRole('heading', { level: 2, name: 'Stock Card' })).not.toBeInTheDocument()
+    renderWithProviders(<AnalyticsBody module="all" />)
+    expect(await screen.findByRole('heading', { level: 3, name: 'Stock Condition' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { level: 3, name: 'Stock Card' })).not.toBeInTheDocument()
   })
 })

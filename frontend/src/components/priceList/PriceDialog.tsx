@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { History, Layers, Loader2, Power } from 'lucide-react'
 import { useAuth } from '@/auth/AuthContext'
 import { ItemPicker } from '@/components/ItemPicker'
@@ -11,7 +12,7 @@ import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useVendors } from '@/features/purchasing/api'
 import {
-  rupiah, STATUS_LABEL, STATUS_TONE, usePrice, usePriceActions, usePriceHistory, usePurchaseUnits, type PriceHistory, type PriceStatus,
+  MISSING_LABEL, rupiah, STATUS_LABEL, STATUS_TONE, TAX_OPTIONS, taxKey, usePrice, usePriceActions, usePriceHistory, usePurchaseUnits, type PriceHistory, type PriceStatus,
 } from '@/features/priceList/api'
 import { apiErrorMessage } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -25,7 +26,7 @@ export function StatusBadge({ status }: { status: PriceStatus }) {
 }
 
 const FIELD_LABEL: Record<string, string> = {
-  unit_id: 'Unit', unit_ratio: 'Unit size', min_qty: 'Min. qty', lead_time_days: 'Lead time', valid_from: 'Valid from', valid_until: 'Valid until', notes: 'Notes', vendor_id: 'Vendor',
+  unit_id: 'Unit', unit_ratio: 'Unit size', price_type: 'Price type', ppn_rate: 'PPN %', vendor_ref: 'Vendor quotation no.', min_qty: 'Min. qty', lead_time_days: 'Lead time', valid_from: 'Valid from', valid_until: 'Valid until', notes: 'Notes', vendor_id: 'Vendor',
 }
 const ACTION_LABEL: Record<PriceHistory['action'], string> = { CREATE: 'Added', UPDATE: 'Changed', ARCHIVE: 'Deactivated', RESTORE: 'Restored' }
 
@@ -78,7 +79,7 @@ export function PriceDialog({ target, onClose, onAddTier }: { target: PriceTarge
 
   const [item, setItem] = useState<{ id: number; code: string; description: string } | null>('item' in target ? target.item ?? null : null)
   const [form, setForm] = useState({
-    vendor_id: 'vendorId' in target && target.vendorId ? String(target.vendorId) : '', unit_id: '', price: '', min_qty: '1', lead_time_days: '',
+    vendor_id: 'vendorId' in target && target.vendorId ? String(target.vendorId) : '', unit_id: '', price: '', tax: 'EXCL:11', vendor_ref: '', min_qty: '1', lead_time_days: '',
     valid_from: '', valid_until: '', status: 'ACTIVE' as 'DRAFT' | 'ACTIVE', notes: '', change_note: '',
   })
   const set = (k: keyof typeof form) => (e: { target: { value: string } }) => setForm((f) => ({ ...f, [k]: e.target.value }))
@@ -89,7 +90,9 @@ export function PriceDialog({ target, onClose, onAddTier }: { target: PriceTarge
     if (!p) return
     setItem({ id: p.item_id, code: p.item_code ?? '', description: p.item_name ?? '' })
     setForm({
-      vendor_id: String(p.vendor_id), unit_id: String(p.unit_id), price: String(p.price), min_qty: String(p.min_qty), lead_time_days: p.lead_time_days != null ? String(p.lead_time_days) : '',
+      // an older price whose PPN was never recorded stays "not set" until someone picks it
+      vendor_id: String(p.vendor_id), unit_id: String(p.unit_id), price: String(p.price), tax: taxKey(p.price_type, p.ppn_rate), vendor_ref: p.vendor_ref ?? '',
+      min_qty: String(p.min_qty), lead_time_days: p.lead_time_days != null ? String(p.lead_time_days) : '',
       valid_from: p.valid_from ?? '', valid_until: p.valid_until ?? '', status: p.stored_status === 'DRAFT' ? 'DRAFT' : 'ACTIVE', notes: p.notes ?? '', change_note: '',
     })
   }, [p])
@@ -103,6 +106,9 @@ export function PriceDialog({ target, onClose, onAddTier }: { target: PriceTarge
   }, [units.data, form.unit_id])
   const unit = units.data?.units.find((u) => String(u.unit_id) === form.unit_id)
   const perBase = useMemo(() => (unit && unit.ratio !== 1 && Number(form.price) > 0 ? Number(form.price) / unit.ratio : null), [unit, form.price])
+  const tax = TAX_OPTIONS.find((o) => o.key === form.tax)
+  // what is paid per purchase unit, shown as it is typed (the server computes the same)
+  const finalPrice = tax && Number(form.price) > 0 ? Math.round(Number(form.price) * (1 + tax.ppn_rate / 100) * 100) / 100 : null
 
   const save = () => {
     setErr(null)
@@ -112,6 +118,7 @@ export function PriceDialog({ target, onClose, onAddTier }: { target: PriceTarge
     if (!(Number(form.price) > 0)) return setErr('The price must be more than zero.')
     act.save.mutate({
       id: id ?? undefined, item_id: id ? undefined : item.id, vendor_id: Number(form.vendor_id), unit_id: Number(form.unit_id), price: Number(form.price),
+      price_type: tax?.price_type ?? null, ppn_rate: tax ? (tax.price_type === 'NETT' ? null : tax.ppn_rate) : null, vendor_ref: form.vendor_ref.trim() || null,
       min_qty: form.min_qty ? Number(form.min_qty) : 1, lead_time_days: form.lead_time_days === '' ? null : Number(form.lead_time_days),
       valid_from: form.valid_from || null, valid_until: form.valid_until || null, status: form.status, notes: form.notes || null, change_note: form.change_note || null,
     }, { onSuccess: onClose, onError: (e) => setErr(apiErrorMessage(e)) })
@@ -162,6 +169,11 @@ export function PriceDialog({ target, onClose, onAddTier }: { target: PriceTarge
         <div className="flex h-40 items-center justify-center"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>
       ) : (
         <fieldset disabled={readOnly || busy} className="space-y-4">
+          {p && (p.missing?.length ?? 0) > 0 && (
+            <p role="status" className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+              Incomplete: {p.missing!.map((m) => MISSING_LABEL[m] ?? m).join(' and ')}. Fill it in below.
+            </p>
+          )}
           {p?.needs_review && (
             <p role="status" className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
               The base unit of this item changed after this price was kept (now {p.base_unit}). Check the purchase unit and the price, then save.
@@ -194,6 +206,30 @@ export function PriceDialog({ target, onClose, onAddTier }: { target: PriceTarge
                 <Input id="pl-price" type="number" min="0" step="any" inputMode="decimal" className="pl-9 tabular-nums" value={form.price} onChange={set('price')} placeholder="0" />
               </div>
               {perBase != null && <p className="text-xs text-muted-foreground">= {rupiah(perBase)} per {units.data?.base}</p>}
+            </div>
+            <div className={field}>
+              <Label htmlFor="pl-tax">PPN</Label>
+              <Select id="pl-tax" value={form.tax} onChange={set('tax')}>
+                {!form.tax && <option value="">— not set —</option>}
+                {TAX_OPTIONS.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
+              </Select>
+              {!form.tax && <p className="text-xs text-amber-700">Is this price before PPN or nett? Pick one to complete it.</p>}
+            </div>
+            <div className={field}>
+              <Label>Final price</Label>
+              <div className="flex h-10 items-center rounded-md border bg-muted/40 px-3 text-sm font-semibold tabular-nums">{finalPrice != null ? rupiah(finalPrice) : '—'}</div>
+              <p className="text-xs text-muted-foreground">{tax ? (tax.price_type === 'NETT' ? 'Nett: no PPN on top.' : `Price + PPN ${tax.ppn_rate}%.`) : 'Set the PPN to see it.'}</p>
+            </div>
+            <div className={field}>
+              <Label htmlFor="pl-ref">Vendor quotation no.</Label>
+              <Input id="pl-ref" maxLength={100} value={form.vendor_ref} onChange={set('vendor_ref')} placeholder="e.g. SPH/123/XI/2026" />
+            </div>
+            <div className={field}>
+              <Label>No PI</Label>
+              <div className="flex h-10 items-center text-sm">
+                {p?.pi ? <Link to={`/price-list/drafts/${p.pi.id}`} className="font-medium text-primary hover:underline" onClick={onClose}>{p.pi.number}</Link>
+                  : <span className="text-muted-foreground">— (set through a Draft Purchase Information)</span>}
+              </div>
             </div>
             <div className={field}>
               <Label htmlFor="pl-unit">Purchase UOM</Label>
@@ -239,7 +275,7 @@ export function PriceDialog({ target, onClose, onAddTier }: { target: PriceTarge
             </div>
           )}
           <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
-            A price in the Price List is a reference. When a Purchase Request comes, Purchasing still confirms it with the vendor.
+            A price in the Purchase Information is a reference. When a Purchase Request comes, Purchasing still confirms it with the vendor.
           </p>
           {err && <p role="alert" className="text-sm text-destructive">{err}</p>}
         </fieldset>

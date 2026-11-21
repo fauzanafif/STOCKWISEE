@@ -288,8 +288,9 @@ class StockOpnameWorkflowController extends Controller
     public function recount(Request $request, StockOpname $stockOpname): JsonResponse
     {
         $this->ready();
-        $data = $request->validate(['line_ids' => ['required', 'array', 'min:1'], 'line_ids.*' => ['integer'], 'reason' => ['required', 'string', 'min:3', 'max:255']]);
-        $this->flow->requestRecount($stockOpname, $request->user(), $data['line_ids'], trim($data['reason']));
+        // the reason is optional: picking the lines is enough
+        $data = $request->validate(['line_ids' => ['required', 'array', 'min:1'], 'line_ids.*' => ['integer'], 'reason' => ['nullable', 'string', 'max:255']]);
+        $this->flow->requestRecount($stockOpname, $request->user(), $data['line_ids'], filled($data['reason'] ?? null) ? trim($data['reason']) : null);
 
         return $this->respond($request, $stockOpname);
     }

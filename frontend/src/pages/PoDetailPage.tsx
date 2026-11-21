@@ -23,6 +23,7 @@ import { invalidTo } from '@/lib/notify'
 import { QtyProgress } from '@/components/QtyProgress'
 import { SmartButtons } from '@/components/documents/SmartButtons'
 import { Chatter } from '@/components/documents/Chatter'
+import { SendToVendorModal } from '@/components/purchasing/SendToVendorModal'
 
 const rupiah = (n: number) => 'Rp ' + Number(n).toLocaleString('id-ID')
 
@@ -78,6 +79,7 @@ export function PoDetailPage() {
   const { data: po, isLoading } = usePo(poId)
   const action = usePoAction(poId)
   const [err, setErr] = useState<string | null>(null)
+  const [sending, setSending] = useState(false)
 
   if (isLoading || !po) return <div className="space-y-4"><BackLink to="/purchase-orders" label="Purchase Order List" /><DetailFallback loading={isLoading} /></div>
 
@@ -112,8 +114,9 @@ export function PoDetailPage() {
         {!isFromAccurate && po.status === 'DRAFT' && !stockwise && hasPermission('po.approve') && (
           <Button size="sm" disabled={action.isPending} onClick={() => run('approve')}>Approve</Button>
         )}
-        {!isFromAccurate && po.status === 'APPROVED' && hasPermission('po.send') && (
-          <Button size="sm" disabled={action.isPending} onClick={() => run('send')}>Send to Vendor</Button>
+        {/* by WhatsApp or email; an approved PO becomes Sent, a later one may be sent again */}
+        {!isFromAccurate && ['APPROVED', 'SENT', 'DIBELI', 'PARTIAL_RECEIVED', 'RECEIVED'].includes(po.status) && hasPermission('po.send') && (
+          <Button size="sm" variant={po.status === 'APPROVED' ? 'default' : 'outline'} onClick={() => setSending(true)}>{po.status === 'APPROVED' ? 'Send to Vendor' : 'Send again'}</Button>
         )}
         <PrintDocButton url={`/api/purchase-orders/${po.id}/print`} docType="po" />
         {!isFromAccurate && !['RECEIVED', 'CLOSED', 'CANCELLED', 'PARTIAL_RECEIVED'].includes(po.status) && hasPermission('po.cancel') && (
@@ -125,6 +128,7 @@ export function PoDetailPage() {
       </>}
     >
       <SmartButtons type="purchase_order" id={poId} />
+      {sending && <SendToVendorModal poId={po.id} number={po.number} onClose={() => setSending(false)} />}
       {err && <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{err}</p>}
       {stockwise && <DirectorApproval po={po} onError={setErr} />}
       {!isFromAccurate && (po.can_upload_proof || po.proof) && <PurchaseProof po={po} onError={setErr} />}

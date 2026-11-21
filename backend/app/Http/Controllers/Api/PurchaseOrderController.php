@@ -196,6 +196,45 @@ class PurchaseOrderController extends Controller
             ->header('Content-Disposition', 'attachment; filename="'.$file.'"');
     }
 
+    /** The PDF's arguments outside a request (the email to the vendor). */
+    public function printArgsFor(PurchaseOrder $purchaseOrder): array
+    {
+        return $this->printArgs($purchaseOrder, new Request);
+    }
+
+    /** GET /api/purchase-orders/{id}/vendor-share — what the "Send to vendor" form starts with. */
+    public function vendorShare(PurchaseOrder $purchaseOrder, \App\Services\PurchaseOrderShareService $share): JsonResponse
+    {
+        return response()->json(['data' => $share->defaults($purchaseOrder)]);
+    }
+
+    /** POST /api/purchase-orders/{id}/send-to-vendor {channel: email|whatsapp, vendor_id?, to, subject?, message, save_contact?} */
+    public function sendToVendor(Request $request, PurchaseOrder $purchaseOrder, \App\Services\PurchaseOrderShareService $share): JsonResponse
+    {
+        $data = $request->validate([
+            'channel' => ['required', 'in:email,whatsapp'],
+            'vendor_id' => ['nullable', 'integer', 'exists:vendors,id'],
+            'to' => ['required', 'string', 'max:150'],
+            'subject' => ['nullable', 'string', 'max:200'],
+            'message' => ['required', 'string', 'max:5000'],
+            'save_contact' => ['sometimes', 'boolean'],
+        ]);
+        $result = $share->send($request->user(), $purchaseOrder, $data);
+
+        return response()->json(['data' => $result + ['po' => $this->show($purchaseOrder->refresh())->getData(true)['data'] ?? null]]);
+    }
+
+    /** GET /api/public/purchase-orders/{id}/pdf?signature=… — the PDF for the vendor: no login, a signed link that expires. */
+    public function publicPdf(PurchaseOrder $purchaseOrder, DocumentPrintRenderer $renderer): Response
+    {
+        $file = preg_replace('/[^A-Za-z0-9._-]+/', '-', (string) ($purchaseOrder->number ?? 'PO')).'.pdf';
+
+        return response($renderer->pdf(...$this->printArgs($purchaseOrder, new Request)))
+            ->header('Content-Type', 'application/pdf')
+            ->header('Content-Disposition', 'inline; filename="'.$file.'"')
+            ->header('Cache-Control', 'private, no-store');
+    }
+
     private function printArgs(PurchaseOrder $purchaseOrder, Request $request): array
     {
         $purchaseOrder->load('vendor', 'items.vendor:id,name,address', 'items.item:id,code', 'items.unit:id,code');

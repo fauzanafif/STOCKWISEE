@@ -5,7 +5,7 @@ import { api } from '@/lib/api'
  * Odoo-style collaboration on a transaction document: Smart Buttons (related documents), Chatter (messages,
  * internal notes, tracked changes), Activities and Audit. A document is its type + the id its page opens with.
  */
-export type DocType = 'item_request' | 'delivery_order' | 'ppb_draft' | 'purchase_request' | 'purchase_order' | 'receipt' | 'purchase_return'
+export type DocType = 'item_request' | 'delivery_order' | 'ppb_draft' | 'purchase_request' | 'purchase_order' | 'receipt' | 'purchase_return' | 'price_list_draft'
 
 /** The page each document type opens on. */
 export const DOC_PATH: Record<DocType, (id: number) => string> = {
@@ -16,6 +16,7 @@ export const DOC_PATH: Record<DocType, (id: number) => string> = {
   purchase_order: (id) => `/purchase-orders/${id}`,
   receipt: (id) => `/ri/${id}`,
   purchase_return: (id) => `/purchase-returns/${id}`,
+  price_list_draft: (id) => `/price-list/drafts/${id}`,
 }
 
 export interface RelatedDoc { type: DocType; id: number; number: string; status: string | null; date: string | null; party: string | null }
@@ -47,7 +48,7 @@ export function useRelated(type: DocType, id: number) {
 export function useFeed(type: DocType, id: number) {
   return useQuery({
     queryKey: [...key(type, id), 'feed'], enabled: id > 0,
-    queryFn: async () => (await api.get<{ data: FeedItem[]; meta: { staff: boolean } }>(`${base(type, id)}/feed`)).data,
+    queryFn: async () => (await api.get<{ data: FeedItem[]; meta: { staff: boolean; document?: { number?: string | null } } }>(`${base(type, id)}/feed`)).data,
   })
 }
 

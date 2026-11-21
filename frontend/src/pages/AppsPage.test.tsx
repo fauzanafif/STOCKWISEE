@@ -30,13 +30,13 @@ describe('AppsPage (App Launcher)', () => {
     renderWithProviders(<AppsPage />)
     const grid = await launcher()
 
-    expect(within(grid).getByRole('link', { name: 'Purchase' })).toHaveAttribute('href', '/purchase')
-    expect(within(grid).getByRole('link', { name: 'Inventory' })).toHaveAttribute('href', '/inventory')
+    expect(within(grid).getByRole('link', { name: 'Purchase' })).not.toHaveAttribute('href', '/purchase') // the app opens its work: no dashboard of its own
+    expect(within(grid).getByRole('link', { name: 'Inventory' })).not.toHaveAttribute('href', '/inventory') // the app opens its work: no dashboard of its own
     // Maintenance is a menu of Tracking: no app of its own
-    expect(within(grid).getByRole('link', { name: 'Tracking' })).toHaveAttribute('href', '/tracking')
+    expect(within(grid).getByRole('link', { name: 'Tracking' })).not.toHaveAttribute('href', '/tracking') // the app opens its work: no dashboard of its own
     expect(within(grid).queryByRole('link', { name: 'Maintenance' })).not.toBeInTheDocument()
-    expect(within(grid).getByRole('link', { name: /^Important Request/ })).toHaveAttribute('href', '/important-requests')
-    expect(within(grid).getByRole('link', { name: 'Dashboard' })).toHaveAttribute('href', '/todo')
+    expect(within(grid).getByRole('link', { name: /^Important Request/ })).toHaveAttribute('href', '/important-requests/tugas')
+    expect(within(grid).getByRole('link', { name: 'Dashboard' })).toHaveAttribute('href', '/overview')
     expect(within(grid).getByRole('link', { name: 'Guide' })).toHaveAttribute('href', '/panduan')
   })
 
@@ -66,10 +66,10 @@ describe('AppsPage (App Launcher)', () => {
     renderWithProviders(<AppsPage />)
     const grid = await launcher()
 
-    expect(within(grid).getByRole('link', { name: 'Inventory' })).toHaveAttribute('href', '/inventory')
+    expect(within(grid).getByRole('link', { name: 'Inventory' })).not.toHaveAttribute('href', '/inventory') // the app opens its work: no dashboard of its own
     expect(within(grid).queryByRole('link', { name: 'Item Request' })).not.toBeInTheDocument()
-    expect(within(grid).getByRole('link', { name: 'Manufacturing' })).toHaveAttribute('href', '/mrp')
-    expect(within(grid).getByRole('link', { name: 'Tracking' })).toHaveAttribute('href', '/tracking')
+    expect(within(grid).getByRole('link', { name: 'Manufacturing' })).not.toHaveAttribute('href', '/mrp') // the app opens its work: no dashboard of its own
+    expect(within(grid).getByRole('link', { name: 'Tracking' })).not.toHaveAttribute('href', '/tracking') // the app opens its work: no dashboard of its own
     expect(screen.queryByRole('region', { name: 'Modul lainnya' })).not.toBeInTheDocument()
   })
 

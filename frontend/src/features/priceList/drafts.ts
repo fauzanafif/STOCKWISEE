@@ -1,7 +1,7 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 
-/** A Draft Price List: items × vendors whose prices are filled, then set in the Master Price List. */
+/** A Draft Purchase Information: items × vendors whose prices are filled, then set in the Purchase Information. */
 export interface DraftSummary {
   id: number
   number: string
@@ -12,6 +12,8 @@ export interface DraftSummary {
   updated_at: string | null
   done_by: string | null
   done_at: string | null
+  /** the note given at Set Harga */
+  done_note?: string | null
   items_count: number | null
   vendors_count: number | null
   cells_count: number | null
@@ -21,7 +23,8 @@ export interface DraftItem { id: number; code: string; description: string; unit
 
 export interface Draft extends DraftSummary {
   items: DraftItem[]
-  vendors: { id: number; name: string; code: string | null }[]
+  /** each vendor column: one quotation, its tax and number (copied to its prices at Set Harga) */
+  vendors: { id: number; name: string; code: string | null; price_type: 'EXCL' | 'NETT'; ppn_rate: number; vendor_ref: string | null }[]
   /** "itemId:vendorId" → price */
   cells: Record<string, number>
 }
@@ -57,7 +60,7 @@ export function useDraftActions(id?: number) {
   return {
     create: useMutation({
       mutationFn: async (body: { item_ids: number[]; vendor_ids: number[]; note?: string | null }) => (await api.post<{ data: Draft }>('/api/price-list/drafts', body)).data.data,
-      meta: { successMessage: 'Draft Price List created.' },
+      meta: { successMessage: 'Draft Purchase Information created.' },
       onSuccess: put,
     }),
     addItems: useMutation({
@@ -76,13 +79,19 @@ export function useDraftActions(id?: number) {
       mutationFn: async (vendorId: number) => (await api.delete<{ data: Draft }>(`/api/price-list/drafts/${id}/vendors/${vendorId}`)).data.data,
       onSuccess: put,
     }),
+    setVendorTerms: useMutation({
+      mutationFn: async ({ vendorId, ...body }: { vendorId: number; price_type: 'EXCL' | 'NETT'; ppn_rate: number | null; vendor_ref: string | null }) =>
+        (await api.put<{ data: Draft }>(`/api/price-list/drafts/${id}/vendors/${vendorId}`, body)).data.data,
+      meta: { successMessage: false },
+      onSuccess: put,
+    }),
     setCell: useMutation({
       mutationFn: async (body: { item_id: number; vendor_id: number; price: number | null }) => (await api.put(`/api/price-list/drafts/${id}/cells`, body)).data,
       onSuccess: () => qc.invalidateQueries({ queryKey: [...KEY, id] }),
     }),
     finish: useMutation({
-      mutationFn: async () => (await api.post<{ data: Draft }>(`/api/price-list/drafts/${id}/finish`)).data.data,
-      meta: { successMessage: 'Prices set in the Master Price List.' },
+      mutationFn: async (note?: string | null) => (await api.post<{ data: Draft }>(`/api/price-list/drafts/${id}/finish`, { note: note || null })).data.data,
+      meta: { successMessage: 'Prices set in the Purchase Information.' },
       onSuccess: (d) => { put(d); void qc.invalidateQueries({ queryKey: ['price-list'] }) },
     }),
     remove: useMutation({

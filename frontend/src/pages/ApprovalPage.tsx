@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { PpbReference } from '@/components/PpbReference'
 import { Link, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, CheckCheck, CheckCircle2, ChevronDown, ClipboardCheck, ExternalLink, FileText, Inbox, Loader2, PackageCheck, Search, ShoppingCart, Undo2, XCircle } from 'lucide-react'
+import { ArrowLeft, CheckCheck, CheckCircle2, ChevronDown, ClipboardCheck, ExternalLink, FileText, Inbox, Loader2, PackageCheck, Scale, Search, ShoppingCart, Undo2, XCircle } from 'lucide-react'
+import { useOpnames } from '@/features/opname/api'
+import { useFlowActions, useOpnameDetail } from '@/features/opname/workflow'
 import { apiErrorMessage } from '@/lib/api'
 import { useAuth } from '@/auth/AuthContext'
 import { useApprovals, usePurchasingApprovals, type ApprovalRow } from '@/features/itemRequests/api'
@@ -32,7 +34,7 @@ function age(v: string | null | undefined): { text: string; late: boolean } {
   return { text: days <= 0 ? 'today' : `${days} days`, late: days >= 3 }
 }
 
-type Kind = 'REQUEST' | 'GUDANG' | 'NPBG' | 'PPB' | 'PO'
+type Kind = 'REQUEST' | 'GUDANG' | 'NPBG' | 'PPB' | 'PO' | 'ADJ'
 
 /** One thing waiting for this user, whatever document it is. */
 interface Task {
@@ -57,8 +59,9 @@ const KIND: Record<Kind, { label: string; what: string; icon: typeof FileText; t
   NPBG: { label: 'Delivery Order', what: 'Approve a Delivery Order already submitted', icon: PackageCheck, tone: 'bg-teal-50 text-teal-700', edge: 'border-teal-300' },
   PPB: { label: 'Purchase Request', what: 'Approve what is going to be bought', icon: FileText, tone: 'bg-amber-50 text-amber-700', edge: 'border-amber-300' },
   PO: { label: 'Purchase Order', what: 'Approve the vendor, prices and total', icon: ShoppingCart, tone: 'bg-emerald-50 text-emerald-700', edge: 'border-emerald-300' },
+  ADJ: { label: 'Stock Adjustment', what: 'Approve the Stock Opname variances posted to stock', icon: Scale, tone: 'bg-rose-50 text-rose-700', edge: 'border-rose-300' },
 }
-const ORDER: Kind[] = ['REQUEST', 'GUDANG', 'NPBG', 'PPB', 'PO']
+const ORDER: Kind[] = ['REQUEST', 'GUDANG', 'NPBG', 'PPB', 'PO', 'ADJ']
 
 /**
  * Approval — ONE inbox for everything waiting for this user: Request Barang (Manajer / Direktur),
@@ -72,6 +75,8 @@ export function ApprovalPage() {
   const [kind, setKind] = useState<Kind | ''>('')
   const [search, setSearch] = useState('')
   const requests = useApprovals(tab)
+  // Stock Adjustment: the Stock Opnames whose variances wait for the Manager / Direktur
+  const adjustments = useOpnames({ source: 'internal', status: 'WAITING_APPROVAL' }, tab === 'todo' && hasPermission('opname.approve'))
   const buying = usePurchasingApprovals(tab === 'todo' && ['ppb.approve_manager', 'ppb.approve_director', 'po.approve_director', 'npbg.approve_manager', 'npbg.approve_director'].some((p) => hasPermission(p)))
 
   // a Direktur without the Manager right sees the Manager step too and may approve it straight away
@@ -103,9 +108,14 @@ export function ApprovalPage() {
       out.push({ key: `PO-${p.id}`, kind: 'PO', id: p.id, number: p.number, title: p.vendor ?? 'PO', subtitle: `${p.items_count} items${p.off_pick ? ` · ${p.off_pick} not Director pick` : ''}${p.from_ppb ? ` · from Purchase Request ${p.from_ppb}` : ''}`,
         stage: 'Director Approval', date: p.date, urgent: false, amount: p.total, preview: `${rupiah(p.total)}${p.off_pick ? ` · ${p.off_pick} not Director pick` : ''}` })
     }
+    for (const o of tab === 'todo' ? adjustments.data?.data ?? [] : []) {
+      out.push({ key: `ADJ-${o.id}`, kind: 'ADJ', id: o.id, number: o.number, title: o.warehouse ? `${o.warehouse.code}${o.warehouse.name ? ` — ${o.warehouse.name}` : ''}` : 'Stock Opname',
+        subtitle: [o.reviewer ? `sent by ${o.reviewer}` : null, o.diff_count != null ? `${o.diff_count} items differ` : null].filter(Boolean).join(' · '),
+        stage: 'Manager / Director Approval', date: o.scheduled_date, urgent: false, preview: `${o.items_count ?? 0} items counted` })
+    }
     // urgent first, then the oldest
     return out.sort((a, b) => Number(b.urgent) - Number(a.urgent) || (tab === 'done' ? -1 : 1) * String(a.date ?? '').localeCompare(String(b.date ?? '')))
-  }, [requests.data, buying.data, tab, bypassNpbg, bypassPpb])
+  }, [requests.data, buying.data, adjustments.data, tab, bypassNpbg, bypassPpb])
 
   const counts = useMemo(() => tasks.reduce((m, t) => ({ ...m, [t.kind]: (m[t.kind] ?? 0) + 1 }), {} as Partial<Record<Kind, number>>), [tasks])
   const shown = tasks.filter((t) => (!kind || t.kind === kind)
@@ -294,6 +304,7 @@ function TaskDetail({ task, history, onBack, onDone }: { task: Task; history: bo
   if (task.kind === 'PPB') return <PpbDetail task={task} onBack={onBack} onDone={onDone} />
   if (task.kind === 'NPBG') return <NpbgDetail task={task} onBack={onBack} onDone={onDone} />
   if (task.kind === 'PO') return <PoDetail task={task} onBack={onBack} onDone={onDone} />
+  if (task.kind === 'ADJ') return <AdjDetail task={task} onBack={onBack} onDone={onDone} />
   const r = task.request!
   const gudang = task.kind === 'GUDANG'
   const lines = gudang ? r.lines.filter((l) => l.remaining > 0) : r.lines.filter((l) => l.decision === 'NPBG' || history)
@@ -512,6 +523,42 @@ function GudangPicks({ r, lines, asked, keyOf, approvedOf, forGudang }: {
  * Approve / Revisi (back to the admin who made it, with a required note) / Tolak — the same bar for PPB,
  * NPBG and PO. Every change goes through Revisi: the approver does not edit the document.
  */
+/** A Stock Adjustment: the variances of the Stock Opname, posted to the Stock Ledger once approved (or sent back to review). */
+function AdjDetail({ task, onBack, onDone }: { task: Task; onBack: () => void; onDone: () => void }) {
+  const { data: o, isLoading } = useOpnameDetail(task.id)
+  const act = useFlowActions(task.id)
+  const busy = act.approve.isPending || act.reject.isPending
+  const lines = (o?.lines ?? []).filter((l) => l.review_status !== 'REJECTED' && l.variance != null && l.variance !== 0)
+  return (
+    <div className="space-y-4">
+      <DetailHeader task={task} onBack={onBack} link={`/stock-opnames/${task.id}`} />
+      {isLoading || !o ? <div className="flex h-32 items-center justify-center"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div> : (
+        <>
+          <Facts items={[
+            ['Warehouse', o.warehouse ? `${o.warehouse.code} — ${o.warehouse.name}` : '—'],
+            ['Counted', `${o.summary.counted} of ${o.summary.lines} items`],
+            ['Differ', `${lines.length} items (+${fmtQty(o.summary.plus_qty)} / ${fmtQty(o.summary.minus_qty)})`],
+            ['Sent by', `${o.reviewer ?? '—'}${o.approval_requested_at ? ` · ${fmtDate(o.approval_requested_at)}` : ''}`],
+            ...(o.review_note ? [['Reviewer note', o.review_note] as [string, React.ReactNode]] : []),
+          ]} />
+          {lines.length === 0 ? <p className="rounded-lg border bg-card px-4 py-6 text-center text-sm text-muted-foreground">No variance: approving closes the count without changing stock.</p> : (
+            <LinesTable head={['Item', 'Book', 'Counted', 'Adjustment', 'Note']} numericFrom={1}
+              rows={lines.map((l) => [
+                <span key="i"><span className="block font-medium">{l.description ?? '-'}</span><span className="text-xs text-muted-foreground">{l.item_code} · {l.uom ?? ''}</span></span>,
+                fmtQty(l.system_qty), fmtQty(l.physical_qty),
+                <span key="v" className={cn('font-semibold', (l.variance ?? 0) > 0 ? 'text-emerald-700' : 'text-red-600')}>{(l.variance ?? 0) > 0 ? '+' : ''}{fmtQty(l.variance)}</span>,
+                <span key="n" className="text-xs text-muted-foreground">{l.review_note ?? l.note ?? ''}</span>,
+              ])} />
+          )}
+          <DecisionBar approveLabel="Approve & Post to stock" rejectLabel="Send back to review" busy={busy} withNote
+            onApprove={(note) => act.approve.mutate({ note }, { onSuccess: onDone, onError: (e) => toast.fromError(e, apiErrorMessage(e)) })}
+            onReject={(note) => act.reject.mutate({ note }, { onSuccess: onDone, onError: (e) => toast.fromError(e, apiErrorMessage(e)) })} />
+        </>
+      )}
+    </div>
+  )
+}
+
 function DecisionBar({ approveLabel, rejectLabel, busy, onApprove, onReject, onReturn, returnTo = 'admin', withNote }: {
   approveLabel: string; rejectLabel?: string; busy: boolean; onApprove: (note?: string) => void; onReject?: (note: string) => void; hint?: string
   /** Revisi: send it back for a revision (a note is required) */

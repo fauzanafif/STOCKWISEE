@@ -28,7 +28,7 @@ const GROUP_LABEL: Record<string, string> = {
   npbg: 'Delivery Order',
   npbg_verification: 'Delivery Order item clarification',
   ppb: 'Purchase Request & Draft Purchase Request',
-  purchasing: 'Purchase Order & Price List',
+  purchasing: 'Purchase Order & Purchase Information',
   ri: 'Receipt',
   purchase_return: 'Return',
   stock_opname: 'Physical Inventory',

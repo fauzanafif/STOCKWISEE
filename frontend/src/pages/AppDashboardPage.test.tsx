@@ -3,11 +3,9 @@ import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { api } from '@/lib/api'
 import { renderWithProviders } from '@/test/utils'
-import { AppDashboardPage } from './AppDashboardPage'
+import { AppOverview } from './AppDashboardPage'
 
 // the parts come from the module dashboards and the old Analytics page, tested on their own
-vi.mock('@/components/dashboard/ProcurementDashboard', () => ({ ProcurementDashboard: () => <div>chart:procurement</div> }))
-vi.mock('@/components/dashboard/OperationsDashboard', () => ({ TrackingDashboard: () => <div>chart:tracking</div> }))
 
 function mockApi(permissions: string[]) {
   vi.spyOn(api, 'get').mockImplementation((url: string) => {
@@ -16,13 +14,13 @@ function mockApi(permissions: string[]) {
   })
 }
 
-describe('AppDashboardPage', () => {
+describe('AppOverview (on the one Dashboard)', () => {
   beforeEach(() => localStorage.setItem('stockwise_token', 't'))
   afterEach(() => { vi.restoreAllMocks(); localStorage.clear() })
 
   it('shows one simple card per feature, in the order of the menu bar, each with one button', async () => {
     mockApi(['item_request.view', 'npbg.view', 'item.view'])
-    renderWithProviders(<AppDashboardPage appKey="inventory" />, { route: '/inventory' })
+    renderWithProviders(<AppOverview appKey="inventory" />, { route: '/todo?module=inventory' })
 
     const menu = await screen.findByRole('navigation', { name: 'Menu Inventory' })
     const cards = within(menu).getAllByRole('article')
@@ -43,7 +41,7 @@ describe('AppDashboardPage', () => {
       ], meta: {} } }) as never
       return Promise.resolve({ data: { data: [] } }) as never
     })
-    renderWithProviders(<AppDashboardPage appKey="inventory" />, { route: '/inventory' })
+    renderWithProviders(<AppOverview appKey="inventory" />, { route: '/todo?module=inventory' })
 
     const card = await screen.findByRole('article', { name: 'Item Request' })
     expect(await within(card).findByRole('link', { name: '4 To Process' })).toBeInTheDocument()
@@ -63,7 +61,7 @@ describe('AppDashboardPage', () => {
     })
     const post = vi.spyOn(api, 'post').mockResolvedValue({ data: { data: { ...note, id: 8 } } } as never)
     const put = vi.spyOn(api, 'put').mockResolvedValue({ data: { data: note } } as never)
-    renderWithProviders(<AppDashboardPage appKey="inventory" />, { route: '/inventory' })
+    renderWithProviders(<AppOverview appKey="inventory" />, { route: '/todo?module=inventory' })
 
     const floating = await screen.findByRole('dialog', { name: 'Note on Delivery Order' })
     expect(floating).toHaveStyle({ left: '10px', top: '20px', width: '240px' })
@@ -86,44 +84,22 @@ describe('AppDashboardPage', () => {
 
   it('shows no note buttons while the server cannot stick notes on cards', async () => {
     mockApi(['npbg.view'])
-    renderWithProviders(<AppDashboardPage appKey="inventory" />, { route: '/inventory' })
+    renderWithProviders(<AppOverview appKey="inventory" />, { route: '/todo?module=inventory' })
     await screen.findByRole('article', { name: 'Delivery Order' })
     expect(screen.queryByRole('button', { name: /note/i })).not.toBeInTheDocument()
   })
 
-  it('has no To do view any more: ?tab=todo opens the overview', async () => {
-    mockApi(['item_request.view', 'item.view'])
-    renderWithProviders(<AppDashboardPage appKey="inventory" />, { route: '/inventory?tab=todo' })
-    expect(await screen.findByRole('navigation', { name: 'Menu Inventory' })).toBeInTheDocument()
-    expect(screen.queryByRole('tab', { name: 'To do' })).not.toBeInTheDocument()
-  })
-
-  it('shows the analysis of the app on its own tab (Purchase); Inventory has none, it is on Dashboard › Analytics', async () => {
-    mockApi(['po.view'])
-    renderWithProviders(<AppDashboardPage appKey="purchase" />, { route: '/purchase' })
-    await userEvent.click(await screen.findByRole('tab', { name: 'Analysis' }))
-    expect(screen.getByText('chart:procurement')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Download PDF' })).toBeInTheDocument()
-  })
-
-  it('Inventory has no Analysis view', async () => {
-    mockApi(['item.view'])
-    renderWithProviders(<AppDashboardPage appKey="inventory" />, { route: '/inventory?tab=analysis' })
-    expect(await screen.findByRole('navigation', { name: 'Menu Inventory' })).toBeInTheDocument()
-    expect(screen.queryByRole('tab', { name: 'Analysis' })).not.toBeInTheDocument()
-  })
-
   it('puts Manufacturing Orders and Disassembly on one overview', async () => {
     mockApi(['mrp.view', 'disassembly.view'])
-    renderWithProviders(<AppDashboardPage appKey="manufacturing" />, { route: '/mrp' })
+    renderWithProviders(<AppOverview appKey="manufacturing" />, { route: '/todo?module=manufacturing' })
     expect(await screen.findByRole('article', { name: 'Manufacturing Orders' })).toBeInTheDocument()
     expect(screen.getByRole('article', { name: 'Disassembly Orders' })).toBeInTheDocument()
   })
 
-  it('says so when the role may open nothing of the app', async () => {
+  it('shows nothing for an app the role may open nothing of', async () => {
     mockApi(['item.view'])
-    renderWithProviders(<AppDashboardPage appKey="purchase" />, { route: '/purchase' })
-    expect(await screen.findByText('You have no access to this app')).toBeInTheDocument()
+    const { container } = renderWithProviders(<AppOverview appKey="purchase" />, { route: '/todo?module=purchase' })
+    await new Promise((r) => setTimeout(r, 50))
+    expect(container.querySelector('section')).toBeNull()
   })
-
 })

@@ -44,7 +44,7 @@ class PoDraftService
     }
 
     /**
-     * A price set in the Master Price List reaches the Price Quotation at once: every item still being quoted
+     * A price set in the Purchase Information reaches the Price Quotation at once: every item still being quoted
      * (of these items, or all) takes it at each vendor column it has with no price yet.
      *
      * @param  list<int>|null  $itemIds
@@ -63,7 +63,7 @@ class PoDraftService
     }
 
     /**
-     * A crossing with no price yet takes the vendor's price from the Master Price List: an Active price, still
+     * A crossing with no price yet takes the vendor's price from the Purchase Information: an Active price, still
      * valid, in the line's own unit, of the tier its quantity reaches. A crossing without such a price stays
      * empty ("–"); a price already typed is never overwritten.
      *

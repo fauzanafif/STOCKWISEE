@@ -170,6 +170,7 @@ final class DocumentActivities
             'purchase_order' => "/purchase-orders/{$id}",
             'receipt' => "/ri/{$id}",
             'purchase_return' => "/purchase-returns/{$id}",
+            'price_list_draft' => "/price-list/drafts/{$id}",
             default => '/',
         };
     }

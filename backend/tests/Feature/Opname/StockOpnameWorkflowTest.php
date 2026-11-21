@@ -46,7 +46,7 @@ class StockOpnameWorkflowTest extends TestCase
         parent::setUp();
         $site = Site::factory()->create(['code' => 'SIG-SDA']);
         $this->wh = Warehouse::factory()->create(['site_id' => $site->id]);
-        foreach (['admin' => 'admin_gudang', 'counter' => 'anak_gudang', 'field' => 'lapangan_gudang', 'boss' => 'bos', 'buyer' => 'purchasing', 'super' => 'super_admin'] as $k => $role) {
+        foreach (['admin' => 'admin_gudang', 'counter' => 'anak_gudang', 'field' => 'lapangan_gudang', 'boss' => 'bos', 'buyer' => 'purchasing', 'super' => 'super_admin', 'approver' => 'direktur'] as $k => $role) {
             $this->u[$k] = User::factory()->create(['name' => ucfirst($k)]);
             $this->u[$k]->roles()->attach($this->role($role));
         }
@@ -274,9 +274,11 @@ class StockOpnameWorkflowTest extends TestCase
         $this->as('counter');
         $this->postJson("/api/stock-opnames/{$id}/recount", ['line_ids' => [$la->id], 'reason' => 'selisih besar'])->assertForbidden();
         $this->as('admin');
-        $this->postJson("/api/stock-opnames/{$id}/recount", ['line_ids' => [$la->id]])->assertStatus(422); // reason is required
-        $this->postJson("/api/stock-opnames/{$id}/recount", ['line_ids' => [$la->id], 'reason' => 'selisih besar'])->assertOk()
+        // a reason is optional (kept simple); one given is kept with the count
+        $this->postJson("/api/stock-opnames/{$id}/recount", ['line_ids' => [$la->id], 'reason' => ''])->assertOk()
             ->assertJsonPath('data.flow_status', 'RECOUNT')->assertJsonPath('data.count_round', 2);
+        $this->assertNull($la->fresh()->recount_reason);
+        $la->update(['recount_reason' => 'selisih besar']);
 
         $this->as('counter');
         $this->postJson("/api/stock-opnames/{$id}/lines/{$this->lineOf($id, $b)->id}/count", ['physical_qty' => 1])->assertStatus(422); // not asked for
@@ -293,14 +295,13 @@ class StockOpnameWorkflowTest extends TestCase
         $counts[0]->delete();
     }
 
-    public function test_approval_needs_a_reason_per_variance_and_the_supervisor_can_send_it_back(): void
+    public function test_a_variance_reason_is_optional_and_the_supervisor_can_send_it_back(): void
     {
         [$a, $b] = [$this->stocked(10), $this->stocked(10)];
         $id = $this->counted([8, 10], [$a, $b]);
         $this->as('admin');
-        $this->postJson("/api/stock-opnames/{$id}/request-approval")->assertStatus(422)->assertJsonFragment(['1 barang berselisih belum ada alasannya: '.$a->code.'. Isi alasan selisih, atau kecualikan barangnya.']);
-        $this->postJson("/api/stock-opnames/{$id}/review-decisions", ['decisions' => [['id' => $this->lineOf($id, $a)->id, 'decision' => 'ACCEPT', 'note' => 'rusak, dibuang']]])->assertOk();
-        $this->postJson("/api/stock-opnames/{$id}/request-approval", ['note' => 'cek'])->assertOk()->assertJsonPath('data.flow_status', 'WAITING_APPROVAL');
+        // no reason per variance needed: it goes for approval as it is
+        $this->postJson("/api/stock-opnames/{$id}/request-approval")->assertOk()->assertJsonPath('data.flow_status', 'WAITING_APPROVAL');
 
         // a counter / auditor cannot approve; the supervisor rejects with a note → back to review, stock unchanged
         foreach (['counter', 'boss'] as $who) {
@@ -308,8 +309,12 @@ class StockOpnameWorkflowTest extends TestCase
             $this->postJson("/api/stock-opnames/{$id}/approve")->assertForbidden();
         }
         $this->as('admin');
+        $this->as('approver'); // a Stock Adjustment is approved by the Manager / Direktur
         $this->postJson("/api/stock-opnames/{$id}/reject")->assertStatus(422);
+        $this->as('admin');
+        $this->as('approver'); // a Stock Adjustment is approved by the Manager / Direktur
         $this->postJson("/api/stock-opnames/{$id}/reject", ['note' => 'hitung ulang rak A'])->assertOk()->assertJsonPath('data.flow_status', 'REVIEW');
+        $this->as('admin');
         $this->assertSame(10.0, $this->stockOf($a));
         $this->assertDatabaseHas('stock_opname_events', ['stock_opname_id' => $id, 'event' => 'REJECTED', 'note' => 'hitung ulang rak A', 'from_status' => 'WAITING_APPROVAL', 'to_status' => 'REVIEW']);
     }
@@ -328,6 +333,33 @@ class StockOpnameWorkflowTest extends TestCase
         return $id;
     }
 
+    public function test_a_stock_adjustment_is_approved_by_the_manager_or_direktur_never_by_who_sent_it(): void
+    {
+        $a = $this->stocked(10);
+        $id = $this->waitingApproval([8], [$a]);
+        // Gudang counts, reviews and sends; it does not approve or send back
+        $this->as('admin');
+        $this->postJson("/api/stock-opnames/{$id}/approve")->assertForbidden();
+        $this->postJson("/api/stock-opnames/{$id}/reject", ['note' => 'x'])->assertForbidden();
+        $this->assertSame(10.0, $this->stockOf($a));
+        // the Manager may
+        $manager = $this->actingAsRole('manager');
+        $this->postJson("/api/stock-opnames/{$id}/approve")->assertOk();
+        $this->assertSame(8.0, $this->stockOf($a));
+
+        // four eyes: someone holding both roles cannot approve what they sent
+        $b = $this->stocked(10);
+        $id2 = $this->counted([9], [$b]);
+        $both = $this->u['admin'];
+        $both->roles()->attach(\App\Models\Role::where('slug', 'direktur')->sole());
+        \Laravel\Sanctum\Sanctum::actingAs($both->fresh());
+        $this->postJson("/api/stock-opnames/{$id2}/request-approval")->assertOk();
+        $this->postJson("/api/stock-opnames/{$id2}/approve")->assertStatus(422)->assertJsonFragment(['Anda yang mengajukan approval ini, jadi tidak bisa menyetujuinya sendiri. Approval oleh Manager atau Direktur.']);
+        $this->as('approver');
+        $this->postJson("/api/stock-opnames/{$id2}/approve")->assertOk();
+        $this->assertSame(9.0, $this->stockOf($b));
+    }
+
     public function test_posting_adjusts_stock_through_the_ledger_with_the_opname_as_reference(): void
     {
         [$a, $b, $c] = [$this->stocked(10), $this->stocked(10), $this->stocked(10)];
@@ -335,8 +367,10 @@ class StockOpnameWorkflowTest extends TestCase
         $movementsBefore = StockMovement::count();
 
         $this->as('admin');
+        $this->as('approver'); // a Stock Adjustment is approved by the Manager / Direktur
         $res = $this->postJson("/api/stock-opnames/{$id}/approve", ['note' => 'ok'])->assertOk()
             ->assertJsonPath('data.flow_status', 'POSTED')->assertJsonPath('meta.posted', true)->json('data');
+        $this->as('admin');
 
         $this->assertSame([7.0, 12.0, 10.0], [$this->stockOf($a), $this->stockOf($b), $this->stockOf($c)]); // excluded: unchanged
         $this->assertSame($movementsBefore + 2, StockMovement::count());
@@ -363,7 +397,9 @@ class StockOpnameWorkflowTest extends TestCase
 
         $this->as('admin');
         $this->assertSame(-3.0, (float) $this->getJson("/api/stock-opnames/{$id}/detail")->json('data.lines.0.moved_since_snapshot'));
+        $this->as('approver'); // a Stock Adjustment is approved by the Manager / Direktur
         $this->postJson("/api/stock-opnames/{$id}/approve")->assertOk();
+        $this->as('admin');
         $this->assertSame(5.0, $this->stockOf($a)); // 7 − 2, not back to 8
     }
 
@@ -372,8 +408,12 @@ class StockOpnameWorkflowTest extends TestCase
         $a = $this->stocked(10);
         $id = $this->waitingApproval([6], [$a]);
         $this->as('admin');
+        $this->as('approver'); // a Stock Adjustment is approved by the Manager / Direktur
         $this->postJson("/api/stock-opnames/{$id}/approve")->assertOk()->assertJsonPath('meta.posted', true);
+        $this->as('admin');
+        $this->as('approver'); // a Stock Adjustment is approved by the Manager / Direktur
         $this->postJson("/api/stock-opnames/{$id}/approve")->assertOk()->assertJsonPath('meta.already_posted', true);
+        $this->as('admin');
 
         $this->assertSame(6.0, $this->stockOf($a));
         $this->assertSame(1, StockMovement::where('item_id', $a->id)->where('movement_type', 'STOCK_ADJUSTMENT')->count());
@@ -390,7 +430,9 @@ class StockOpnameWorkflowTest extends TestCase
         $movements = StockMovement::count();
 
         $this->as('admin');
+        $this->as('approver'); // a Stock Adjustment is approved by the Manager / Direktur
         $this->postJson("/api/stock-opnames/{$id}/approve")->assertStatus(422)->assertJsonValidationErrors('posting');
+        $this->as('admin');
         // nothing of the posting stays: not a's adjustment either
         $this->assertSame([10.0, 1.0], [$this->stockOf($a), $this->stockOf($b)]);
         $this->assertSame($movements, StockMovement::count());
@@ -408,7 +450,9 @@ class StockOpnameWorkflowTest extends TestCase
         app(StockLedgerService::class)->record(['type' => 'RESERVATION', 'item_id' => $b->id, 'warehouse_id' => $this->wh->id, 'reserve_delta' => 9]);
 
         $this->as('admin');
+        $this->as('approver'); // a Stock Adjustment is approved by the Manager / Direktur
         $msg = $this->postJson("/api/stock-opnames/{$id}/approve")->assertStatus(422)->json('errors.posting.0');
+        $this->as('admin');
         $this->assertStringContainsString($b->code, $msg);
         $this->assertSame(10.0, $this->stockOf($a));
         $this->assertSame(0, StockAdjustment::count());
@@ -421,7 +465,9 @@ class StockOpnameWorkflowTest extends TestCase
         $a = $this->stocked(10);
         $id = $this->waitingApproval([6], [$a]);
         $this->as('admin');
+        $this->as('approver'); // a Stock Adjustment is approved by the Manager / Direktur
         $this->postJson("/api/stock-opnames/{$id}/approve")->assertOk();
+        $this->as('admin');
         $new = $this->postJson("/api/stock-opnames/{$id}/correction", ['note' => 'salah hitung'])->assertCreated()->json('data');
         $this->assertSame(['DRAFT', $id, [$a->id]], [$new['flow_status'], $new['correction_of']['id'], array_column($new['lines'], 'item_id')]);
         $this->assertSame(6.0, (float) $new['lines'][0]['system_qty']);
@@ -434,7 +480,9 @@ class StockOpnameWorkflowTest extends TestCase
         $a = $this->stocked(10);
         $id = $this->waitingApproval([8], [$a]);
         $this->as('admin');
+        $this->as('approver'); // a Stock Adjustment is approved by the Manager / Direktur
         $this->postJson("/api/stock-opnames/{$id}/approve")->assertOk();
+        $this->as('admin');
         $this->postJson("/api/stock-opnames/{$id}/close")->assertOk();
 
         $events = collect($this->getJson("/api/stock-opnames/{$id}/events")->assertOk()->json('data'))->reverse()->values();
@@ -484,7 +532,9 @@ class StockOpnameWorkflowTest extends TestCase
         [$a, $b] = [$this->stocked(10), $this->stocked(10)];
         $posted = $this->waitingApproval([10, 4], [$a, $b]);
         $this->as('admin');
+        $this->as('approver'); // a Stock Adjustment is approved by the Manager / Direktur
         $this->postJson("/api/stock-opnames/{$posted}/approve")->assertOk();
+        $this->as('admin');
         $draft = $this->order([$a]);
         $review = $this->counted([3], [$b]);
 
@@ -532,7 +582,9 @@ class StockOpnameWorkflowTest extends TestCase
         $this->as('admin');
         $this->getJson("/api/stock-opnames/{$o->id}/detail")->assertOk()->assertJsonPath('data.actions', [])->assertJsonPath('data.flow_status', 'PENDING_REVIEW');
         $this->postJson("/api/stock-opnames/{$o->id}/request-approval")->assertStatus(422);
+        $this->as('approver'); // a Stock Adjustment is approved by the Manager / Direktur
         $this->postJson("/api/stock-opnames/{$o->id}/approve")->assertStatus(422);
+        $this->as('admin');
         $this->assertSame(10.0, $this->stockOf($a));
         $this->getJson('/api/stock-opnames/dashboard')->assertJsonPath('data.kpi.total', 0);
     }

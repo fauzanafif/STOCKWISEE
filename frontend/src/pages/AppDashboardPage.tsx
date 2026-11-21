@@ -1,39 +1,25 @@
-import { createContext, useContext, useRef, useState, type ReactNode, type RefObject } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
-import { Loader2, ShieldAlert } from 'lucide-react'
+import { createContext, useContext, useRef, useState, type RefObject } from 'react'
+import { Link, Navigate } from 'react-router-dom'
 import { useAuth } from '@/auth/AuthContext'
 import { Button } from '@/components/ui/button'
-import { TrackingDashboard } from '@/components/dashboard/OperationsDashboard'
-import { ProcurementDashboard } from '@/components/dashboard/ProcurementDashboard'
-import { useDashboard } from '@/features/dashboard/api'
 import { useDsaDashboard } from '@/features/disassembly/api'
 import { useMrpDashboard } from '@/features/mrp/api'
-import { exportElementToPdf } from '@/lib/exportDashboardPdf'
 import { launcherApps, type LauncherApp } from '@/lib/launcher'
 import { CardNoteButton, FloatingCardNotes, cardAnchor } from '@/components/dashboard/CardStickyNotes'
 import { useCardStats, useNavCounts, type CardStats } from '@/lib/navCounts'
 import { GRAPH_BUCKETS, type ReminderGraph } from '@/features/reminders/api'
-import { APPS_HOME, visibleNav } from '@/lib/navigation'
+import { visibleNav } from '@/lib/navigation'
 import { cn } from '@/lib/utils'
 import { useCustomDashboards } from '@/features/customDashboards/api'
+import { useQuery } from '@tanstack/react-query'
+import { api } from '@/lib/api'
 import { DashboardIcon } from '@/pages/CustomDashboardPages'
 
-/** A part of an app dashboard: shown to who holds one of its permissions (none: everyone in the app). */
-interface Part { id: string; title: string; permissions?: string[]; body: ReactNode }
-
-/** Procurement charts: the PO status comes with the main dashboard data. */
-function Procurement() {
-  const { data } = useDashboard()
-  return <ProcurementDashboard poStatus={data?.charts?.po_status} />
-}
-
-/** What each app dashboard holds besides its overview cards: the sections of the former Analytics page. */
-const PARTS: Record<string, { analysis: Part[] }> = {
-  inventory: { analysis: [] },
-  purchase: { analysis: [{ id: 'pengadaan', title: 'Procurement', body: <Procurement /> }] },
-  manufacturing: { analysis: [] },
-  tracking: { analysis: [{ id: 'tracking', title: 'Tracking', body: <TrackingDashboard /> }] },
-}
+/**
+ * The apps with a dashboard of their own (their Overview cards). Their to-do and analyses moved to the one
+ * Dashboard (To-Do / Analytics), where a button picks the app: `module` is that button.
+ */
+const APPS = { inventory: 'inventory', purchase: 'purchase', manufacturing: 'manufacturing', tracking: 'tracking' } as const
 
 /** a page of the app: one card of the overview */
 type Page = { to: string; label: string }
@@ -75,7 +61,34 @@ function CardGraph({ graph }: { graph: ReminderGraph }) {
 const Board = createContext<{ appKey: string; ref: RefObject<HTMLElement | null> } | null>(null)
 
 /** One card: the feature's name, one button to what waits to be processed (or to open it) and, for an operation, its late / urgent counts and the bars by date. */
-function Card({ page, todo, stats }: { page: Page; todo?: number; stats?: CardStats }) {
+type Figure = { label: string; value: number; tone: 'warn' | 'bad' | 'ok' | null }
+
+/** The figures of every feature card (GET /api/dashboard/feature-stats), keyed by the feature's menu path. */
+function useFeatureStats() {
+  return useQuery({
+    queryKey: ['dashboard', 'feature-stats'],
+    staleTime: 60_000,
+    queryFn: async () => (await api.get<{ data: Record<string, Figure[]> }>('/api/dashboard/feature-stats')).data.data,
+  })
+}
+
+const FIGURE_TONE = { warn: 'text-amber-700 dark:text-amber-400', bad: 'text-red-600 dark:text-red-400', ok: 'text-emerald-700 dark:text-emerald-400' } as const
+
+/** A feature's own figures (how many, what needs a look): a warning figure only shows its colour when it is not 0. */
+function Figures({ figures }: { figures: Figure[] }) {
+  return (
+    <dl className="grid grid-cols-2 gap-3">
+      {figures.map((f) => (
+        <div key={f.label} className="min-w-0">
+          <dd className={cn('text-xl font-semibold tabular-nums leading-tight text-slate-800 dark:text-slate-100', f.tone && f.value > 0 && FIGURE_TONE[f.tone])}>{f.value.toLocaleString('id-ID')}</dd>
+          <dt className="truncate text-xs text-slate-500 dark:text-slate-400" title={f.label}>{f.label}</dt>
+        </div>
+      ))}
+    </dl>
+  )
+}
+
+function Card({ page, todo, stats, figures }: { page: Page; todo?: number; stats?: CardStats; figures?: Figure[] }) {
   const board = useContext(Board)
   return (
     <article aria-label={page.label} className="flex flex-col justify-between gap-4 rounded-md border border-slate-200 bg-white p-4 shadow-[0_1px_2px_rgb(15_23_42/0.04)] transition-shadow hover:shadow-[0_4px_12px_rgb(15_23_42/0.08)] dark:border-slate-800 dark:bg-slate-900">
@@ -95,6 +108,7 @@ function Card({ page, todo, stats }: { page: Page; todo?: number; stats?: CardSt
           </div>
         )}
       </div>
+      {figures && figures.length > 0 && <Figures figures={figures} />}
       {stats && <CardGraph graph={stats.graph} />}
     </article>
   )
@@ -102,37 +116,29 @@ function Card({ page, todo, stats }: { page: Page; todo?: number; stats?: CardSt
 
 function MrpCard({ page }: { page: Page }) {
   const c = useMrpDashboard().data?.counts
-  return <Card page={page} todo={c ? c.CONFIRMED + c.IN_PROGRESS + c.TO_CLOSE : undefined} />
+  return <Card page={page} todo={c ? c.CONFIRMED + c.IN_PROGRESS + c.TO_CLOSE : undefined}
+    figures={c ? [{ label: 'In progress', value: c.IN_PROGRESS ?? 0, tone: null }, { label: 'Draft', value: c.DRAFT ?? 0, tone: null }] : undefined} />
 }
 
 function DsaCard({ page }: { page: Page }) {
-  return <Card page={page} todo={useDsaDashboard().data?.waiting.length} />
+  const waiting = useDsaDashboard().data?.waiting.length
+  return <Card page={page} todo={waiting} figures={waiting != null ? [{ label: 'Waiting', value: waiting, tone: null }] : undefined} />
 }
 
 /** A page's card, with what waits in it where the module counts it. */
 function PageCard({ page }: { page: Page }) {
   const countOf = useNavCounts()
   const statsOf = useCardStats()
+  const figures = useFeatureStats().data?.[page.to]
   if (page.label === 'Manufacturing Orders') return <MrpCard page={page} />
   if (page.label === 'Disassembly Orders') return <DsaCard page={page} />
-  return <Card page={page} todo={countOf({ to: page.to, label: page.label })} stats={statsOf(page.label)} />
+  return <Card page={page} todo={countOf({ to: page.to, label: page.label })} stats={statsOf(page.label)} figures={figures} />
 }
 
 /** The app's features in the order of its menu bar: one card each. */
 function pagesOf(app: LauncherApp): Page[] {
   const entries = app.menus ?? app.items
   return entries.flatMap((m) => (m.children?.length ? m.children : [m])).map((p) => ({ to: p.to, label: p.label }))
-}
-
-function Section({ part }: { part: Part }) {
-  return (
-    <section id={part.id} aria-labelledby={`${part.id}-title`} className="scroll-mt-[calc(var(--sw-header)+1rem)] space-y-3">
-      <h2 id={`${part.id}-title`} className="flex items-center gap-3 text-[15px] font-semibold text-slate-800 dark:text-slate-100">
-        {part.title}<span className="h-px flex-1 bg-slate-200 dark:bg-slate-800" aria-hidden />
-      </h2>
-      {part.body}
-    </section>
-  )
 }
 
 /** The custom dashboards of this workspace (mine and shared), and a way to add one; the built-in one stays first. */
@@ -157,90 +163,39 @@ function CustomDashboardsMenu({ appKey }: { appKey: string }) {
   )
 }
 
-type View = 'overview' | 'analysis'
+/** The apps whose Overview cards the one Dashboard shows (their own dashboards are gone: 2026-11-21). */
+export type OverviewApp = keyof typeof APPS
 
 /**
- * An app's one dashboard: a control panel (the app and its views) over simple cards, one per feature of the
- * app in the order of its menu bar, each leading to its work. The analysis is a view of its own.
+ * An app's Overview: simple cards, one per feature of the app in the order of its menu bar, each with what waits
+ * to be processed and its bars by date, and sticky notes on them. Shown on the one Dashboard when the app's button
+ * is chosen; nothing shows when the user may open nothing of the app.
  */
-export function AppDashboardPage({ appKey }: { appKey: keyof typeof PARTS }) {
+export function AppOverview({ appKey }: { appKey: OverviewApp }) {
   const { hasPermission, hasRole } = useAuth()
-  const [params, setParams] = useSearchParams()
-  const exportRef = useRef<HTMLDivElement>(null)
   const boardRef = useRef<HTMLDivElement>(null)
-  const [exporting, setExporting] = useState(false)
-
   const app = launcherApps(visibleNav(hasPermission, hasRole('super_admin')), hasPermission).apps.find((a) => a.key === appKey)
-  const can = (p: Part) => !p.permissions || p.permissions.some(hasPermission)
-  const analysis = PARTS[appKey].analysis.filter(can)
-  const views = ([['overview', 'Overview'], ['analysis', 'Analysis']] as const)
-    .filter(([k]) => k === 'overview' || analysis.length > 0)
-  const asked = params.get('tab')
-  const view: View = views.some(([k]) => k === asked) ? (asked as View) : 'overview'
-
-  if (!app) {
-    return (
-      <div className="mx-auto mt-10 flex max-w-md flex-col items-center gap-2 rounded-lg border bg-card px-6 py-12 text-center">
-        <ShieldAlert className="size-9 text-muted-foreground" />
-        <p className="font-medium">You have no access to this app</p>
-        <Link to={APPS_HOME} className="mt-2 text-sm font-medium text-primary hover:underline">Back to Apps</Link>
-      </div>
-    )
-  }
-
+  if (!app) return null
   const pages = pagesOf(app)
 
-  async function exportPdf() {
-    if (!exportRef.current || exporting) return
-    setExporting(true)
-    try {
-      await exportElementToPdf(exportRef.current, {
-        title: `STOCKWISE ${app!.label} Analysis`, subtitle: 'PT Surya Inti Gas',
-        filename: `${app!.label}-Analysis-${new Date().toISOString().slice(0, 10)}.pdf`,
-      })
-    } finally {
-      setExporting(false)
-    }
-  }
-
   return (
-    <div className="-mx-3 -my-4 min-h-[calc(100vh-var(--sw-header,3.5rem))] bg-slate-50 px-3 pb-8 sm:-mx-5 sm:-my-5 sm:px-5 dark:bg-slate-950">
-      {/* the control panel: where you are, a search, the views */}
-      <div className="-mx-3 mb-5 flex flex-wrap items-center gap-x-4 gap-y-2 border-b bg-card px-3 py-2.5 sm:-mx-5 sm:px-5 print:hidden">
-        <h1 className="min-w-0 truncate text-lg font-semibold tracking-tight">{app.label} <span className="font-normal text-muted-foreground">/ {views.find(([k]) => k === view)![1]}</span></h1>
-        <div className="ml-auto flex items-center gap-2">
-          <CustomDashboardsMenu appKey={appKey} />
-          {view === 'analysis' && (
-            <>
-              <Button size="sm" variant="outline" onClick={exportPdf} disabled={exporting}>
-                {exporting && <Loader2 className="size-4 animate-spin" />}{exporting ? 'Creating PDF…' : 'Download PDF'}
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => window.print()}>Print</Button>
-            </>
-          )}
-          {views.length > 1 && (
-            <div role="tablist" aria-label="Views" className="inline-flex rounded border border-slate-200 bg-white p-0.5 dark:border-slate-700 dark:bg-slate-900">
-              {views.map(([k, label]) => (
-                <button key={k} type="button" role="tab" aria-selected={view === k} onClick={() => setParams(k === 'overview' ? {} : { tab: k }, { replace: true })}
-                  className={cn('rounded-sm px-2.5 py-1 text-[13px] transition-colors', view === k ? 'bg-primary/10 font-medium text-primary' : 'text-muted-foreground hover:text-foreground')}>
-                  {label}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+    <section aria-label={`${app.label} overview`} className="space-y-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <h2 className="text-sm font-semibold">Overview · {app.label}</h2>
+        <div className="ml-auto print:hidden"><CustomDashboardsMenu appKey={appKey} /></div>
       </div>
-
-      {view === 'overview' && (
-        <Board.Provider value={{ appKey, ref: boardRef }}>
-          {/* the cards, and the sticky notes stuck on them floating over the board */}
-          <div ref={boardRef} className="relative">
-            <nav aria-label={`Menu ${app.label}`} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">{pages.map((p) => <PageCard key={p.to + p.label} page={p} />)}</nav>
-            <FloatingCardNotes appKey={appKey} boardRef={boardRef} labels={Object.fromEntries(pages.map((p) => [cardAnchor(appKey, p.to), p.label]))} />
-          </div>
-        </Board.Provider>
-      )}
-      {view === 'analysis' && <div ref={exportRef} className="space-y-10">{analysis.map((p) => <Section key={p.id} part={p} />)}</div>}
-    </div>
+      <Board.Provider value={{ appKey, ref: boardRef }}>
+        {/* the cards, and the sticky notes stuck on them floating over the board */}
+        <div ref={boardRef} className="relative">
+          <nav aria-label={`Menu ${app.label}`} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">{pages.map((p) => <PageCard key={p.to + p.label} page={p} />)}</nav>
+          <FloatingCardNotes appKey={appKey} boardRef={boardRef} labels={Object.fromEntries(pages.map((p) => [cardAnchor(appKey, p.to), p.label]))} />
+        </div>
+      </Board.Provider>
+    </section>
   )
+}
+
+/** The former app dashboard (/inventory, /purchase, /mrp, /tracking): it opens the one Dashboard on that app. */
+export function AppDashboardPage({ appKey }: { appKey: OverviewApp }) {
+  return <Navigate to={`/overview?module=${appKey}`} replace />
 }

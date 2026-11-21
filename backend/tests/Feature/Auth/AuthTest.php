@@ -34,7 +34,9 @@ class AuthTest extends TestCase
             ->assertJsonStructure(['token', 'user' => ['id', 'username', 'roles', 'permissions']]);
 
         $this->assertContains('admin_gudang', $response->json('user.roles'));
-        $this->assertContains('opname.approve', $response->json('user.permissions'));
+        $this->assertContains('opname.review', $response->json('user.permissions'));
+        // a Stock Adjustment is approved by the Manager / Direktur, not by Gudang
+        $this->assertNotContains('opname.approve', $response->json('user.permissions'));
         $this->assertNotNull($user->fresh()->last_login_at);
     }
 

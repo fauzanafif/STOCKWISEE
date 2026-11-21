@@ -40,10 +40,12 @@ export const NAV: NavGroup[] = [
   {
     label: null, tone: 'bg-blue-100 text-blue-700',
     items: [{
-      to: '/todo', label: 'Dashboard', icon: LayoutDashboard, keywords: 'beranda ringkasan',
+      to: '/overview', label: 'Dashboard', icon: LayoutDashboard, keywords: 'beranda ringkasan',
       children: [
+        // every dashboard of every app lives here (a button per app on each page)
+        { to: '/overview', label: 'Overview', keywords: 'beranda ringkasan overview kartu fitur modul inventory purchase manufacturing tracking' },
         { to: '/todo', label: 'To-Do', keywords: 'beranda tugas catatan pengingat todo' },
-        { to: '/analytics', label: 'Analytics', keywords: 'analitik grafik visualisasi stok pengadaan tracking kartu stock' },
+        { to: '/analytics', label: 'Analytics', keywords: 'analitik analytics grafik visualisasi stok pengadaan tracking kartu stock' },
         { to: '/dashboards', label: 'Custom Dashboards', keywords: 'dashboard kustom sendiri buat widget grafik kpi tabel new dashboard' },
       ],
     }],
@@ -52,9 +54,8 @@ export const NAV: NavGroup[] = [
     label: 'Tasks', tone: 'bg-violet-100 text-violet-700',
     items: [
       {
-        to: '/important-requests', label: 'Important Request', icon: ClipboardPen, permissions: ['important_request.access'], badge: 'important', keywords: 'instruksi tugas perintah kerja direktur atasan',
+        to: '/important-requests/tugas', label: 'Important Request', icon: ClipboardPen, permissions: ['important_request.access'], badge: 'important', keywords: 'instruksi tugas perintah kerja direktur atasan',
         children: [
-          { to: '/important-requests', label: 'Dashboard', keywords: 'ringkasan pengingat perlu dikerjakan', permissions: ['important_request.access'] },
           { to: '/important-requests/saya', label: 'My Requests', keywords: 'request saya buat', permissions: ['important_request.create'] },
           { to: '/important-requests/tugas', label: 'My Tasks', keywords: 'tugas ditugaskan', permissions: ['important_request.access'] },
           { to: '/important-requests/persetujuan', label: 'Needs Approval', keywords: 'review hasil approve', permissions: ['important_request.create'] },
@@ -95,10 +96,10 @@ export const NAV: NavGroup[] = [
         to: '/ri', label: 'Receipt', icon: PackageCheck, keywords: 'ri penerimaan barang masuk list receipt', permissions: ['ri.view'],
       },
       {
-        to: '/price-list', label: 'Price List', icon: Tags, keywords: 'price list daftar harga matrix vendor item harga beli referensi pricelist', permissions: ['rfq.view'],
+        to: '/price-list', label: 'Purchase Information', icon: Tags, keywords: 'price list daftar harga matrix vendor item harga beli referensi pricelist', permissions: ['rfq.view'],
         children: [
-          { to: '/price-list/drafts', label: 'Draft Price List', keywords: 'draft price list buat harga matrix item vendor set harga', permissions: ['rfq.view'] },
-          { to: '/price-list', label: 'Master Price List', keywords: 'master price list harga resmi riwayat history last update', permissions: ['rfq.view'] },
+          { to: '/price-list/drafts', label: 'Draft Purchase Information', keywords: 'draft price list buat harga matrix item vendor set harga', permissions: ['rfq.view'] },
+          { to: '/price-list', label: 'Purchase Information', keywords: 'purchase information master price list pricelist harga resmi vendor riwayat history last update', permissions: ['rfq.view'] },
         ],
       },
       { to: '/purchase-returns', label: 'Return', icon: Undo2, keywords: 'purchase return retur vendor', permissions: ['purchase_return.view'] },
@@ -205,8 +206,8 @@ const EXTRA: { prefix: string; parent: string; label: string }[] = [
   { prefix: '/stock-card/project', parent: '/stock-card', label: 'Project' },
   { prefix: '/safety-stocks', parent: '/inventory/analysis', label: 'Detail' },
   { prefix: '/sync/', parent: '/sync/history', label: 'Detail' },
-  { prefix: '/important-requests/baru', parent: '/important-requests', label: 'Create request' },
-  { prefix: '/important-requests/', parent: '/important-requests', label: 'Detail' },
+  { prefix: '/important-requests/baru', parent: '/important-requests/tugas', label: 'Create request' },
+  { prefix: '/important-requests/', parent: '/important-requests/tugas', label: 'Detail' },
 ]
 
 export interface Crumb { label: string; to?: string }

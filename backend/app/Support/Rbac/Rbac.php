@@ -21,17 +21,19 @@ Pengaturan, sync Accurate & audit log"],
         'direktur' => ['Direktur', "Approval akhir: Request Barang, PPB, NPBG & PO
 Dashboard executive & semua laporan
 Keputusan akhir klarifikasi NPBG
-Important Request: buat & pantau"],
+Important Request: buat & pantau
+Approval Stock Adjustment (selisih Stock Opname)"],
         'admin_gudang' => ['Gudang', "Master Produk, stok & Kartu Stock
 Request Barang: verifikasi & serah terima
 PPB, RI, Retur Pembelian
-Stock opname: jadwal, hitung, review & approve
+Stock opname: jadwal, hitung, review & ajukan approval
 Tracking, Manufaktur & sync Accurate"],
         'purchasing' => ['Purchasing', "Lengkapi PO dari PPB yang disetujui (vendor & harga), ajukan ke Direktur
 Upload bukti pembelian (status Sudah dibeli)
-Vendor, Price List, Retur Pembelian & laporan pengadaan"],
+Vendor, Purchase Information, Retur Pembelian & laporan pengadaan"],
         'manager' => ['Manager', "Approval tahap 1: Request Barang, PPB & NPBG manual
-Ubah jumlah disetujui & beri catatan"],
+Ubah jumlah disetujui & beri catatan
+Approval Stock Adjustment (selisih Stock Opname)"],
         'karyawan' => ['Karyawan', "Buat Request Barang / Jasa & pantau statusnya
 Dapat notifikasi saat barang siap diambil"],
     ];
@@ -250,7 +252,7 @@ Dapat notifikasi saat barang siap diambil"],
 
         'admin_gudang' => [
             'profile.view_own', 'profile.update_own', 'notification.view_own',
-            'important_request.access',
+            'important_request.access', 'important_request.create',
             'master.category.view', 'master.unit.view', 'master.warehouse.view', 'master.location.view',
             'master.site.view', 'master.vendor.view', 'master.customer.view', 'master.project.view',
             'master.workshop.view', 'master.department.view', 'master.employee.view',
@@ -263,7 +265,8 @@ Dapat notifikasi saat barang siap diambil"],
             'item_request.create', 'item_request.view', 'item_request.process', 'item_request.handover',
             'npbg.verification.view', 'npbg.verification.manage', 'npbg.verification.respond',
             'opname.view', 'opname.schedule', 'opname.count', 'opname.submit',
-            'opname.review', 'opname.approve', 'opname.reject', 'opname.request_recount', 'opname.view_variance',
+            // a stock adjustment is approved by the Manager or the Direktur, not by who counted and reviewed it
+            'opname.review', 'opname.request_recount', 'opname.view_variance',
             'ppb.view', 'ppb.create', 'ri.view', 'ri.create',
             'purchase_return.view', 'purchase_return.manage',
             'lend.view', 'lend.create', 'lend.update', 'lend.return',
@@ -284,7 +287,7 @@ Dapat notifikasi saat barang siap diambil"],
 
         'purchasing' => [
             'profile.view_own', 'profile.update_own', 'notification.view_own',
-            'important_request.access',
+            'important_request.access', 'important_request.create',
             'master.vendor.view', 'master.vendor.manage', 'master.category.view', 'master.unit.view',
             'master.warehouse.view',
             'item.view', 'item.alias.view',
@@ -302,6 +305,8 @@ Dapat notifikasi saat barang siap diambil"],
             'important_request.access', 'important_request.create',
             'item_request.approve_manager',
             'ppb.view', 'ppb.approve_manager', 'npbg.view', 'npbg.approve_manager',
+            // Stock Adjustment: approve (post to the Stock Ledger) or send back the opname's variances
+            'opname.view', 'opname.view_variance', 'opname.approve', 'opname.reject',
         ],
 
         // Direktur: approval akhir + everything BOS / Management used to see (read only)
@@ -313,7 +318,7 @@ Dapat notifikasi saat barang siap diambil"],
             'inventory.view', 'inventory.view_analysis', 'stock_movement.view', 'item.view',
             'npbg.verification.view', 'npbg.verification.bos_decide',
             'ri.view', 'purchase_return.view',
-            'opname.view', 'opname.view_variance',
+            'opname.view', 'opname.view_variance', 'opname.approve', 'opname.reject',
             'lend.view', 'borrow.view', 'stpp.view', 'tyre.view', 'maintenance.view',
             'manufacturing.view', 'used_return.view', 'mrp.view', 'disassembly.view',
             'dashboard.executive',

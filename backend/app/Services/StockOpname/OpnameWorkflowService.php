@@ -282,7 +282,7 @@ class OpnameWorkflowService
     }
 
     /** @param list<int> $lineIds */
-    public function requestRecount(StockOpname $opname, User $user, array $lineIds, string $reason): StockOpname
+    public function requestRecount(StockOpname $opname, User $user, array $lineIds, ?string $reason = null): StockOpname
     {
         $this->assertStatus($opname, ['REVIEW']);
         $lines = $opname->items()->whereIn('id', $lineIds)->get();
@@ -300,25 +300,21 @@ class OpnameWorkflowService
             return $this->transition($opname, $user, 'RECOUNT', 'RECOUNT_REQUESTED', $reason, [
                 'count_round' => $round, 'reviewed_by' => $user->id, 'reviewed_at' => now(),
             ], fn (StockOpname $o) => NotificationDispatcher::toPermission('opname.count', 'opname', 'warning', 'Stock Opname perlu hitung ulang',
-                "Opname {$o->number}: {$lines->count()} barang perlu dihitung ulang — {$reason}", "/stock-opnames/{$o->id}", exceptUserId: $user->id),
+                "Opname {$o->number}: {$lines->count()} barang perlu dihitung ulang".($reason ? " — {$reason}" : '.'), "/stock-opnames/{$o->id}", exceptUserId: $user->id),
                 ['lines' => $lines->count(), 'round' => $round, 'items' => $lines->map(fn ($l) => $l->item?->code)->filter()->take(50)->values()]);
         });
     }
 
-    /** The reviewer sends the reconciled document to the supervisor. Every accepted variance needs a reason. */
+    /**
+     * The reviewer sends the reconciled document to the supervisor. A reason per variance is optional (kept
+     * simple, 2026-11-20): a line without one is posted as "Stock Opname {number}".
+     */
     public function requestApproval(StockOpname $opname, User $user, ?string $note): StockOpname
     {
         $this->assertStatus($opname, ['REVIEW']);
         $lines = $opname->items()->with('item:id,code')->get();
         // lines nobody decided on are accepted (adjusted to the count) — the reviewer saw them all
         $pending = $lines->where('review_status', 'PENDING');
-        $missing = $lines->filter(fn ($l) => in_array($l->review_status, ['PENDING', 'APPROVED'], true)
-            && abs((float) $l->physical_qty - (float) $l->system_qty) >= self::EPS && ! filled($l->review_note) && ! filled($l->note));
-        if ($missing->isNotEmpty()) {
-            $codes = $missing->take(10)->map(fn ($l) => $l->item?->code ?? "#{$l->item_id}")->implode(', ');
-            $more = $missing->count() > 10 ? ' dan '.($missing->count() - 10).' lainnya' : '';
-            throw ValidationException::withMessages(['items' => ["{$missing->count()} barang berselisih belum ada alasannya: {$codes}{$more}. Isi alasan selisih, atau kecualikan barangnya."]]);
-        }
 
         return DB::transaction(function () use ($opname, $user, $note, $pending) {
             if ($pending->isNotEmpty()) {
@@ -361,6 +357,10 @@ class OpnameWorkflowService
                     return [$o, false]; // already posted: idempotent, nothing is posted twice
                 }
                 $this->assertStatus($o, ['WAITING_APPROVAL']);
+                // who sent the variances for approval does not approve them (four eyes); a Super Admin may, in an emergency
+                if ($o->reviewed_by !== null && (int) $o->reviewed_by === (int) $user->id && ! $user->hasRole('super_admin')) {
+                    throw ValidationException::withMessages(['status' => ['Anda yang mengajukan approval ini, jadi tidak bisa menyetujuinya sendiri. Approval oleh Manager atau Direktur.']]);
+                }
 
                 $batch = (string) Str::uuid();
                 $lines = $o->items()->with('item:id,code')->where('review_status', 'APPROVED')->orderBy('id')->get();

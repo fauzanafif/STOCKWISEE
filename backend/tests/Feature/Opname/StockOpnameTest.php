@@ -130,9 +130,11 @@ class StockOpnameTest extends TestCase
 
         $this->actingAsRole('admin_gudang');
         $line = $o->items()->first();
+        $this->actingAsRole('direktur'); // a Stock Adjustment is approved by the Manager / Direktur
         $this->postJson("/api/stock-opnames/{$o->id}/review", [
             'decisions' => [['id' => $line->id, 'decision' => 'APPROVED']],
         ])->assertOk()->assertJsonPath('data.status', 'COMPLETED');
+        $this->actingAsRole('admin_gudang');
 
         $this->assertSame(95.0, (float) Inventory::where('item_id', $item->id)->first()->actual_qty);
         $this->assertDatabaseHas('stock_adjustments', ['qty_before' => 100, 'qty_after' => 95]);
@@ -148,9 +150,11 @@ class StockOpnameTest extends TestCase
 
         $this->actingAsRole('admin_gudang');
         $line = $o->items()->first();
+        $this->actingAsRole('direktur'); // a Stock Adjustment is approved by the Manager / Direktur
         $this->postJson("/api/stock-opnames/{$o->id}/review", [
             'decisions' => [['id' => $line->id, 'decision' => 'REJECTED']],
         ])->assertOk();
+        $this->actingAsRole('admin_gudang');
 
         $this->assertSame(100.0, (float) Inventory::where('item_id', $item->id)->first()->actual_qty);
         $this->assertDatabaseCount('stock_adjustments', 0);
@@ -165,9 +169,11 @@ class StockOpnameTest extends TestCase
 
         $this->actingAsRole('admin_gudang');
         $line = $o->items()->first();
+        $this->actingAsRole('direktur'); // a Stock Adjustment is approved by the Manager / Direktur
         $this->postJson("/api/stock-opnames/{$o->id}/review", [
             'decisions' => [['id' => $line->id, 'decision' => 'RECOUNT']],
         ])->assertOk()->assertJsonPath('data.status', 'RECOUNT_REQUIRED');
+        $this->actingAsRole('admin_gudang');
     }
 
     public function test_anak_gudang_cannot_approve(): void
@@ -211,8 +217,10 @@ class StockOpnameTest extends TestCase
             ->assertForbidden();
 
         $this->actingAsRole('admin_gudang');
+        $this->actingAsRole('direktur'); // a Stock Adjustment is approved by the Manager / Direktur
         $this->postJson("/api/stock-opnames/{$id}/review", ['decisions' => [['id' => $line->id, 'decision' => 'APPROVED']]])
             ->assertOk()->assertJsonPath('data.status', 'COMPLETED');
+        $this->actingAsRole('admin_gudang');
     }
 
     /**
@@ -416,7 +424,9 @@ class StockOpnameTest extends TestCase
 
         $this->actingAsRole('admin_gudang');
         $line = $o->items()->first();
+        $this->actingAsRole('direktur'); // a Stock Adjustment is approved by the Manager / Direktur
         $this->postJson("/api/stock-opnames/{$o->id}/review", ['decisions' => [['id' => $line->id, 'decision' => 'APPROVED']]]);
+        $this->actingAsRole('admin_gudang');
 
         $html = $this->get("/api/stock-opnames/{$o->id}/print")->assertOk()->streamedContent();
         $this->assertStringContainsString('>95<', $html); // physical qty printed

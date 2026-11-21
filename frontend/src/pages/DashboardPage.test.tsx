@@ -32,7 +32,7 @@ describe('DashboardPage', () => {
 
   it('shows the greeting and the To-Do board only, no analytics', async () => {
     mockApi(['item.view'])
-    renderWithProviders(<DashboardPage />)
+    renderWithProviders(<DashboardPage view="todo" />)
 
     expect(await screen.findByRole('heading', { level: 1, name: /Budi/ })).toBeInTheDocument()
     expect(screen.queryByRole('navigation', { name: 'Analytics sections' })).not.toBeInTheDocument()

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Save, Search, Send, X } from 'lucide-react'
 import { useCreateIr, useIr, useIrRecipients, useSendIr, useUpdateIr, type IrPayload, type IrPriority } from '@/features/importantRequests/api'
 import { IrFilePicker, IrFileList, readyTokens, type PickedFile } from '@/components/importantRequests/IrParts'
@@ -46,6 +46,17 @@ export function IrFormPage() {
   const [who, setWho] = useState('')
   const [files, setFiles] = useState<PickedFile[]>([])
   const [err, setErr] = useState<string | null>(null)
+  // started from a transaction ("Discuss" on a document): the topic points at it
+  const [params] = useSearchParams()
+  const ref = !editId && params.get('ref_type') && Number(params.get('ref_id'))
+    ? { type: params.get('ref_type')!, id: Number(params.get('ref_id')), number: params.get('ref_number'), label: params.get('ref_label') ?? 'Document', path: params.get('ref_path') }
+    : null
+  useEffect(() => {
+    if (!ref) return
+    const name = `${ref.label}${ref.number ? ` ${ref.number}` : ''}`
+    setTitle((t) => t || `Discuss ${name}`)
+    setDescription((d) => d || `About ${name}:\n\n`)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!r) return
@@ -78,6 +89,7 @@ export function IrFormPage() {
       title: title.trim(), description: description.trim(), priority,
       assignee_ids: picked, attachments: tokens,
       ...(sent ? {} : { deadline: deadline ? new Date(deadline).toISOString() : null }),
+      ...(ref ? { ref_type: ref.type, ref_id: ref.id } : {}),
     }
     try {
       if (editId) {
@@ -108,7 +120,7 @@ export function IrFormPage() {
     <div className="space-y-4 pb-8">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
-          <BackLink keep to={editId ? `/important-requests/${editId}` : '/important-requests'} label={editId ? (r?.number ?? 'Request') : 'Important Request'} />
+          <BackLink keep to={editId ? `/important-requests/${editId}` : '/important-requests/tugas'} label={editId ? (r?.number ?? 'Request') : 'Important Request'} />
           <h1 className="mt-1 text-xl font-semibold tracking-tight">{editId ? `Edit ${r?.number ?? ''}` : 'Create task'}</h1>
         </div>
         <div className="flex shrink-0 gap-2">
@@ -123,6 +135,13 @@ export function IrFormPage() {
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start">
         {/* the work */}
         <Card className="min-w-0 space-y-5 rounded-lg p-5 sm:p-6">
+          {ref && (
+            <div className="flex flex-wrap items-center gap-2 rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-sm">
+              <span className="text-muted-foreground">About</span>
+              {ref.path ? <Link to={ref.path} className="font-medium text-primary hover:underline">{ref.label} {ref.number}</Link> : <span className="font-medium">{ref.label} {ref.number}</span>}
+              <span className="text-xs text-muted-foreground">· linked to this topic</span>
+            </div>
+          )}
           <div className="space-y-1.5">
             <Label htmlFor="ir-title">Title *</Label>
             <Input id="ir-title" className="h-11 text-base" value={title} maxLength={200} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Fix the October sales formula" autoFocus={!editId} />

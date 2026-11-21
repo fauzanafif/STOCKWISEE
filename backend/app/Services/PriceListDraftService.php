@@ -7,25 +7,28 @@ use App\Models\PriceListDraft;
 use App\Models\User;
 use App\Models\Vendor;
 use App\Models\VendorPrice;
+use App\Support\Documents\DocumentAudit;
+use App\Support\Documents\DocumentRegistry;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 /**
  * Draft Price List: pick items and vendors into one draft, fill the Item × Vendor matrix (a price per
- * cell, in the item's own unit), then "Set Harga" puts every filled cell into the Master Price List
- * through PriceListService (validation and history as for any price). An item belongs to one draft only:
- * a later draft does not offer it again.
+ * cell, in the item's own unit), then "Set Harga" puts every filled cell into the Purchase Information
+ * through PriceListService (validation and history as for any price). An item is in one open draft at a time;
+ * once that draft is set, a later draft may take it again (a new quotation, a new price). Every step of a draft
+ * is in its Audit Trail.
  */
 class PriceListDraftService
 {
     public function __construct(private PriceListService $prices, private DocumentNumberService $numbers) {}
 
-    /** Master Items a new draft may take: active, with a unit, in no draft yet. */
+    /** Master Items a new draft may take: active, with a unit, in no open draft (a draft already set does not hold it). */
     public function availableItems(?string $search, int $limit = 30): array
     {
         return Item::query()->where('is_active', true)->whereNotNull('unit_id')
-            ->whereNotIn('id', DB::table('price_list_draft_items')->select('item_id'))
+            ->whereNotIn('id', $this->openDraftItems())
             ->when($search, function ($q, $s) {
                 $like = '%'.trim($s).'%';
                 $q->where(fn ($w) => $w->where('code', 'like', $like)->orWhere('description', 'like', $like));
@@ -67,7 +70,8 @@ class PriceListDraftService
 
         return DB::transaction(function () use ($user, $itemIds, $vendorIds, $note) {
             $draft = PriceListDraft::create([
-                'number' => $this->numbers->nextShort('PL'), 'note' => $this->note($note), 'status' => PriceListDraft::DRAFT, 'created_by' => $user->id,
+                // a PI document, numbered as the Excel Purchase Information was: PI/26/XI/001 (drafts before 2026-11-20 keep PL/…)
+                'number' => $this->numbers->nextShort('PI'), 'note' => $this->note($note), 'status' => PriceListDraft::DRAFT, 'created_by' => $user->id,
             ]);
             $this->addItems($draft, $itemIds);
             $this->addVendors($draft, $vendorIds);
@@ -91,16 +95,21 @@ class PriceListDraftService
                 throw ValidationException::withMessages(['item_ids' => "{$item->code} belum punya satuan di Master Item: lengkapi satuannya dulu."]);
             }
         }
+        // only another OPEN draft holds an item; one already set lets it go into this one
         $taken = DB::table('price_list_draft_items')->join('price_list_drafts', 'price_list_drafts.id', '=', 'price_list_draft_items.price_list_draft_id')
-            ->whereIn('item_id', $ids)->where('price_list_draft_id', '!=', $draft->id)->get(['item_id', 'number']);
+            ->whereIn('item_id', $ids)->where('price_list_draft_id', '!=', $draft->id)->where('price_list_drafts.status', PriceListDraft::DRAFT)->get(['item_id', 'number']);
         if ($taken->isNotEmpty()) {
             $first = $taken->first();
             throw ValidationException::withMessages(['item_ids' => "{$items->get($first->item_id)?->code} sudah ada di {$first->number}."]);
         }
         $have = DB::table('price_list_draft_items')->where('price_list_draft_id', $draft->id)->pluck('item_id')->all();
         $now = now();
-        DB::table('price_list_draft_items')->insert(array_map(fn ($id) => ['price_list_draft_id' => $draft->id, 'item_id' => $id, 'created_at' => $now], array_values(array_diff($ids, $have))));
+        $new = array_values(array_diff($ids, $have));
+        DB::table('price_list_draft_items')->insert(array_map(fn ($id) => ['price_list_draft_id' => $draft->id, 'item_id' => $id, 'created_at' => $now], $new));
         $draft->touch();
+        if ($new) {
+            $this->audit($draft, 'ITEMS_ADDED', ['items' => [null, $items->only($new)->pluck('code')->values()->all()]]);
+        }
     }
 
     /** @param  list<int>  $vendorIds */
@@ -113,8 +122,12 @@ class PriceListDraftService
         }
         $have = DB::table('price_list_draft_vendors')->where('price_list_draft_id', $draft->id)->pluck('vendor_id')->all();
         $now = now();
-        DB::table('price_list_draft_vendors')->insert(array_map(fn ($id) => ['price_list_draft_id' => $draft->id, 'vendor_id' => $id, 'created_at' => $now], array_values(array_diff($ids, $have))));
+        $new = array_values(array_diff($ids, $have));
+        DB::table('price_list_draft_vendors')->insert(array_map(fn ($id) => ['price_list_draft_id' => $draft->id, 'vendor_id' => $id, 'created_at' => $now], $new));
         $draft->touch();
+        if ($new) {
+            $this->audit($draft, 'VENDORS_ADDED', ['vendors' => [null, Vendor::whereIn('id', $new)->orderBy('name')->pluck('name')->all()]]);
+        }
     }
 
     /** Take an item out of the draft (its prices typed here go with it): another draft may take it then. */
@@ -126,6 +139,7 @@ class PriceListDraftService
             DB::table('price_list_draft_items')->where(['price_list_draft_id' => $draft->id, 'item_id' => $itemId])->delete();
         });
         $draft->touch();
+        $this->audit($draft, 'ITEM_REMOVED', ['item' => [Item::whereKey($itemId)->value('code'), null]]);
     }
 
     public function removeVendor(PriceListDraft $draft, int $vendorId): void
@@ -136,6 +150,32 @@ class PriceListDraftService
             DB::table('price_list_draft_vendors')->where(['price_list_draft_id' => $draft->id, 'vendor_id' => $vendorId])->delete();
         });
         $draft->touch();
+        $this->audit($draft, 'VENDOR_REMOVED', ['vendor' => [Vendor::whereKey($vendorId)->value('name'), null]]);
+    }
+
+    /**
+     * A vendor column's quotation terms: its prices are before PPN (at 11% / 12%) or nett, and the vendor's
+     * quotation number. Set Harga copies them to every price of that column.
+     */
+    public function setVendorTerms(PriceListDraft $draft, int $vendorId, ?string $priceType, mixed $ppnRate, ?string $vendorRef): void
+    {
+        $this->open($draft);
+        $key = ['price_list_draft_id' => $draft->id, 'vendor_id' => $vendorId];
+        if (! DB::table('price_list_draft_vendors')->where($key)->exists()) {
+            throw ValidationException::withMessages(['vendor_id' => 'Vendor ini tidak ada di draft.']);
+        }
+        [$type, $ppn] = PriceListService::tax($priceType ?: VendorPrice::EXCL, $ppnRate);
+        $before = DB::table('price_list_draft_vendors')->where($key)->first(['price_type', 'ppn_rate', 'vendor_ref']);
+        DB::table('price_list_draft_vendors')->where($key)->update([
+            'price_type' => $type, 'ppn_rate' => $ppn, 'vendor_ref' => $vendorRef === null ? null : (mb_substr(trim($vendorRef), 0, 100) ?: null),
+        ]);
+        $draft->touch();
+        $after = DB::table('price_list_draft_vendors')->where($key)->first(['price_type', 'ppn_rate', 'vendor_ref']);
+        $changes = collect(['price_type', 'ppn_rate', 'vendor_ref'])->filter(fn ($f) => (string) ($before->{$f} ?? '') !== (string) ($after->{$f} ?? ''))
+            ->mapWithKeys(fn ($f) => [$f => [$before->{$f}, $after->{$f}]])->all();
+        if ($changes) {
+            $this->audit($draft, 'VENDOR_TERMS', ['vendor' => [null, Vendor::whereKey($vendorId)->value('name')]] + $changes);
+        }
     }
 
     /** One cell of the matrix: a price above zero, or empty (null) to clear it. */
@@ -147,6 +187,7 @@ class PriceListDraftService
             throw ValidationException::withMessages(['price' => 'Item atau vendor ini tidak ada di draft.']);
         }
         $key = ['price_list_draft_id' => $draft->id, 'item_id' => $itemId, 'vendor_id' => $vendorId];
+        $old = DB::table('price_list_draft_cells')->where($key)->value('price');
         if ($price === null || $price === '') {
             DB::table('price_list_draft_cells')->where($key)->delete();
         } else {
@@ -156,29 +197,41 @@ class PriceListDraftService
             DB::table('price_list_draft_cells')->updateOrInsert($key, ['price' => UomConverter::roundDec($price, 2), 'updated_by' => $user->id, 'updated_at' => now(), 'created_at' => now()]);
         }
         $draft->touch();
+        $new = DB::table('price_list_draft_cells')->where($key)->value('price');
+        if ((string) $old !== (string) $new) {
+            $this->audit($draft, 'PRICE', ['item' => [null, Item::whereKey($itemId)->value('code')], 'vendor' => [null, Vendor::whereKey($vendorId)->value('name')],
+                'price' => [$old === null ? null : (float) $old, $new === null ? null : (float) $new]]);
+        }
     }
 
     /**
-     * "Set Harga": every filled cell becomes an Active price of the Master Price List, in the item's own
+     * "Set Harga": every filled cell becomes an Active price of the Purchase Information, in the item's own
      * unit (a price already there for that item, vendor and unit is updated, its history kept). The draft
      * is then Done and read only; its items stay out of new drafts.
      */
-    public function finish(User $user, PriceListDraft $draft): PriceListDraft
+    public function finish(User $user, PriceListDraft $draft, ?string $note = null): PriceListDraft
     {
+        $note = $this->note($note);
         $this->open($draft);
         $cells = DB::table('price_list_draft_cells')->where('price_list_draft_id', $draft->id)->get();
         if ($cells->isEmpty()) {
             throw ValidationException::withMessages(['price' => 'Isi minimal satu harga di matrix sebelum Set Harga.']);
         }
         $items = Item::whereIn('id', $cells->pluck('item_id')->unique())->get(['id', 'unit_id'])->keyBy('id');
+        $terms = DB::table('price_list_draft_vendors')->where('price_list_draft_id', $draft->id)->get()->keyBy('vendor_id');
 
-        return DB::transaction(function () use ($user, $draft, $cells, $items) {
+        return DB::transaction(function () use ($user, $draft, $cells, $items, $terms, $note) {
             $draft = PriceListDraft::whereKey($draft->id)->lockForUpdate()->firstOrFail();
             $this->open($draft);
             foreach ($cells as $c) {
                 $unitId = (int) $items->get($c->item_id)?->unit_id;
+                $t = $terms->get($c->vendor_id);
+                // the vendor column's terms go with every price; the PI document is this draft
                 $data = ['item_id' => $c->item_id, 'vendor_id' => $c->vendor_id, 'unit_id' => $unitId, 'price' => $c->price, 'min_qty' => 1,
-                    'status' => VendorPrice::ACTIVE, 'change_note' => "Dari Draft Price List {$draft->number}"];
+                    'price_type' => $t->price_type ?? VendorPrice::EXCL, 'ppn_rate' => $t->ppn_rate ?? 11, 'vendor_ref' => $t->vendor_ref ?? null,
+                    'price_list_draft_id' => $draft->id,
+                    // the price's history says where it came from, with the note given at Set Harga
+                    'status' => VendorPrice::ACTIVE, 'change_note' => "Dari Draft Price List {$draft->number}".($note ? " — {$note}" : '')];
                 $existing = VendorPrice::current()->where(['item_id' => $c->item_id, 'vendor_id' => $c->vendor_id, 'unit_id' => $unitId])->where('min_qty', 1)->first();
                 $this->prices->save($user, $data + ($existing ? [
                     // keep what the Master price had besides its price
@@ -186,7 +239,8 @@ class PriceListDraftService
                     'valid_until' => $existing->valid_until?->toDateString(), 'notes' => $existing->notes,
                 ] : []), $existing);
             }
-            $draft->update(['status' => PriceListDraft::DONE, 'done_by' => $user->id, 'done_at' => now()]);
+            $draft->update(['status' => PriceListDraft::DONE, 'done_by' => $user->id, 'done_at' => now(), 'done_note' => $note]);
+            $this->audit($draft, 'SET_HARGA', ['status' => [PriceListDraft::DRAFT, PriceListDraft::DONE], 'prices' => [null, $cells->count()]], $note);
 
             return $draft;
         });
@@ -209,7 +263,9 @@ class PriceListDraftService
             ->get(['items.id', 'items.code', 'items.description', 'units.code as unit']);
         $vendors = DB::table('price_list_draft_vendors')->join('vendors', 'vendors.id', '=', 'price_list_draft_vendors.vendor_id')
             ->where('price_list_draft_id', $draft->id)->orderBy('price_list_draft_vendors.id')
-            ->get(['vendors.id', 'vendors.name', 'vendors.code']);
+            ->get(['vendors.id', 'vendors.name', 'vendors.code', 'price_list_draft_vendors.price_type', 'price_list_draft_vendors.ppn_rate', 'price_list_draft_vendors.vendor_ref'])
+            ->map(fn ($v) => ['id' => $v->id, 'name' => $v->name, 'code' => $v->code, 'price_type' => $v->price_type ?? VendorPrice::EXCL,
+                'ppn_rate' => $v->ppn_rate === null ? 11.0 : (float) $v->ppn_rate, 'vendor_ref' => $v->vendor_ref]);
         $cells = DB::table('price_list_draft_cells')->where('price_list_draft_id', $draft->id)->get(['item_id', 'vendor_id', 'price'])
             ->mapWithKeys(fn ($c) => ["{$c->item_id}:{$c->vendor_id}" => (float) $c->price]);
 
@@ -222,15 +278,28 @@ class PriceListDraftService
             'id' => $draft->id, 'number' => $draft->number, 'note' => $draft->note, 'status' => $draft->status,
             'created_by' => $draft->creator?->name, 'created_at' => $draft->created_at?->toIso8601String(),
             'updated_at' => $draft->updated_at?->toIso8601String(),
-            'done_by' => $draft->finisher?->name, 'done_at' => $draft->done_at?->toIso8601String(),
+            'done_by' => $draft->finisher?->name, 'done_at' => $draft->done_at?->toIso8601String(), 'done_note' => $draft->done_note,
             'items_count' => $draft->items_count ?? null, 'vendors_count' => $draft->vendors_count ?? null, 'cells_count' => $draft->cells_count ?? null,
         ];
+    }
+
+    /** Items an open draft holds: no other draft may take them until it is set. */
+    private function openDraftItems(): \Illuminate\Database\Query\Builder
+    {
+        return DB::table('price_list_draft_items')->join('price_list_drafts', 'price_list_drafts.id', '=', 'price_list_draft_items.price_list_draft_id')
+            ->where('price_list_drafts.status', PriceListDraft::DRAFT)->select('price_list_draft_items.item_id');
+    }
+
+    /** A step of the draft into its Audit Trail (Chatter › Audit); never stops the step itself. */
+    private function audit(PriceListDraft $draft, string $event, array $changes, ?string $reason = null): void
+    {
+        rescue(fn () => DocumentAudit::event(DocumentRegistry::find('price_list_draft', $draft->id), $event, 'PriceListDraft', $draft->id, $changes, $reason), null, false);
     }
 
     private function open(PriceListDraft $draft): void
     {
         if (! $draft->isOpen()) {
-            throw ValidationException::withMessages(['status' => "{$draft->number} sudah Set Harga: ubah harganya di Master Price List."]);
+            throw ValidationException::withMessages(['status' => "{$draft->number} sudah Set Harga: ubah harganya di Purchase Information."]);
         }
     }
 

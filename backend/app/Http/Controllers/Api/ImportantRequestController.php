@@ -125,9 +125,35 @@ class ImportantRequestController extends Controller
     public function store(Request $request): JsonResponse
     {
         $data = $this->validated($request);
+        // a topic about a transaction: it must exist and its creator must be able to open it
+        if (! empty($data['ref_type']) && ! empty($data['ref_id'])) {
+            $doc = \App\Support\Documents\DocumentRegistry::find($data['ref_type'], (int) $data['ref_id']);
+            abort_unless(\App\Support\Documents\DocumentRegistry::canView($request->user(), $doc), 403, 'Anda tidak bisa membuka dokumen ini.');
+            $data['ref_id'] = $doc->id;
+            $data['ref_number'] = mb_substr($doc->number, 0, 80);
+        } else {
+            unset($data['ref_type'], $data['ref_id']);
+        }
         $made = $this->service->create($request->user(), $data);
 
         return $this->show($request, $made)->setStatusCode(201);
+    }
+
+    /**
+     * GET /api/important-requests/by-document?type=&id= — the topics about one transaction that this user may see
+     * (newest first), for the "Discuss" button on the document.
+     */
+    public function byDocument(Request $request): JsonResponse
+    {
+        $data = $request->validate(['type' => ['required', Rule::in(array_keys(\App\Support\Documents\DocumentRegistry::TYPES))], 'id' => ['required', 'integer']]);
+        $user = $request->user();
+        $rows = ImportantRequest::query()->where(['ref_type' => $data['type'], 'ref_id' => $data['id']])->orderByDesc('id')->limit(50)->get()
+            ->filter(fn (ImportantRequest $r) => $this->service->canView($user, $r))
+            ->map(fn (ImportantRequest $r) => ['id' => $r->id, 'number' => $r->number, 'title' => $r->title, 'status' => $r->status,
+                'status_label' => ImportantRequestService::STATUS_LABELS[$r->status] ?? $r->status, 'created_at' => $r->created_at?->toIso8601String()])
+            ->values();
+
+        return response()->json(['data' => $rows]);
     }
 
     public function show(Request $request, ImportantRequest $importantRequest): JsonResponse
@@ -149,6 +175,9 @@ class ImportantRequestController extends Controller
         return response()->json(['data' => [
             ...$this->listRow($r, $user, $unread),
             'description' => $r->description, 'category' => $r->category, 'note' => $r->note,
+            // the transaction this topic is about
+            'ref' => $r->ref_type ? ['type' => $r->ref_type, 'id' => (int) $r->ref_id, 'number' => $r->ref_number,
+                'label' => \App\Support\Documents\DocumentRegistry::label($r->ref_type)] : null,
             'requires_approval' => $r->requires_approval, 'assignment_mode' => $r->assignment_mode,
             'sent_at' => $r->sent_at, 'completed_at' => $r->completed_at, 'cancelled_at' => $r->cancelled_at, 'cancel_reason' => $r->cancel_reason,
             'assignees' => $r->assignees->map(fn ($a) => [
@@ -446,6 +475,8 @@ class ImportantRequestController extends Controller
             'attachments' => ['sometimes', 'array', 'max:10'],
             'attachments.*' => ['string'],
             'send' => ['sometimes', 'boolean'],
+            'ref_type' => ['sometimes', 'nullable', Rule::in(array_keys(\App\Support\Documents\DocumentRegistry::TYPES))],
+            'ref_id' => ['sometimes', 'nullable', 'integer', 'required_with:ref_type'],
         ], [
             'title.required' => 'Judul wajib diisi.', 'description.required' => 'Deskripsi / instruksi wajib diisi.',
             'deadline.after' => 'Deadline harus setelah sekarang.',

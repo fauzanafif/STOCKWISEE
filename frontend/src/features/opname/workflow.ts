@@ -268,7 +268,7 @@ export function useFlowActions(id: number) {
     startCounting: useStep<void>('start-counting', 'Counting started. Book quantities are frozen now.'),
     finishCounting: useStep<void>('finish-counting', 'Count finished — sent for review.'),
     reviewDecisions: useStep<{ decisions: Array<{ id: number; decision: 'ACCEPT' | 'EXCLUDE'; note?: string | null }> }>('review-decisions', 'Review saved.'),
-    recount: useStep<{ line_ids: number[]; reason: string }>('recount', 'Recount requested.'),
+    recount: useStep<{ line_ids: number[]; reason?: string }>('recount', 'Recount requested.'),
     requestApproval: useStep<{ note?: string }>('request-approval', 'Sent to the supervisor for approval.'),
     approve: useStep<{ note?: string }>('approve', 'Approved and posted to the Stock Ledger.'),
     reject: useStep<{ note: string }>('reject', 'Sent back to review.'),

@@ -53,6 +53,8 @@ class ImportantRequestService
                 'number' => $this->numbers->nextShort('IMP'),
                 'title' => trim($data['title']), 'description' => trim($data['description']),
                 'priority' => $data['priority'] ?? 'MEDIUM', 'category' => $data['category'] ?? null,
+                // the transaction it is about, if any (checked by the controller: it exists and the creator may open it)
+                'ref_type' => $data['ref_type'] ?? null, 'ref_id' => $data['ref_id'] ?? null, 'ref_number' => $data['ref_number'] ?? null,
                 'deadline' => $data['deadline'] ?? null, 'requires_approval' => true, 'assignment_mode' => 'INDIVIDUAL', 'note' => $data['note'] ?? null,
                 'status' => 'DRAFT', 'created_by' => $user->id,
             ]);

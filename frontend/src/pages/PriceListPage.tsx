@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowDown, ArrowUp, ArrowUpDown, Grid3x3, List, Plus, X } from 'lucide-react'
+import { AlertCircle, ArrowDown, ArrowUp, ArrowUpDown, CheckCircle2, Grid3x3, List, Plus, X } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { useAuth } from '@/auth/AuthContext'
 import { DataTable, type Column } from '@/components/DataTable'
 import { FilterBar } from '@/components/FilterBar'
@@ -11,7 +12,7 @@ import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { useItemOptions } from '@/features/inventory/api'
 import { useVendors } from '@/features/purchasing/api'
-import { rupiah, usePriceList, usePriceMatrix, type MatrixRow, type PriceCell, type PriceRow } from '@/features/priceList/api'
+import { MISSING_LABEL, rupiah, taxShort, usePriceList, usePriceMatrix, type Completeness, type MatrixRow, type PriceCell, type PriceRow } from '@/features/priceList/api'
 import { cn } from '@/lib/utils'
 
 const VIEW_KEY = 'sw.priceList.view'
@@ -54,6 +55,14 @@ function Cell({ cell, lowest, onOpen, onAdd }: { cell?: PriceCell; lowest: boole
         {lowest && cell.status === 'ACTIVE' && <span className="font-medium text-emerald-700">· Lowest</span>}
         {(cell.tiers ?? 1) > 1 && <span title="More prices (tiers) in the List view">· +{(cell.tiers ?? 1) - 1}</span>}
       </span>
+      <span className="flex items-center gap-1 text-[10.5px]">
+        {taxShort(cell.price_type, cell.ppn_rate) ? <span className="text-muted-foreground">{taxShort(cell.price_type, cell.ppn_rate)}</span> : null}
+        {(cell.missing?.length ?? 0) > 0 && (
+          <span className="inline-flex items-center gap-0.5 font-medium text-amber-700" title={`Incomplete: ${cell.missing!.map((m) => MISSING_LABEL[m] ?? m).join(', ')}`}>
+            <AlertCircle className="size-3" /> Incomplete
+          </span>
+        )}
+      </span>
       {cell.needs_review && <span className="text-[10.5px] font-medium text-amber-700" title="The item's base unit changed: open and save the price again">⚠ Check unit</span>}
     </button>
   )
@@ -68,11 +77,29 @@ function Legend() {
       <span className="flex items-center gap-1.5"><span className={cn(dot, 'border-dashed border-slate-400 bg-card')} /> Draft</span>
       <span className="flex items-center gap-1.5"><span className={cn(dot, 'border-amber-300 bg-amber-50')} /> Expired</span>
       <span className="flex items-center gap-1.5"><span className="text-muted-foreground/60">—</span> No price yet</span>
+      <span className="flex items-center gap-1.5 text-amber-700"><AlertCircle className="size-3" /> Incomplete: PPN or PI / quotation no. missing</span>
     </div>
   )
 }
 
-/** Price List: the standing purchase prices, Item × Vendor (Matrix View) or one row per price (List View). */
+/** "62 of 65 complete": how many current prices have their PPN and their PI / quotation; a click shows the others. */
+function CompletenessChip({ c, active, onToggle }: { c?: Completeness; active: boolean; onToggle: () => void }) {
+  if (!c || c.total === 0) return null
+  const all = c.incomplete === 0
+  return (
+    <button type="button" onClick={onToggle} disabled={all && !active} aria-pressed={active}
+      title={all ? 'Every price has its PPN and its PI / quotation no.' : 'Show the prices that still lack their PPN or PI / quotation no.'}
+      className={cn('inline-flex h-9 items-center gap-1.5 rounded-md border px-3 text-[13px] font-medium tabular-nums transition-colors',
+        all ? 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-300'
+          : active ? 'border-amber-400 bg-amber-100 text-amber-900' : 'border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300')}>
+      {all ? <CheckCircle2 className="size-4" /> : <AlertCircle className="size-4" />}
+      {c.complete.toLocaleString('id-ID')} of {c.total.toLocaleString('id-ID')} complete
+      {!all && <span className="font-normal">· {active ? 'showing incomplete' : `${c.incomplete} to complete`}</span>}
+    </button>
+  )
+}
+
+/** Purchase Information: the standing purchase prices, Item × Vendor (Matrix View) or one row per price (List View). */
 export function PriceListPage() {
   const { hasPermission } = useAuth()
   const canCreate = hasPermission('rfq.create')
@@ -99,8 +126,9 @@ export function PriceListPage() {
 
   // the matrix status filter speaks of items (no price / has a price of this status); the list of prices
   const matrix = usePriceMatrix({ search: q, category, status: status.toLowerCase(), vendor_ids: vendorIds, page, per_page: perPage })
-  const list = usePriceList({ search: q, category, status: status === 'NONE' || status === 'PRICED' ? '' : status, vendor_id: vendorIds.length === 1 ? vendorIds[0] : '', sort: sort.key, dir: sort.dir, page, per_page: perPage })
+  const list = usePriceList({ search: q, category, status: ['NONE', 'PRICED', 'INCOMPLETE'].includes(status) ? '' : status, incomplete: status === 'INCOMPLETE', vendor_id: vendorIds.length === 1 ? vendorIds[0] : '', sort: sort.key, dir: sort.dir, page, per_page: perPage })
   const meta = view === 'matrix' ? matrix.data?.meta : list.data?.meta
+  const completeness = (view === 'matrix' ? matrix.data?.completeness : list.data?.meta.completeness) ?? matrix.data?.completeness ?? list.data?.meta.completeness
 
   const sortBy = (key: string) => setSort((s) => ({ key, dir: s.key === key && s.dir === 'asc' ? 'desc' : 'asc' }))
   const SortHead = ({ k, children, right }: { k: string; children: string; right?: boolean }) => (
@@ -113,18 +141,23 @@ export function PriceListPage() {
     { key: 'name', header: <SortHead k="item_name">Item Name</SortHead>, cell: (r) => <span className="line-clamp-2 min-w-[14rem]">{r.item_name}</span> },
     { key: 'vendor', header: <SortHead k="vendor">Vendor</SortHead>, cell: (r) => r.vendor },
     { key: 'price', header: <SortHead k="price" right>Vendor Price</SortHead>, cell: (r) => <span className="font-semibold tabular-nums">{rupiah(r.price)}</span>, className: 'text-right whitespace-nowrap' },
+    { key: 'tax', header: 'PPN', cell: (r) => taxShort(r.price_type, r.ppn_rate) ?? <span className="text-amber-700">not set</span>, className: 'whitespace-nowrap text-xs' },
+    { key: 'final', header: 'Final Price', cell: (r) => (r.final_price != null ? <span className="tabular-nums">{rupiah(r.final_price)}</span> : '—'), className: 'text-right whitespace-nowrap' },
     { key: 'unit', header: 'Purchase UOM', cell: (r) => <span>{r.unit}{r.unit_ratio !== 1 && <span className="text-xs text-muted-foreground"> (= {r.unit_ratio} {r.base_unit})</span>}</span>, className: 'whitespace-nowrap' },
     { key: 'min', header: <SortHead k="min_qty" right>Min. Qty</SortHead>, cell: (r) => <span className="tabular-nums">{r.min_qty}</span>, className: 'text-right' },
     { key: 'lead', header: <SortHead k="lead_time_days" right>Lead Time</SortHead>, cell: (r) => (r.lead_time_days != null ? `${r.lead_time_days} d` : '—'), className: 'text-right whitespace-nowrap' },
     { key: 'until', header: <SortHead k="valid_until">Valid Until</SortHead>, cell: (r) => fmtDate(r.valid_until), className: 'whitespace-nowrap' },
+    { key: 'pi', header: 'No PI', cell: (r) => (r.pi ? <Link to={`/price-list/drafts/${r.pi.id}`} onClick={(e) => e.stopPropagation()} className="whitespace-nowrap text-primary hover:underline">{r.pi.number}</Link>
+      : r.vendor_ref ? <span className="text-xs" title="Vendor quotation no.">{r.vendor_ref}</span> : <span className="text-muted-foreground">—</span>), className: 'whitespace-nowrap' },
     { key: 'updated', header: <SortHead k="updated_at">Last Updated</SortHead>, cell: (r) => <span className="text-xs text-muted-foreground">{r.updated_at ? new Date(r.updated_at).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}{r.updated_by && <><br />{r.updated_by}</>}</span>, className: 'whitespace-nowrap' },
-    { key: 'status', header: <SortHead k="status">Status</SortHead>, cell: (r) => <span className="flex flex-col items-start gap-0.5"><StatusBadge status={r.status} />{r.needs_review && <span className="text-[11px] font-medium text-amber-700">⚠ Check unit</span>}</span> },
+    { key: 'status', header: <SortHead k="status">Status</SortHead>, cell: (r) => <span className="flex flex-col items-start gap-0.5"><StatusBadge status={r.status} />{r.needs_review && <span className="text-[11px] font-medium text-amber-700">⚠ Check unit</span>}
+      {(r.missing?.length ?? 0) > 0 && <span className="text-[11px] font-medium text-amber-700" title={r.missing!.map((m) => MISSING_LABEL[m] ?? m).join(', ')}>⚠ Incomplete</span>}</span> },
     { key: 'action', header: '', cell: (r) => <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); setOpen({ id: r.id }) }}>Open</Button>, className: 'text-right' },
   ]
 
   const statusOptions = view === 'matrix'
-    ? [['', 'All items'], ['PRICED', 'Has a price'], ['NONE', 'No price yet'], ['ACTIVE', 'Has an active price'], ['EXPIRED', 'Has an expired price'], ['DRAFT', 'Has a draft price']]
-    : [['', 'All current prices'], ['ACTIVE', 'Active'], ['EXPIRED', 'Expired'], ['DRAFT', 'Draft'], ['ARCHIVED', 'Archived']]
+    ? [['', 'All items'], ['PRICED', 'Has a price'], ['NONE', 'No price yet'], ['ACTIVE', 'Has an active price'], ['EXPIRED', 'Has an expired price'], ['DRAFT', 'Has a draft price'], ['INCOMPLETE', 'Has an incomplete price']]
+    : [['', 'All current prices'], ['ACTIVE', 'Active'], ['EXPIRED', 'Expired'], ['DRAFT', 'Draft'], ['ARCHIVED', 'Archived'], ['INCOMPLETE', 'Incomplete']]
   useEffect(() => { if (!statusOptions.some(([v]) => v === status)) setStatus('') }, [view]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const m = matrix.data
@@ -132,7 +165,8 @@ export function PriceListPage() {
 
   return (
     <div className="space-y-4">
-      <PageHeader title="Master Price List" actions={<>
+      <PageHeader title="Purchase Information" actions={<>
+        <CompletenessChip c={completeness} active={status === 'INCOMPLETE'} onToggle={() => setStatus((s) => (s === 'INCOMPLETE' ? '' : 'INCOMPLETE'))} />
         <div className="flex rounded-md border bg-card p-0.5" role="tablist" aria-label="View">
           {([['matrix', 'Matrix', Grid3x3], ['list', 'List', List]] as const).map(([v, label, Icon]) => (
             <button key={v} type="button" role="tab" aria-selected={view === v} onClick={() => switchView(v)}

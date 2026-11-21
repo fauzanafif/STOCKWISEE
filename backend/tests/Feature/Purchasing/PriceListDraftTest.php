@@ -43,7 +43,8 @@ class PriceListDraftTest extends TestCase
         [$a, $b] = Vendor::factory()->count(2)->create(['is_active' => true]);
 
         $d = $this->postJson('/api/price-list/drafts', ['item_ids' => [$bearing->id, $kabel->id], 'vendor_ids' => [$a->id, $b->id], 'note' => 'Q4'])->assertCreated()->json('data');
-        $this->assertMatchesRegularExpression('#^PL/\d{2}/[IVX]+/001$#', $d['number']);
+        // a PI document, numbered as the Excel Purchase Information: PI/26/XI/001
+        $this->assertMatchesRegularExpression('#^PI/\d{2}/[IVX]+/001$#', $d['number']);
         $this->assertSame(['BRG.1', 'KBL.1'], array_column($d['items'], 'code'));
         $this->assertCount(2, $d['vendors']);
 
@@ -60,6 +61,83 @@ class PriceListDraftTest extends TestCase
         $this->assertSame(2, VendorPriceHistory::where('note', "Dari Draft Price List {$d['number']}")->count());
         // a draft set is read only
         $this->putJson("/api/price-list/drafts/{$d['id']}/cells", ['item_id' => $kabel->id, 'vendor_id' => $a->id, 'price' => 1000])->assertUnprocessable();
+    }
+
+    public function test_each_vendor_column_sets_its_tax_and_quotation_and_set_harga_copies_them_with_the_pi(): void
+    {
+        $this->actingAsRole('purchasing');
+        [$bearing, $kabel] = [$this->item('BRG.1'), $this->item('KBL.1')];
+        [$a, $b] = Vendor::factory()->count(2)->create(['is_active' => true]);
+        $d = $this->postJson('/api/price-list/drafts', ['item_ids' => [$bearing->id, $kabel->id], 'vendor_ids' => [$a->id, $b->id]])->assertCreated()->json('data');
+        // a new column starts before PPN at 11%
+        $this->assertEquals(['EXCL', 11], [$d['vendors'][0]['price_type'], $d['vendors'][0]['ppn_rate']]);
+
+        $this->putJson("/api/price-list/drafts/{$d['id']}/vendors/{$a->id}", ['price_type' => 'EXCL', 'ppn_rate' => 12, 'vendor_ref' => 'SPH-77'])->assertOk();
+        $this->putJson("/api/price-list/drafts/{$d['id']}/vendors/{$b->id}", ['price_type' => 'NETT', 'ppn_rate' => 11])->assertOk();
+        // PPN is a choice: no 1.11 / 2.11 like the Excel had
+        $this->putJson("/api/price-list/drafts/{$d['id']}/vendors/{$a->id}", ['price_type' => 'EXCL', 'ppn_rate' => 1.11])->assertUnprocessable();
+        $this->putJson("/api/price-list/drafts/{$d['id']}/cells", ['item_id' => $bearing->id, 'vendor_id' => $a->id, 'price' => 100000])->assertOk();
+        $this->putJson("/api/price-list/drafts/{$d['id']}/cells", ['item_id' => $kabel->id, 'vendor_id' => $b->id, 'price' => 50000])->assertOk();
+        $this->postJson("/api/price-list/drafts/{$d['id']}/finish")->assertOk();
+
+        $pa = VendorPrice::where('vendor_id', $a->id)->sole();
+        $pb = VendorPrice::where('vendor_id', $b->id)->sole();
+        $this->assertSame(['EXCL', '12.00', 'SPH-77', $d['id']], [$pa->price_type, $pa->ppn_rate, $pa->vendor_ref, $pa->price_list_draft_id]);
+        // nett carries no PPN on top
+        $this->assertSame(['NETT', '0.00'], [$pb->price_type, $pb->ppn_rate]);
+        $this->assertSame(112000.0, $pa->finalPrice());
+        $this->assertSame(50000.0, $pb->finalPrice());
+
+        $row = $this->getJson("/api/price-list/{$pa->id}")->assertOk()->json('data');
+        $this->assertSame([112000, $d['number'], []], [$row['final_price'], $row['pi']['number'], $row['missing']]);
+        // the draft's Chatter keeps the vendor's quotation files
+        $this->getJson("/api/documents/price_list_draft/{$d['id']}/feed")->assertOk();
+    }
+
+    public function test_a_price_without_tax_or_source_shows_as_incomplete(): void
+    {
+        $this->actingAsRole('purchasing');
+        $item = $this->item('BRG.1');
+        $v = Vendor::factory()->create(['is_active' => true]);
+        $id = $this->postJson('/api/price-list', ['item_id' => $item->id, 'vendor_id' => $v->id, 'unit_id' => $this->pcs->id, 'price' => 1000, 'status' => 'ACTIVE'])->assertCreated()->json('data.id');
+        $this->assertSame(['tax', 'source'], $this->getJson("/api/price-list/{$id}")->json('data.missing'));
+        $this->assertSame(1, $this->getJson('/api/price-list?incomplete=1')->assertOk()->json('meta.completeness.incomplete'));
+        $this->assertCount(1, $this->getJson('/api/price-list/matrix?status=incomplete')->assertOk()->json('data.rows'));
+
+        $this->putJson("/api/price-list/{$id}", ['vendor_id' => $v->id, 'unit_id' => $this->pcs->id, 'price' => 1000, 'status' => 'ACTIVE', 'price_type' => 'EXCL', 'ppn_rate' => 11, 'vendor_ref' => 'WA 20/11'])->assertOk()
+            ->assertJsonPath('data.missing', [])->assertJsonPath('data.final_price', 1110);
+        $this->assertSame(0, $this->getJson('/api/price-list')->json('meta.completeness.incomplete'));
+        $this->assertCount(0, $this->getJson('/api/price-list/matrix?status=incomplete')->json('data.rows'));
+        // the change of tax is kept in the history
+        $this->assertNotNull(VendorPriceHistory::where('vendor_price_id', $id)->where('action', 'UPDATE')->value('changes')['price_type'] ?? null);
+    }
+
+    public function test_set_harga_keeps_its_note_and_logs_every_step_and_the_item_can_be_priced_again_later(): void
+    {
+        $this->actingAsRole('purchasing');
+        $bearing = $this->item('BRG.1');
+        $v = Vendor::factory()->create(['is_active' => true]);
+        $first = $this->postJson('/api/price-list/drafts', ['item_ids' => [$bearing->id], 'vendor_ids' => [$v->id]])->assertCreated()->json('data');
+        $this->putJson("/api/price-list/drafts/{$first['id']}/cells", ['item_id' => $bearing->id, 'vendor_id' => $v->id, 'price' => 10000])->assertOk();
+        $this->putJson("/api/price-list/drafts/{$first['id']}/cells", ['item_id' => $bearing->id, 'vendor_id' => $v->id, 'price' => 9500])->assertOk();
+        $this->postJson("/api/price-list/drafts/{$first['id']}/finish", ['note' => 'harga Q4 dari WA'])->assertOk()->assertJsonPath('data.done_note', 'harga Q4 dari WA');
+        $this->assertSame("Dari Draft Price List {$first['number']} — harga Q4 dari WA", VendorPriceHistory::where('action', 'CREATE')->value('note'));
+
+        // every step is in the draft's Audit Trail
+        $events = \App\Models\DocAuditLog::where(['res_type' => 'price_list_draft', 'res_key' => (string) $first['id']])->pluck('event')->all();
+        foreach (['ITEMS_ADDED', 'VENDORS_ADDED', 'PRICE', 'SET_HARGA'] as $e) {
+            $this->assertContains($e, $events);
+        }
+        $this->assertSame('harga Q4 dari WA', \App\Models\DocAuditLog::where('event', 'SET_HARGA')->value('reason'));
+
+        // once set, the item may go into a next draft and get a new price there
+        $this->assertContains('BRG.1', array_column($this->getJson('/api/price-list/drafts/available-items')->json('data'), 'code'));
+        $second = $this->postJson('/api/price-list/drafts', ['item_ids' => [$bearing->id], 'vendor_ids' => [$v->id]])->assertCreated()->json('data');
+        $this->putJson("/api/price-list/drafts/{$second['id']}/cells", ['item_id' => $bearing->id, 'vendor_id' => $v->id, 'price' => 9000])->assertOk();
+        $this->postJson("/api/price-list/drafts/{$second['id']}/finish")->assertOk();
+        $price = VendorPrice::sole();
+        $this->assertSame(['9000.00', $second['id']], [$price->price, $price->price_list_draft_id]);
+        // while that next draft was open, no third draft could take the item
     }
 
     public function test_an_item_in_a_draft_is_not_offered_to_the_next_draft(): void

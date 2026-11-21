@@ -154,7 +154,7 @@ function BoardCard({ cfg, heading, hint, count, tone, actions, footer, onHide, o
  * what its permissions allow, following the documents' status) and its private sticky notes. Arranged freely,
  * kept per user on the server.
  */
-export function TodoBoard() {
+export function TodoBoard({ modules }: { modules?: ReminderModule[] | null } = {}) {
   const { data: rem, isLoading: remLoading } = useReminders()
   const notes = useDashboardNotes()
   const saved = usePreference<Layout>(PREF)
@@ -189,7 +189,9 @@ export function TodoBoard() {
   const change = (fn: (l: Layout) => Layout) => { dirty.current = true; setLayout((l) => (l ? fn(l) : l)) }
   const setCard = (id: string, patch: Partial<CardCfg>) => change((l) => ({ ...l, cards: l.cards.map((c) => (c.id === id ? { ...c, ...patch } : c)) }))
   const present = new Set(available)
-  const visible = layout.cards.filter((c) => !c.hidden && present.has(c.id))
+  // a module chosen on the Dashboard: only its cards (the saved layout keeps the others, in their places)
+  const inModule = (id: string) => !modules || (id === NOTES ? false : !!byId.get(id)?.modules.some((m) => modules.includes(m)))
+  const visible = layout.cards.filter((c) => !c.hidden && present.has(c.id) && inModule(c.id))
   const hidden = layout.cards.filter((c) => c.hidden && present.has(c.id))
   const noteList = Array.isArray(notes.data) ? notes.data : []
   const openNotes = noteList.filter((n) => !n.done).length
@@ -216,7 +218,7 @@ export function TodoBoard() {
     <section className="space-y-2 print:hidden" aria-label="My To-Do">
       <div className="flex flex-wrap items-center gap-2">
         <h2 className="text-sm font-semibold">My To-Do</h2>
-        <span className="text-xs tabular-nums text-muted-foreground">{(rem?.meta?.total ?? 0).toLocaleString('id-ID')} waiting · {openNotes} notes</span>
+        <span className="text-xs tabular-nums text-muted-foreground">{(modules ? reminders.filter((r) => r.modules.some((m) => modules.includes(m))).reduce((n, r) => n + r.count, 0) : rem?.meta?.total ?? 0).toLocaleString('id-ID')} waiting{!modules && ` · ${openNotes} notes`}</span>
         {(save.isPending || remLoading) && <Loader2 className="size-3.5 animate-spin text-muted-foreground" aria-label="Saving" />}
         <div className="ml-auto flex flex-wrap gap-2">
           <Button size="sm" variant="outline" onClick={() => setEditing('new')}><Plus className="size-4" /> Note</Button>

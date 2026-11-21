@@ -23,7 +23,7 @@ class PriceListController extends Controller
         $f = $request->validate([
             'search' => ['nullable', 'string', 'max:100'], 'category' => ['nullable', 'string', 'max:100'],
             'vendor_ids' => ['nullable', 'array', 'max:30'], 'vendor_ids.*' => ['integer'],
-            'status' => ['nullable', 'string', 'in:none,priced,active,expired,draft,NONE,PRICED,ACTIVE,EXPIRED,DRAFT'],
+            'status' => ['nullable', 'string', 'in:none,priced,active,expired,draft,incomplete,NONE,PRICED,ACTIVE,EXPIRED,DRAFT,INCOMPLETE'],
             'page' => ['nullable', 'integer', 'min:1'], 'per_page' => ['nullable', 'integer', 'min:10', 'max:100'],
         ]);
 
@@ -35,7 +35,7 @@ class PriceListController extends Controller
     {
         $f = $request->validate([
             'search' => ['nullable', 'string', 'max:100'], 'category' => ['nullable', 'string', 'max:100'],
-            'vendor_id' => ['nullable', 'integer'], 'status' => ['nullable', 'string', 'max:12'],
+            'vendor_id' => ['nullable', 'integer'], 'status' => ['nullable', 'string', 'max:12'], 'incomplete' => ['nullable', 'boolean'],
             'sort' => ['nullable', 'string', 'max:20'], 'dir' => ['nullable', 'in:asc,desc'],
             'page' => ['nullable', 'integer', 'min:1'], 'per_page' => ['nullable', 'integer', 'min:10', 'max:100'],
         ]);
@@ -43,7 +43,8 @@ class PriceListController extends Controller
 
         return response()->json([
             'data' => collect($page->items())->map(fn (VendorPrice $p) => $this->service->row($p))->values(),
-            'meta' => ['current_page' => $page->currentPage(), 'last_page' => $page->lastPage(), 'per_page' => $page->perPage(), 'total' => $page->total()],
+            'meta' => ['current_page' => $page->currentPage(), 'last_page' => $page->lastPage(), 'per_page' => $page->perPage(), 'total' => $page->total(),
+                'completeness' => $this->service->completeness()],
         ]);
     }
 
@@ -111,6 +112,9 @@ class PriceListController extends Controller
             'vendor_id' => ['required', 'integer'],
             'unit_id' => ['required', 'integer', 'exists:units,id'],
             'price' => ['required', 'numeric'],
+            'price_type' => ['nullable', 'string', 'in:EXCL,NETT'],
+            'ppn_rate' => ['nullable', 'numeric', 'in:11,12'],
+            'vendor_ref' => ['nullable', 'string', 'max:100'],
             'min_qty' => ['nullable', 'numeric'],
             'lead_time_days' => ['nullable', 'integer', 'min:0', 'max:3650'],
             'valid_from' => ['nullable', 'date'],

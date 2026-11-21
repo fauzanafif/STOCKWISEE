@@ -1,13 +1,13 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { FileText, PackageCheck, PackageOpen, ShoppingCart, Truck, Undo2, ClipboardList, ClipboardPen, type LucideIcon } from 'lucide-react'
+import { FileText, PackageCheck, PackageOpen, ShoppingCart, Tags, Truck, Undo2, ClipboardList, ClipboardPen, type LucideIcon } from 'lucide-react'
 import { DOC_PATH, useRelated, type DocType, type RelatedGroup } from '@/features/documents/api'
 import { Modal } from '@/components/ui/modal'
 import { cn } from '@/lib/utils'
 
 const ICON: Record<DocType, LucideIcon> = {
   item_request: ClipboardList, delivery_order: Truck, ppb_draft: ClipboardPen, purchase_request: PackageOpen,
-  purchase_order: ShoppingCart, receipt: PackageCheck, purchase_return: Undo2,
+  purchase_order: ShoppingCart, receipt: PackageCheck, purchase_return: Undo2, price_list_draft: Tags,
 }
 
 const fmtDay = (v: string | null) => (v ? new Date(v + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '')

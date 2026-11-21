@@ -7,7 +7,6 @@ import { AppsPage } from '@/pages/AppsPage'
 import { ComingSoonPage } from '@/pages/ComingSoonPage'
 import { AppDashboardPage } from '@/pages/AppDashboardPage'
 import { CustomDashboardListPage, CustomDashboardPage } from '@/pages/CustomDashboardPages'
-import { AnalyticsPage } from '@/pages/AnalyticsPage'
 import { VendorsPage } from '@/pages/VendorsPage'
 import { EmployeesPage } from '@/pages/EmployeesPage'
 import { ItemCategoriesPage } from '@/pages/ItemCategoriesPage'
@@ -73,7 +72,6 @@ import { DisassemblyDetailPage } from '@/pages/disassembly/DisassemblyDetailPage
 import { DisassemblyHistoryPage } from '@/pages/disassembly/DisassemblyHistoryPage'
 import { RequestStatusPage } from '@/pages/RequestStatusPage'
 import { APPROVAL_PERMISSIONS } from '@/features/itemRequests/api'
-import { ModuleDashboardPage } from '@/pages/ModuleDashboardPage'
 
 export const router = createBrowserRouter([
   { path: '/login', element: <LoginPage /> },
@@ -99,7 +97,9 @@ export const router = createBrowserRouter([
         element: <AppLayout />,
         children: [
           { path: '/', element: <AppsPage /> },
-          { path: '/todo', element: <DashboardPage /> },
+          // the Dashboard app: Overview, To-Do and Analytics (every dashboard lives here)
+          { path: '/overview', element: <DashboardPage key="overview" view="overview" /> },
+          { path: '/todo', element: <DashboardPage key="todo" view="todo" /> },
           { path: '/apps', element: <Navigate to="/" replace /> },
           { path: '/coming-soon/:app', element: <ComingSoonPage /> },
           // one dashboard per app (the tile on the launcher opens it); the old menu dashboards lead to it
@@ -107,7 +107,7 @@ export const router = createBrowserRouter([
           { path: '/purchase', element: <AppDashboardPage key="purchase" appKey="purchase" /> },
           { path: '/mrp', element: <AppDashboardPage key="manufacturing" appKey="manufacturing" /> },
           { path: '/tracking', element: <AppDashboardPage key="tracking" appKey="tracking" /> },
-          { path: '/analytics', element: <AnalyticsPage /> },
+          { path: '/analytics', element: <DashboardPage key="analytics" view="analytics" /> },
           // custom dashboards: every signed-in user; each widget reads its data with the viewer's permissions
           { path: '/dashboards', element: <CustomDashboardListPage /> },
           { path: '/dashboards/:id', element: <CustomDashboardPage /> },
@@ -148,7 +148,8 @@ export const router = createBrowserRouter([
             // Important Request
             element: <RequirePermission permission={['important_request.access']} />,
             children: [
-              { path: '/important-requests', element: <ModuleDashboardPage key="important" module="important" /> },
+              // no dashboard of its own any more: the one Dashboard, on Important Request
+              { path: '/important-requests', element: <Navigate to="/overview?module=important" replace /> },
               { path: '/important-requests/saya', element: <IrListPage key="mine" scope="mine" /> },
               { path: '/important-requests/tugas', element: <IrListPage key="tasks" scope="tasks" /> },
               { path: '/important-requests/persetujuan', element: <IrListPage key="review" scope="review" /> },

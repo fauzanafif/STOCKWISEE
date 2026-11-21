@@ -2,7 +2,7 @@ import {
   BarChart3, Building2, Calculator, BookOpen, ClipboardPen, Factory, FileText, FolderKanban, Handshake,
   type LucideIcon, Settings, ShieldCheck, ShoppingCart, TrendingUp, Warehouse,
 } from 'lucide-react'
-import { APP_HOMES, type NavChild, type NavGroup, type NavItem } from '@/lib/navigation'
+import { type NavChild, type NavGroup, type NavItem } from '@/lib/navigation'
 
 /**
  * What an app holds: a menu of NAV by its label (shown when the menu is visible to the user),
@@ -55,17 +55,17 @@ const LAUNCHER: LauncherDef[] = [
   },
   { key: 'approvals', category: 'daily', label: 'Approvals', icon: ShieldCheck, color: 'from-rose-500 to-red-600', description: 'Persetujuan manager, direktur dan serah terima', targets: ['Approval'] },
   {
-    key: 'purchase', category: 'ops', label: 'Purchase', icon: ShoppingCart, color: 'from-fuchsia-500 to-pink-600', description: 'Purchase Order, Price List, Return, Vendor',
-    targets: ['Purchase Order', 'Price List', 'Return', 'Vendor'], home: APP_HOMES.purchase,
+    key: 'purchase', category: 'ops', label: 'Purchase', icon: ShoppingCart, color: 'from-fuchsia-500 to-pink-600', description: 'Purchase Order, Purchase Information, Return, Vendor',
+    targets: ['Purchase Order', 'Purchase Information', 'Return', 'Vendor'],
     menus: [
       { label: 'Orders', pages: ['Approved Purchase Request Items', 'Price Quotation', { page: 'List PO', as: 'Purchase Order' }, 'Return'] },
-      { label: 'Price List', pages: ['Draft Price List', 'Master Price List'] },
+      { label: 'Purchase Information', pages: ['Draft Purchase Information', 'Purchase Information'] },
       { label: 'Master Data', pages: ['Vendor'] },
     ],
   },
   {
     key: 'inventory', category: 'ops', label: 'Inventory', icon: Warehouse, color: 'from-teal-500 to-emerald-700', description: 'Permintaan barang, Delivery Order, Purchase Request, Receipt, kartu stok, stock opname, safety stock',
-    targets: ['Item Request', 'Purchase Request', 'Receipt', 'Barang', 'Jasa', 'Kategori Barang', 'UOM', 'Kartu Stok', 'Physical Inventory', 'Analisis Safety Stock', 'Data Quality'], home: APP_HOMES.inventory,
+    targets: ['Item Request', 'Purchase Request', 'Receipt', 'Barang', 'Jasa', 'Kategori Barang', 'UOM', 'Kartu Stok', 'Physical Inventory', 'Analisis Safety Stock', 'Data Quality'],
     menus: [
       { label: 'Operations', pages: [{ page: 'List Request', as: 'Item Request' }, 'Delivery Order', 'Draft Purchase Request', { page: 'List Purchase Request', as: 'Purchase Request' }, 'Receipt', 'Physical Inventory'] },
       { label: 'Products', pages: ['Barang', 'Jasa', 'Kategori Barang', 'UOM'] },
@@ -74,7 +74,7 @@ const LAUNCHER: LauncherDef[] = [
   },
   {
     key: 'manufacturing', category: 'ops', label: 'Manufacturing', icon: Factory, color: 'from-indigo-500 to-violet-700', description: 'Manufacturing Order, Bills of Materials, Disassembly',
-    targets: ['Manufacturing Orders', 'Bills of Materials', 'Disassembly'], home: APP_HOMES.manufacturing,
+    targets: ['Manufacturing Orders', 'Bills of Materials', 'Disassembly'],
     menus: [
       { label: 'Operations', pages: [{ page: 'List MO', as: 'Manufacturing Orders' }, 'Disassembly Orders'] },
       { label: 'Products', pages: ['Bills of Materials'] },
@@ -83,7 +83,7 @@ const LAUNCHER: LauncherDef[] = [
   },
   {
     key: 'tracking', category: 'field', label: 'Tracking', icon: Handshake, color: 'from-emerald-500 to-green-700', description: 'Lending, external borrow, STPP, ban luar, maintenance, barang bekas',
-    targets: ['Tracking'], home: APP_HOMES.tracking,
+    targets: ['Tracking'],
     menus: [
       { label: 'Assets', pages: ['Lending', 'External Borrow', 'Used Items'] },
       { label: 'Field Work', pages: ['STPP', 'Maintenance', 'Outer Tyres', 'Manufacturing'] },
@@ -165,7 +165,10 @@ export function launcherApps(groups: NavGroup[], hasPermission: (p: string) => b
     }
     if (items.length === 0) continue
     const keywords = [def.description, ...items.flatMap((i) => [i.label, i.keywords ?? '', ...(i.children ?? []).map((c) => `${c.label} ${c.keywords ?? ''}`)])].join(' ')
-    apps.push({ ...base, to: def.home ?? items[0].to, comingSoon: false, items, keywords, home: def.home, menus: def.menus && menuBar(def.menus, items) })
+    const menus = def.menus && menuBar(def.menus, items)
+    // no dashboard of its own (2026-11-21: every dashboard is on the Dashboard app): the icon opens the first page of its menu bar
+    const first = menus?.[0] ? (menus[0].children?.[0]?.to ?? menus[0].to) : items[0].to
+    apps.push({ ...base, to: def.home ?? first, comingSoon: false, items, keywords, home: def.home, menus })
   }
 
   return { apps, others: visible.filter((i) => !covered.has(i.label)) }

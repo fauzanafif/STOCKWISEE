@@ -4,6 +4,22 @@ import { api } from '@/lib/api'
 /** DRAFT / ACTIVE / ARCHIVED are stored; EXPIRED is an ACTIVE price past its Valid Until. */
 export type PriceStatus = 'DRAFT' | 'ACTIVE' | 'EXPIRED' | 'ARCHIVED'
 
+/** EXCL = before PPN (DPP, PPN on top), NETT = no PPN on top; null = not recorded */
+export type PriceType = 'EXCL' | 'NETT'
+
+/** The tax choices of a price (PPN is a choice, never typed). */
+export const TAX_OPTIONS: { key: string; label: string; short: string; price_type: PriceType; ppn_rate: number }[] = [
+  { key: 'EXCL:11', label: 'Excl. PPN 11% (DPP)', short: '+PPN 11%', price_type: 'EXCL', ppn_rate: 11 },
+  { key: 'EXCL:12', label: 'Excl. PPN 12% (DPP)', short: '+PPN 12%', price_type: 'EXCL', ppn_rate: 12 },
+  { key: 'NETT:0', label: 'Nett (no PPN)', short: 'Nett', price_type: 'NETT', ppn_rate: 0 },
+]
+export const taxKey = (t: PriceType | null | undefined, rate: number | null | undefined) => (t === 'NETT' ? 'NETT:0' : t === 'EXCL' ? `EXCL:${Math.round(rate ?? 11)}` : '')
+export const taxShort = (t: PriceType | null | undefined, rate: number | null | undefined) => TAX_OPTIONS.find((o) => o.key === taxKey(t, rate))?.short ?? null
+/** what a price lacks, in words */
+export const MISSING_LABEL: Record<string, string> = { tax: 'PPN not set', source: 'no PI / quotation no.' }
+
+export interface Completeness { total: number; complete: number; incomplete: number }
+
 export interface PriceCell {
   id: number
   price: number
@@ -16,6 +32,12 @@ export interface PriceCell {
   tiers?: number
   /** the item's base unit changed since the price was kept: save it again with the right unit */
   needs_review?: boolean
+  price_type?: PriceType | null
+  ppn_rate?: number | null
+  /** what is paid per purchase unit (before PPN + PPN, or nett); null when the tax was not recorded */
+  final_price?: number | null
+  /** what it still lacks: 'tax' (PPN not recorded), 'source' (no PI document nor vendor quotation no.) */
+  missing?: string[]
 }
 
 export interface MatrixRow {
@@ -29,6 +51,7 @@ export interface PriceMatrix {
   vendors: { id: number; name: string; code: string | null }[]
   rows: MatrixRow[]
   meta: { current_page: number; last_page: number; per_page: number; total: number }
+  completeness?: Completeness
 }
 
 export interface PriceRow extends PriceCell {
@@ -45,6 +68,9 @@ export interface PriceRow extends PriceCell {
   notes: string | null
   updated_at: string | null
   updated_by: string | null
+  vendor_ref?: string | null
+  /** the PI document (Draft Purchase Information) the price came from */
+  pi?: { id: number; number: string | null } | null
 }
 
 export interface PriceHistory {
@@ -65,6 +91,9 @@ export interface PriceInput {
   vendor_id: number
   unit_id: number
   price: number
+  price_type?: PriceType | null
+  ppn_rate?: number | null
+  vendor_ref?: string | null
   min_qty?: number | null
   lead_time_days?: number | null
   valid_from?: string | null
@@ -75,7 +104,7 @@ export interface PriceInput {
 }
 
 export interface MatrixFilters { search?: string; category?: string; vendor_ids?: number[]; status?: string; page?: number; per_page?: number }
-export interface ListFilters { search?: string; category?: string; vendor_id?: number | ''; status?: string; sort?: string; dir?: 'asc' | 'desc'; page?: number; per_page?: number }
+export interface ListFilters { search?: string; category?: string; vendor_id?: number | ''; status?: string; incomplete?: boolean; sort?: string; dir?: 'asc' | 'desc'; page?: number; per_page?: number }
 
 const clean = <T extends object>(f: T) => Object.fromEntries(Object.entries(f).filter(([, v]) => v !== '' && v !== undefined && v !== null && !(Array.isArray(v) && v.length === 0)))
 
@@ -90,7 +119,7 @@ export function usePriceMatrix(f: MatrixFilters) {
 export function usePriceList(f: ListFilters) {
   return useQuery({
     queryKey: ['price-list', 'list', f],
-    queryFn: async () => (await api.get<{ data: PriceRow[]; meta: PriceMatrix['meta'] }>('/api/price-list', { params: clean(f) })).data,
+    queryFn: async () => (await api.get<{ data: PriceRow[]; meta: PriceMatrix['meta'] & { completeness?: Completeness } }>('/api/price-list', { params: { ...clean(f), incomplete: f.incomplete ? 1 : undefined } })).data,
     placeholderData: keepPreviousData,
   })
 }

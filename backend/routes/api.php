@@ -83,6 +83,10 @@ Route::get('/ping', HealthController::class)->name('api.ping');
 Route::get('/login', fn () => response()->json(['message' => 'Unauthenticated.'], 401))
     ->name('login');
 
+// a PO's PDF for its vendor (Send to vendor › WhatsApp): a signed link that expires, relative to STOCKWISE_SHARE_URL
+Route::get('/public/purchase-orders/{purchaseOrder}/pdf', [PurchaseOrderController::class, 'publicPdf'])->whereNumber('purchaseOrder')
+    ->middleware(['signed:relative', 'throttle:60,1'])->name('api.po.public-pdf');
+
 // a profile photo through its signed URL (User::avatarUrl): an <img> sends no token
 Route::get('/avatars/{user}', [AvatarController::class, 'show'])->whereNumber('user')
     ->middleware('throttle:600,1,avatars')->name('api.avatars.show');
@@ -357,6 +361,8 @@ Route::middleware('auth:sanctum')->group(function (): void {
     // each menu's Dashboard: basic analytics (permission per module, checked in the controller) and the user's own layout
     Route::get('/module-stats/{module}', [ModuleStatsController::class, 'show'])->name('api.module-stats');
     // Custom dashboards: the layout only; each widget reads an existing API with the viewer's permissions
+    // the figures of every feature card of the Dashboard's Overview (each by the user's own permissions)
+    Route::get('/dashboard/feature-stats', \App\Http\Controllers\Api\FeatureStatsController::class)->middleware('throttle:120,1')->name('api.dashboard.feature-stats');
     Route::get('/custom-dashboards', [CustomDashboardController::class, 'index'])->name('api.custom-dashboards.index');
     Route::post('/custom-dashboards', [CustomDashboardController::class, 'store'])->middleware('throttle:30,1')->name('api.custom-dashboards.store');
     Route::get('/custom-dashboards/{id}', [CustomDashboardController::class, 'show'])->whereNumber('id')->name('api.custom-dashboards.show');
@@ -572,6 +578,7 @@ Route::middleware('auth:sanctum')->group(function (): void {
     Route::middleware('permission:important_request.access')->prefix('important-requests')->controller(ImportantRequestController::class)->group(function (): void {
         Route::get('/', 'index')->name('api.important-requests.index');
         Route::get('/summary', 'summary')->name('api.important-requests.summary');
+        Route::get('/by-document', 'byDocument')->name('api.important-requests.by-document');
         Route::get('/recipients', 'recipients')->middleware('permission:important_request.create')->name('api.important-requests.recipients');
         Route::get('/analytics', 'analytics')->middleware('permission:important_request.analytics')->name('api.important-requests.analytics');
         Route::post('/', 'store')->middleware(['permission:important_request.create', 'throttle:30,1'])->name('api.important-requests.store');
@@ -749,6 +756,7 @@ Route::middleware('auth:sanctum')->group(function (): void {
         Route::post('/price-list/drafts/{id}/vendors', [PriceListDraftController::class, 'addVendors'])->whereNumber('id')->name('api.price-list.drafts.vendors.store');
         Route::delete('/price-list/drafts/{id}/vendors/{vendor}', [PriceListDraftController::class, 'removeVendor'])->whereNumber('id')->whereNumber('vendor')->name('api.price-list.drafts.vendors.destroy');
         Route::put('/price-list/drafts/{id}/cells', [PriceListDraftController::class, 'setCell'])->whereNumber('id')->name('api.price-list.drafts.cells');
+        Route::put('/price-list/drafts/{id}/vendors/{vendor}', [PriceListDraftController::class, 'setVendorTerms'])->whereNumber('id')->whereNumber('vendor')->name('api.price-list.drafts.vendors.terms');
         Route::post('/price-list/drafts/{id}/finish', [PriceListDraftController::class, 'finish'])->whereNumber('id')->name('api.price-list.drafts.finish');
         Route::delete('/price-list/drafts/{id}', [PriceListDraftController::class, 'destroy'])->whereNumber('id')->name('api.price-list.drafts.destroy');
     });
@@ -791,6 +799,11 @@ Route::middleware('auth:sanctum')->group(function (): void {
         ->middleware('permission:po.view')->name('api.po.proof');
     Route::post('/purchase-orders/{purchaseOrder}/send', [PurchaseOrderController::class, 'send'])
         ->middleware('permission:po.send')->name('api.po.send');
+    // Send to vendor: email (PDF attached) or WhatsApp (link to the PDF)
+    Route::get('/purchase-orders/{purchaseOrder}/vendor-share', [PurchaseOrderController::class, 'vendorShare'])
+        ->middleware('permission:po.send')->name('api.po.vendor-share');
+    Route::post('/purchase-orders/{purchaseOrder}/send-to-vendor', [PurchaseOrderController::class, 'sendToVendor'])
+        ->middleware(['permission:po.send', 'throttle:30,1'])->name('api.po.send-to-vendor');
     Route::post('/purchase-orders/{purchaseOrder}/cancel', [PurchaseOrderController::class, 'cancel'])
         ->middleware('permission:po.cancel')->name('api.po.cancel');
 
@@ -968,7 +981,7 @@ Route::middleware('auth:sanctum')->group(function (): void {
     // The document's own view rule is checked in the controller (DocumentRegistry::canView), so no extra permission key.
     Route::prefix('documents')->group(function (): void {
         $c = DocumentController::class;
-        $types = 'item_request|delivery_order|ppb_draft|purchase_request|purchase_order|receipt|purchase_return';
+        $types = 'item_request|delivery_order|ppb_draft|purchase_request|purchase_order|receipt|purchase_return|price_list_draft';
         Route::get('/activities/mine', [$c, 'myActivities'])->name('api.documents.activities.mine');
         Route::prefix('{type}/{id}')->where(['type' => $types, 'id' => '[0-9]+'])->group(function () use ($c): void {
             Route::get('/related', [$c, 'related'])->name('api.documents.related');

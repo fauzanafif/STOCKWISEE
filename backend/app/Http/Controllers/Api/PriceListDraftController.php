@@ -122,11 +122,26 @@ class PriceListDraftController extends Controller
         return response()->json(['data' => ['ok' => true]]);
     }
 
+    /** PUT /price-list/drafts/{draft}/vendors/{vendor} {price_type, ppn_rate?, vendor_ref?} — the vendor column's quotation terms */
+    public function setVendorTerms(Request $request, int $id, int $vendor): JsonResponse
+    {
+        $draft = $this->draft($id);
+        $f = $request->validate([
+            'price_type' => ['required', 'string', 'in:EXCL,NETT'],
+            'ppn_rate' => ['nullable', 'numeric', 'in:11,12'],
+            'vendor_ref' => ['nullable', 'string', 'max:100'],
+        ]);
+        $this->service->setVendorTerms($draft, $vendor, $f['price_type'], $f['ppn_rate'] ?? null, $f['vendor_ref'] ?? null);
+
+        return response()->json(['data' => $this->service->show($draft->refresh())]);
+    }
+
     /** POST /price-list/drafts/{draft}/finish — "Set Harga" */
     public function finish(Request $request, int $id): JsonResponse
     {
         $draft = $this->draft($id);
-        $draft = $this->service->finish($request->user(), $draft);
+        $note = $request->validate(['note' => ['nullable', 'string', 'max:500']])['note'] ?? null;
+        $draft = $this->service->finish($request->user(), $draft, $note);
 
         return response()->json(['data' => $this->service->show($draft)]);
     }

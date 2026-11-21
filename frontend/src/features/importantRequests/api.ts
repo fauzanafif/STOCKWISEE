@@ -100,8 +100,12 @@ export interface IrSubmission {
   can_review: boolean
 }
 
+/** the transaction a topic is about (any document with a Chatter) */
+export interface IrDocRef { type: string; id: number; number: string | null; label: string }
+
 export interface IrDetail extends IrRow {
   description: string
+  ref?: IrDocRef | null
   category: string | null
   note: string | null
   requires_approval: boolean
@@ -162,6 +166,9 @@ export interface IrPayload {
   assignee_ids?: number[]
   attachments?: string[]
   send?: boolean
+  /** start a topic about this transaction (create only) */
+  ref_type?: string | null
+  ref_id?: number | null
 }
 
 const KEY = ['important-requests']
@@ -185,6 +192,16 @@ export function useIrList(params: { scope: IrScope; part?: 'todo' | 'late' | 'ha
     queryFn: async () => (await api.get<{ data: IrRow[]; meta: { page: number; last_page: number; total: number } }>('/api/important-requests', {
       params: { ...params, overdue: params.overdue ? 1 : undefined },
     })).data,
+  })
+}
+
+/** The topics about one transaction this user may see (the "Discuss" button of the document). */
+export function useIrByDocument(type: string, id: number, enabled = true) {
+  return useQuery({
+    queryKey: [...KEY, 'by-document', type, id],
+    enabled: enabled && id > 0,
+    queryFn: async () => (await api.get<{ data: { id: number; number: string; title: string; status: string; status_label: string; created_at: string | null }[] }>(
+      '/api/important-requests/by-document', { params: { type, id } })).data.data,
   })
 }
 

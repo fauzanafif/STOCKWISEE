@@ -219,4 +219,27 @@ class ImportantRequestTest extends TestCase
         $this->as($this->boss)->getJson('/api/important-requests/analytics')->assertOk()->assertJsonStructure(['data' => ['completion_rate', 'by_divisi', 'workload', 'trend']]);
         $this->as($this->finance)->postJson('/api/important-requests', ['title' => 'x', 'description' => 'y'])->assertForbidden();
     }
+
+    public function test_any_transaction_can_be_taken_to_a_discussion_and_the_document_lists_its_topics(): void
+    {
+        $po = DB::table('purchase_orders')->insertGetId(['number' => 'PO/PPB/26/XI/077', 'status' => 'DRAFT', 'date' => now()->toDateString(), 'created_at' => now(), 'updated_at' => now()]);
+        // Gudang may start a topic now; it cannot point one at a PO it may not open (no po.view)
+        $this->as($this->gudang);
+        $this->postJson('/api/important-requests', ['title' => 'Stok rak A', 'description' => 'Selisih stok'])->assertCreated();
+        $this->postJson('/api/important-requests', ['title' => 'Bahas PO 077', 'description' => 'x', 'ref_type' => 'purchase_order', 'ref_id' => $po])->assertForbidden();
+        // the Direktur takes the PO to a discussion with Gudang
+        $this->as($this->boss);
+        $made = $this->postJson('/api/important-requests', ['title' => 'Bahas PO 077', 'description' => 'Harga naik, perlu cek', 'ref_type' => 'purchase_order', 'ref_id' => $po,
+            'assignee_ids' => [$this->gudang->id], 'deadline' => now()->addDay()->toIso8601String()])->assertCreated()->json('data');
+        $this->assertSame(['type' => 'purchase_order', 'id' => $po, 'number' => 'PO/PPB/26/XI/077', 'label' => 'Purchase Order'], $made['ref']);
+        $this->assertSame([$made['id']], array_column($this->getJson("/api/important-requests/by-document?type=purchase_order&id={$po}")->assertOk()->json('data'), 'id'));
+
+        // a document that does not exist is refused
+        $this->postJson('/api/important-requests', ['title' => 'x', 'description' => 'y', 'ref_type' => 'purchase_order', 'ref_id' => 999999])->assertNotFound();
+        // a topic about nothing in particular still works
+        $this->postJson('/api/important-requests', ['title' => 'Rapat bulanan', 'description' => 'Agenda'])->assertCreated()->assertJsonPath('data.ref', null);
+        // who may not see a topic does not see it listed on the document
+        $this->as($this->other);
+        $this->getJson("/api/important-requests/by-document?type=purchase_order&id={$po}")->assertOk()->assertJsonCount(0, 'data');
+    }
 }

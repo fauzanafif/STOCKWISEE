@@ -9,6 +9,7 @@ import {
 } from '@/features/importantRequests/api'
 import { IrFileList, IrFilePicker, IrPriorityBadge, IrStatusBadge, fmtDateTime, readyTokens, type PickedFile } from '@/components/importantRequests/IrParts'
 import { BackLink } from '@/components/BackLink'
+import { DOC_PATH, type DocType } from '@/features/documents/api'
 import { useAuth } from '@/auth/AuthContext'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -556,6 +557,15 @@ export function IrDetailPage() {
                   <IrStatusBadge status={r.status} label={r.status_label} />
                   {r.unread_comments > 0 && <span className="inline-flex items-center gap-1 text-xs text-primary"><MessageSquare className="size-3.5" />{r.unread_comments} new comments</span>}
                 </div>
+                {/* the transaction this topic is about */}
+                {r.ref && (
+                  <div className="pt-1 text-sm">
+                    <span className="text-muted-foreground">About </span>
+                    {r.ref.type in DOC_PATH
+                      ? <Link to={DOC_PATH[r.ref.type as DocType](r.ref.id)} className="font-medium text-primary hover:underline">{r.ref.label} {r.ref.number}</Link>
+                      : <span className="font-medium">{r.ref.label} {r.ref.number}</span>}
+                  </div>
+                )}
               </div>
               {/* the due date, top right like Classroom's "Tenggat" */}
               <div className="shrink-0 text-right">

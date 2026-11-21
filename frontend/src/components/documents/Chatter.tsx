@@ -1,10 +1,12 @@
 import { useMemo, useRef, useState } from 'react'
-import { CalendarClock, Check, History, Loader2, Lock, MessageSquare, Paperclip, Pencil, Send, Trash2, X } from 'lucide-react'
+import { Link, useNavigate } from 'react-router-dom'
+import { CalendarClock, Check, History, Loader2, Lock, MessageSquare, MessagesSquare, Paperclip, Pencil, Send, Trash2, X } from 'lucide-react'
+import { useIrByDocument } from '@/features/importantRequests/api'
 import { useAuth } from '@/auth/AuthContext'
 import { apiErrorMessage } from '@/lib/api'
 import { toast } from '@/lib/notify'
 import {
-  EVENT_LABEL, FIELD_LABEL, downloadAttachment, fmtWhen, showValue, useAssignees, useAudit, useDocActivities, useDocMutations, useFeed,
+  DOC_PATH, EVENT_LABEL, FIELD_LABEL, downloadAttachment, fmtWhen, showValue, useAssignees, useAudit, useDocActivities, useDocMutations, useFeed,
   type DocActivity, type DocType, type FeedItem,
 } from '@/features/documents/api'
 import { Badge } from '@/components/ui/badge'
@@ -207,6 +209,54 @@ function FeedEntry({ type, id, item, onAudit }: { type: DocType; id: number; ite
  * activities, then one timeline of messages, internal notes (staff only) and tracked changes, newest first.
  * The full Audit Trail opens from "View details" / the history icon.
  */
+/**
+ * "Discuss": take this transaction to Important Request, the place to talk about anything. Opens a new topic
+ * pointing at the document; the topics already about it are listed under the same button.
+ */
+function DiscussButton({ type, id, number }: { type: DocType; id: number; number: string | null }) {
+  const { hasPermission } = useAuth()
+  const navigate = useNavigate()
+  const [open, setOpen] = useState(false)
+  const topics = useIrByDocument(type, id, hasPermission('important_request.access'))
+  if (!hasPermission('important_request.access')) return null
+  const n = topics.data?.length ?? 0
+  const start = () => {
+    const q = new URLSearchParams({ ref_type: type, ref_id: String(id), ref_label: DOC_LABEL[type] ?? 'Document', ref_path: DOC_PATH[type](id), ...(number ? { ref_number: number } : {}) })
+    navigate(`/important-requests/baru?${q}`)
+  }
+  return (
+    <div className="relative">
+      <button type="button" className={tab(open)} aria-expanded={open} title="Discuss this document in Important Request"
+        onClick={() => (n === 0 && hasPermission('important_request.create') ? start() : setOpen((v) => !v))}>
+        <MessagesSquare className="mr-1 inline size-3.5" />Discuss{n > 0 && <span className="ml-1 rounded-full bg-primary/15 px-1.5 text-[10.5px] tabular-nums text-primary">{n}</span>}
+      </button>
+      {open && (
+        <div role="menu" className="absolute right-0 top-full z-30 mt-1 w-72 rounded-md border bg-card p-1 text-sm shadow-lg" onMouseLeave={() => setOpen(false)}>
+          {(topics.data ?? []).map((t) => (
+            <Link key={t.id} role="menuitem" to={`/important-requests/${t.id}`} className="block rounded px-2.5 py-2 hover:bg-muted">
+              <span className="block truncate font-medium">{t.title}</span>
+              <span className="text-xs text-muted-foreground">{t.number} · {t.status_label}</span>
+            </Link>
+          ))}
+          {n === 0 && <p className="px-2.5 py-2 text-xs text-muted-foreground">No discussion yet.</p>}
+          {hasPermission('important_request.create') && (
+            <>
+              <div className="my-1 border-t" />
+              <button type="button" role="menuitem" onClick={start} className="w-full rounded px-2.5 py-2 text-left font-medium text-primary hover:bg-muted">+ New discussion</button>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** the documents' names, as their pages call them */
+const DOC_LABEL: Partial<Record<DocType, string>> = {
+  item_request: 'Item Request', delivery_order: 'Delivery Order', ppb_draft: 'Draft Purchase Request', purchase_request: 'Purchase Request',
+  purchase_order: 'Purchase Order', receipt: 'Receipt', purchase_return: 'Return', price_list_draft: 'Draft Purchase Information',
+}
+
 export function Chatter({ type, id, className }: { type: DocType; id: number; className?: string }) {
   const feed = useFeed(type, id)
   const acts = useDocActivities(type, id)
@@ -229,6 +279,7 @@ export function Chatter({ type, id, className }: { type: DocType; id: number; cl
       <div className="flex items-center justify-between gap-2 border-b px-3 py-2">
         <h2 className="text-sm font-semibold">Chatter</h2>
         <div className="flex items-center gap-0.5">
+          <DiscussButton type={type} id={id} number={feed.data?.meta.document?.number ?? null} />
           <button type="button" aria-pressed={writeMode === 'MESSAGE'} className={tab(writeMode === 'MESSAGE')} onClick={() => setMode('MESSAGE')}>Message</button>
           {staff && <button type="button" aria-pressed={writeMode === 'NOTE'} className={tab(writeMode === 'NOTE')} onClick={() => setMode('NOTE')}>Note</button>}
           {acts.data?.can_schedule && <button type="button" className={tab(false)} onClick={() => setScheduling(true)}>Activity</button>}

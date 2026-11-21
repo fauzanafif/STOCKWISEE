@@ -22,7 +22,7 @@ use Illuminate\Validation\ValidationException;
 class PriceListService
 {
     /** the fields a change is compared on (the price and status have their own history columns) */
-    private const TRACKED = ['unit_id', 'unit_ratio', 'min_qty', 'lead_time_days', 'valid_from', 'valid_until', 'notes'];
+    private const TRACKED = ['unit_id', 'unit_ratio', 'price_type', 'ppn_rate', 'vendor_ref', 'min_qty', 'lead_time_days', 'valid_from', 'valid_until', 'notes'];
 
     public function __construct(private UomConverter $uom) {}
 
@@ -60,10 +60,13 @@ class PriceListService
             throw ValidationException::withMessages(['status' => 'Status harus Draft atau Active. Arsipkan lewat tombol Deactivate.']);
         }
         $ratio = $this->unitRatio($item, (int) $data['unit_id']);
+        [$type, $ppn] = self::tax($data['price_type'] ?? null, $data['ppn_rate'] ?? null);
 
         $values = [
             'item_id' => $item->id, 'vendor_id' => $vendor->id, 'unit_id' => (int) $data['unit_id'], 'unit_ratio' => $ratio, 'base_unit_id' => $item->unit_id,
             'price' => UomConverter::roundDec($data['price'], 2), 'min_qty' => UomConverter::roundDec($minQty, 2),
+            'price_type' => $type, 'ppn_rate' => $ppn,
+            'vendor_ref' => isset($data['vendor_ref']) ? (mb_substr(trim((string) $data['vendor_ref']), 0, 100) ?: null) : null,
             'lead_time_days' => isset($data['lead_time_days']) && $data['lead_time_days'] !== '' ? (int) $data['lead_time_days'] : null,
             'valid_from' => $from ?: null, 'valid_until' => $until ?: null, 'status' => $status,
             'notes' => isset($data['notes']) ? (mb_substr(trim((string) $data['notes']), 0, 500) ?: null) : null,
@@ -77,6 +80,9 @@ class PriceListService
         }
 
         $saved = DB::transaction(function () use ($user, $price, $values, $data) {
+            // the PI document a price comes from: set by a draft's Set Harga, kept by an edit of the price
+            $draftId = $data['price_list_draft_id'] ?? $price?->price_list_draft_id;
+            $values['price_list_draft_id'] = $draftId;
             if (! $price) {
                 $price = VendorPrice::create($values + ['created_by' => $user->id, 'updated_by' => $user->id]);
                 $this->log($price, $user, 'CREATE', null, $price->price, null, $price->status, null, $data['change_note'] ?? null);
@@ -96,7 +102,7 @@ class PriceListService
                 ->mapWithKeys(fn ($f) => [$f => [$before[$f], $this->plain($price->{$f})]])
                 ->filter(fn ($pair) => $this->same($pair[0], $pair[1]) === false);
             $priceChanged = bccomp(UomConverter::dec($oldPrice), UomConverter::dec($price->price), 2) !== 0;
-            if (! $priceChanged && $oldStatus === $price->status && $changes->isEmpty()) {
+            if (! $priceChanged && $oldStatus === $price->status && $changes->isEmpty() && ! $price->isDirty('price_list_draft_id')) {
                 return $price;
             }
             $price->save();
@@ -111,6 +117,39 @@ class PriceListService
         }
 
         return $saved;
+    }
+
+    /**
+     * The tax of a price: before PPN (DPP) at 11% or 12%, or nett (no PPN on top); neither given = not recorded.
+     *
+     * @return array{0:?string, 1:?string}
+     */
+    public static function tax(?string $type, mixed $rate): array
+    {
+        if ($type === null || $type === '') {
+            return [null, null];
+        }
+        if (! in_array($type, VendorPrice::PRICE_TYPES, true)) {
+            throw ValidationException::withMessages(['price_type' => 'Jenis harga harus Excl. PPN atau Nett.']);
+        }
+        if ($type === VendorPrice::NETT) {
+            return [VendorPrice::NETT, '0.00'];
+        }
+        $rate = $rate === null || $rate === '' ? 11 : (float) $rate;
+        if (! in_array((int) round($rate), VendorPrice::PPN_RATES, true) || abs($rate - round($rate)) > 0.001) {
+            throw ValidationException::withMessages(['ppn_rate' => 'PPN harus 11% atau 12%.']);
+        }
+
+        return [VendorPrice::EXCL, number_format(round($rate), 2, '.', '')];
+    }
+
+    /** How many current prices are complete (the header of Purchase Information). */
+    public function completeness(): array
+    {
+        $total = VendorPrice::current()->count();
+        $incomplete = VendorPrice::current()->incomplete()->count();
+
+        return ['total' => $total, 'complete' => $total - $incomplete, 'incomplete' => $incomplete];
     }
 
     /** Deactivate: the price stays (with its history) but no longer shows as a reference. */
@@ -175,6 +214,7 @@ class PriceListService
             'vendors' => $vendors,
             'rows' => $rows,
             'meta' => ['current_page' => $items->currentPage(), 'last_page' => $items->lastPage(), 'per_page' => $items->perPage(), 'total' => $items->total()],
+            'completeness' => $this->completeness(),
         ];
     }
 
@@ -196,13 +236,14 @@ class PriceListService
             ->join('items', 'items.id', '=', 'vendor_prices.item_id')
             ->join('vendors', 'vendors.id', '=', 'vendor_prices.vendor_id')
             ->select('vendor_prices.*')
-            ->with(['item:id,code,description,unit_id', 'vendor:id,name', 'unit:id,code', 'updater:id,name'])
+            ->with(['item:id,code,description,unit_id', 'vendor:id,name', 'unit:id,code', 'updater:id,name', 'draft:id,number'])
             ->when($f['search'] ?? null, function ($q, $s) {
                 $like = '%'.trim($s).'%';
                 $q->where(fn ($w) => $w->where('items.code', 'like', $like)->orWhere('items.description', 'like', $like)->orWhere('vendors.name', 'like', $like));
             })
             ->when($f['category'] ?? null, fn ($q, $c) => $q->where('items.accurate_category_induk', $c))
             ->when($f['vendor_id'] ?? null, fn ($q, $v) => $q->where('vendor_prices.vendor_id', (int) $v))
+            ->when(! empty($f['incomplete']), fn ($q) => $q->incomplete())
             ->when(in_array($status, [VendorPrice::DRAFT, VendorPrice::ACTIVE, VendorPrice::EXPIRED, VendorPrice::ARCHIVED], true),
                 fn ($q) => $q->effective($status), fn ($q) => $q->current())
             ->orderBy($sort, $dir)->orderBy('vendor_prices.id', 'desc')
@@ -227,13 +268,16 @@ class PriceListService
     /** A price as the screens read it. */
     public function row(VendorPrice $p): array
     {
-        $p->loadMissing(['item:id,code,description,unit_id', 'item.unit:id,code', 'vendor:id,name', 'unit:id,code', 'updater:id,name']);
+        $p->loadMissing(['item:id,code,description,unit_id', 'item.unit:id,code', 'vendor:id,name', 'unit:id,code', 'updater:id,name', 'draft:id,number']);
 
         return $this->cell($p) + [
             'item_id' => $p->item_id, 'item_code' => $p->item?->code, 'item_name' => $p->item?->description, 'base_unit' => $p->item?->unit?->code,
             'vendor_id' => $p->vendor_id, 'vendor' => $p->vendor?->name, 'unit_id' => $p->unit_id, 'unit_ratio' => (float) $p->unit_ratio,
             'valid_from' => $p->valid_from?->toDateString(), 'stored_status' => $p->status, 'notes' => $p->notes,
             'updated_at' => $p->updated_at?->toIso8601String(), 'updated_by' => $p->updater?->name,
+            'vendor_ref' => $p->vendor_ref,
+            // the PI document the price came from (Draft Purchase Information)
+            'pi' => $p->price_list_draft_id ? ['id' => $p->price_list_draft_id, 'number' => $p->draft?->number] : null,
         ];
     }
 
@@ -248,6 +292,8 @@ class PriceListService
         return [
             'id' => $p->id, 'price' => (float) $p->price, 'unit' => $p->unit?->code, 'min_qty' => (float) $p->min_qty,
             'lead_time_days' => $p->lead_time_days, 'valid_until' => $p->valid_until?->toDateString(), 'status' => $p->effectiveStatus(),
+            'price_type' => $p->price_type, 'ppn_rate' => $p->ppn_rate === null ? null : (float) $p->ppn_rate, 'final_price' => $p->finalPrice(),
+            'missing' => $p->missing(),
             // the item's base unit changed since the price was kept: its unit ratio needs a look
             'needs_review' => $p->needsReview(),
         ];
@@ -264,6 +310,9 @@ class PriceListService
                 VendorPrice::EXPIRED => $q->where('vendor_prices.status', VendorPrice::ACTIVE)->whereNotNull('vendor_prices.valid_until')->where('vendor_prices.valid_until', '<', $today),
                 VendorPrice::ACTIVE => $q->where('vendor_prices.status', VendorPrice::ACTIVE)->where(fn ($w) => $w->whereNull('vendor_prices.valid_until')->orWhere('vendor_prices.valid_until', '>=', $today)),
                 VendorPrice::DRAFT => $q->where('vendor_prices.status', VendorPrice::DRAFT),
+                // the same rule as VendorPrice::missing(): PPN not recorded, or no PI document nor vendor quotation no.
+                'INCOMPLETE' => $q->where('vendor_prices.status', '!=', VendorPrice::ARCHIVED)->where(fn ($w) => $w->whereNull('vendor_prices.price_type')
+                    ->orWhere(fn ($s) => $s->whereNull('vendor_prices.price_list_draft_id')->where(fn ($r) => $r->whereNull('vendor_prices.vendor_ref')->orWhere('vendor_prices.vendor_ref', '')))),
                 default => $q->where('vendor_prices.status', '!=', VendorPrice::ARCHIVED),
             };
         };
@@ -277,7 +326,7 @@ class PriceListService
             ->when($f['category'] ?? null, fn ($q, $c) => $q->where('items.accurate_category_induk', $c))
             ->when($status === 'NONE', fn ($q) => $q->whereNotExists($priced(null)))
             ->when($status === 'PRICED', fn ($q) => $q->whereExists($priced(null)))
-            ->when(in_array($status, [VendorPrice::ACTIVE, VendorPrice::EXPIRED, VendorPrice::DRAFT], true), fn ($q) => $q->whereExists($priced($status)))
+            ->when(in_array($status, [VendorPrice::ACTIVE, VendorPrice::EXPIRED, VendorPrice::DRAFT, 'INCOMPLETE'], true), fn ($q) => $q->whereExists($priced($status)))
             // the vendors chosen without a status: the items priced at them
             ->when($vendorIds && $status === '', fn ($q) => $q->whereExists($priced(null)));
     }

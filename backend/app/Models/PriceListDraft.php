@@ -5,14 +5,14 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-/** A Draft Price List: items × vendors whose prices are filled, then set in the Master Price List. */
+/** A Draft Price List: items × vendors whose prices are filled, then set in the Purchase Information. */
 class PriceListDraft extends Model
 {
     public const DRAFT = 'DRAFT';
 
     public const DONE = 'DONE';
 
-    protected $fillable = ['number', 'note', 'status', 'created_by', 'done_by', 'done_at'];
+    protected $fillable = ['number', 'note', 'status', 'created_by', 'done_by', 'done_at', 'done_note'];
 
     protected $casts = ['done_at' => 'datetime'];
 

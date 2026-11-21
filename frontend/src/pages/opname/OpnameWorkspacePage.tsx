@@ -219,7 +219,7 @@ function LineRow(p: LineProps) {
               <option value="ACCEPT">Accept count</option>
               <option value="EXCLUDE">Exclude (no adjustment)</option>
             </Select>
-            <Input aria-label={`Variance reason for ${line.item_code}`} className="h-8 text-sm" placeholder={line.variance_kind && line.variance_kind !== 'MATCH' ? 'Reason of the variance *' : 'Reason (optional)'}
+            <Input aria-label={`Variance reason for ${line.item_code}`} className="h-8 text-sm" placeholder="Note (optional)"
               value={p.decision.note} onChange={(e) => p.onDecision({ ...p.decision, note: e.target.value })} />
             {line.note && <div className="text-xs text-muted-foreground">Counter: {line.note}</div>}
           </div>
@@ -351,7 +351,7 @@ export function OpnameWorkspacePage({ o }: { o: FlowOpname }) {
   else if (status === 'COUNTING') next = { tone: 'info', text: <>Count every item and type the quantity found{see ? '' : ' (the system quantity is hidden — blind count)'}. Scan a barcode or press <b>Enter</b> to go to the next item. <b>{sm.uncounted}</b> left.</> }
   else if (status === 'RECOUNT') next = { tone: 'warn', text: <><b>{sm.recount_open}</b> of {sm.recount} items must be counted again (round {o.count_round}). The earlier counts stay in each item’s history.</> }
   else if (status === 'REVIEW') next = see
-    ? { tone: 'warn', text: <><b>{sm.variance_lines ?? 0}</b> items differ (+{fmtQty(sm.plus_qty)} / {fmtQty(sm.minus_qty)}). Accept or exclude each, give the reason of every variance, ask a <b>recount</b> where needed, then <b>Send for Approval</b>.</> }
+    ? { tone: 'warn', text: <><b>{sm.variance_lines ?? 0}</b> items differ (+{fmtQty(sm.plus_qty)} / {fmtQty(sm.minus_qty)}). Exclude what should not change, ask a <b>recount</b> where needed, then <b>Send for Approval</b>.</> }
     : { tone: 'info', text: 'Counting finished — the warehouse admin is reviewing the variances.' }
   else if (status === 'WAITING_APPROVAL') next = { tone: 'warn', text: <>Waiting for the supervisor. <b>Approve &amp; Post</b> writes the accepted variances to the Stock Ledger in one transaction.{o.review_note && <> Reviewer: “{o.review_note}”.</>}</> }
   else if (status === 'POSTED') next = { tone: 'done', text: <>Posted {fmtDateTime(o.posted_at)} by {o.poster ?? '—'} — {sm.adjusted ?? 0} stock adjustments. The document is locked; mark it as done to close it.</> }
@@ -481,7 +481,7 @@ export function OpnameWorkspacePage({ o }: { o: FlowOpname }) {
                   <th className="px-3 py-2 font-medium">Counted qty</th>
                   {see && <th className="px-3 py-2 text-right font-medium">Variance</th>}
                   <th className="px-3 py-2 font-medium">Counted by</th>
-                  <th className="px-3 py-2 font-medium">{reviewing ? 'Decision & reason' : 'Note'}</th>
+                  <th className="px-3 py-2 font-medium">{reviewing ? 'Decision & note' : 'Note'}</th>
                   <th className="w-16 px-2 py-2" />
                 </tr>
               </thead>
@@ -515,13 +515,13 @@ export function OpnameWorkspacePage({ o }: { o: FlowOpname }) {
         </AskModal>
       )}
       {ask === 'recount' && (
-        <AskModal title={`Recount ${selected.size} items?`} description="They go back to the counting team. The first count stays in each item’s history." label="Reason for the recount" required confirm="Request Recount" busy={a.recount.isPending}
-          onClose={() => setAsk(null)} onConfirm={(reason) => run(saveDecisions().then(() => a.recount.mutateAsync({ line_ids: [...selected], reason })), () => setSelected(new Set()))} />
+        <AskModal title={`Recount ${selected.size} items?`} description="They go back to the counting team. The first count stays in each item’s history." label="Note (optional)" confirm="Request Recount" busy={a.recount.isPending}
+          onClose={() => setAsk(null)} onConfirm={(reason) => run(saveDecisions().then(() => a.recount.mutateAsync({ line_ids: [...selected], reason: reason || undefined })), () => setSelected(new Set()))} />
       )}
       {ask === 'approval' && (
         <AskModal title="Send to the supervisor?" label="Note for the supervisor (optional)" confirm="Send for Approval" busy={a.requestApproval.isPending}
           onClose={() => setAsk(null)} onConfirm={(note) => run(saveDecisions().then(() => a.requestApproval.mutateAsync({ note: note || undefined })))}>
-          <p>Items not excluded are <b>accepted</b>: stock will be adjusted to the count once approved. Every accepted variance needs a reason.</p>
+          <p>Items not excluded are <b>accepted</b>: stock will be adjusted to the count once approved.</p>
         </AskModal>
       )}
       {ask === 'approve' && (
